@@ -6,6 +6,7 @@
 # Python
 __pycache__/
 *.py[cod]
+*.egg-info/
 .venv/
 venv/
 .pytest_cache/
@@ -33,6 +34,6 @@ tmp/
 .DS_Store
 Thumbs.db
 
-# One-off local investigation scripts
-_*.py
+# One-off local investigation scripts at the repository root
+/_*.py
 migrate_chat_offline.py

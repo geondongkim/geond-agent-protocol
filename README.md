@@ -51,12 +51,61 @@ The first research target is VS Code GitHub Copilot Chat storage. See [docs/vsco
 - [docs/research_validation.md](docs/research_validation.md) validates the original idea, corrects assumptions, and compares alternatives.
 - [docs/architecture.md](docs/architecture.md) describes the proposed system architecture and data model.
 - [docs/implementation_plan.md](docs/implementation_plan.md) breaks the work into MVP phases and acceptance criteria.
+- [docs/embedding_configuration.md](docs/embedding_configuration.md) explains embedding provider choices and what secrets/configuration are needed.
 - [docs/vscode_chat_storage_structure.md](docs/vscode_chat_storage_structure.md) documents the first VS Code Copilot Chat test bed.
 - [docs/의식의 흐름 참고.md](docs/%EC%9D%98%EC%8B%9D%EC%9D%98%20%ED%9D%90%EB%A6%84%20%EC%B0%B8%EA%B3%A0.md) preserves the original ideation notes.
 
+## Quick Start
+
+Create local configuration:
+
+```bash
+cp .env.example .env
+```
+
+Start Postgres with pgvector:
+
+```bash
+docker compose up -d postgres
+```
+
+On Windows, make sure Docker Desktop is running before this step.
+
+Apply the initial schema:
+
+```bash
+docker compose --profile tools run --rm geond-migrate
+```
+
+Install the local CLI/MCP server for development:
+
+```bash
+pip install -e .
+```
+
+Parse a VS Code Copilot Chat workspaceStorage folder without writing to the database:
+
+```bash
+geond parse-vscode "C:/path/to/workspaceStorage/<hash>"
+```
+
+Import a workspaceStorage folder into Geond:
+
+```bash
+geond import-vscode "C:/path/to/workspaceStorage/<hash>" \
+    --workspace-uri "file:///C:/path/to/project" \
+    --workspace-name "my-project"
+```
+
+Run the MCP server:
+
+```bash
+geond-mcp
+```
+
 ## Status
 
-Design and planning stage. The repository currently contains research notes, architecture, and implementation plans. Code will be added incrementally, starting with a local Postgres schema and an MCP server skeleton.
+Early MVP stage. The repository contains research notes, architecture, implementation plans, a local Postgres/pgvector schema, a VS Code Copilot Chat read-only importer, a simple DB-backed retrieval layer, and an MCP server skeleton.
 
 ## Design Principles
 

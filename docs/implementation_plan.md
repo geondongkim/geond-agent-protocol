@@ -60,9 +60,9 @@ Tasks:
 - [x] 구현계획 문서 작성
 - [x] `.gitignore` 작성
 - [x] LICENSE 추가
-- [ ] `docker-compose.yml` 초안 작성
-- [ ] `schemas/` 디렉터리 생성
-- [ ] `src/` 또는 `packages/` 구조 결정
+- [x] `docker-compose.yml` 초안 작성
+- [x] `schemas/` 디렉터리 생성
+- [x] `src/` 또는 `packages/` 구조 결정
 
 Recommended structure:
 
@@ -97,10 +97,10 @@ Decision needed:
 
 Tasks:
 
-- [ ] Add Postgres image with pgvector.
-- [ ] Create initial SQL migration.
-- [ ] Add tables: `workspaces`, `agents`, `sessions`, `messages`, `events`, `file_snapshots`, `changesets`, `code_entities`, `code_edges`, `embeddings`, `agent_actions`, `file_reservations`.
-- [ ] Add indexes for workspace, session, file path, entity name, and vector search.
+- [x] Add Postgres image with pgvector.
+- [x] Create initial SQL migration.
+- [x] Add tables: `workspaces`, `agents`, `sessions`, `messages`, `events`, `file_snapshots`, `changesets`, `code_entities`, `code_edges`, `embeddings`, `agent_actions`, `file_reservations`.
+- [x] Add indexes for workspace, session, file path, entity name, and baseline text search.
 - [ ] Add seed script with sample workspace and session.
 
 Acceptance criteria:
@@ -113,11 +113,11 @@ Acceptance criteria:
 
 Tasks:
 
-- [ ] Parse `chat.ChatSessionStore.index` from `state.vscdb`.
-- [ ] Parse `chatSessions/{sessionId}.jsonl`.
-- [ ] Parse `GitHub.copilot-chat/transcripts/{sessionId}.jsonl`.
-- [ ] Parse `chatEditingSessions/{sessionId}/state.json`.
-- [ ] Link messages to file snapshots and changed files where possible.
+- [x] Parse `chat.ChatSessionStore.index` from `state.vscdb`.
+- [x] Parse `chatSessions/{sessionId}.jsonl`.
+- [x] Parse `GitHub.copilot-chat/transcripts/{sessionId}.jsonl`.
+- [x] Parse `chatEditingSessions/{sessionId}/state.json`.
+- [x] Link messages to file snapshots where possible.
 - [ ] Add fixture tests using sanitized sample data.
 
 Important design choice:
@@ -152,9 +152,9 @@ Acceptance criteria:
 
 Tasks:
 
-- [ ] Implement keyword search over messages, summaries, paths, and symbol names.
-- [ ] Add embedding provider abstraction.
-- [ ] Add local/no-op embedding mode for privacy-first development.
+- [x] Implement keyword search over messages.
+- [x] Add embedding provider abstraction.
+- [x] Add local/no-op embedding mode for privacy-first development.
 - [ ] Add pgvector search when embeddings are configured.
 - [ ] Implement hybrid scoring: semantic + symbol + recency + intent.
 - [ ] Return evidence objects, not only plain text.
@@ -168,11 +168,11 @@ Acceptance criteria:
 
 Tasks:
 
-- [ ] Choose MCP SDK.
-- [ ] Implement `search_dev_memory`.
-- [ ] Implement `get_symbol_context`.
-- [ ] Implement `explain_change`.
-- [ ] Implement `record_agent_action`.
+- [x] Choose MCP SDK.
+- [x] Implement `search_dev_memory`.
+- [x] Implement `get_symbol_context`.
+- [x] Implement `explain_change`.
+- [x] Implement `record_agent_action`.
 - [ ] Expose resources for sessions, symbols, changesets, and workspace timeline.
 - [ ] Add examples for Claude Desktop, Continue, and VS Code MCP client config if applicable.
 

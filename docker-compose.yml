@@ -1,0 +1,31 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: geond-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-geond}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-geond_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-geond}
+    ports:
+      - "${POSTGRES_PORT:-55432}:5432"
+    volumes:
+      - geond_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-geond} -d ${POSTGRES_DB:-geond}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  geond-migrate:
+    build: .
+    profiles: ["tools"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      GEOND_DATABASE_URL: postgresql://${POSTGRES_USER:-geond}:${POSTGRES_PASSWORD:-geond_dev_password}@postgres:5432/${POSTGRES_DB:-geond}
+    command: ["geond", "migrate", "--schema", "schemas/001_initial.sql"]
+
+volumes:
+  geond_postgres_data:
