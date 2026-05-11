@@ -446,6 +446,7 @@ def reserve_files(
     ttl_minutes: int | None = 120,
 ) -> dict[str, Any]:
     with conn.cursor() as cur:
+        cleanup_expired_reservations(cur, workspace_id)
         agent_id = upsert_agent(conn, agent_name)
         conflicts = active_file_reservations(cur, workspace_id, file_paths)
         reservation_ids: list[str] = []
@@ -530,6 +531,7 @@ def active_file_reservations(
     workspace_id: str,
     file_paths: list[str] | None = None,
 ) -> list[dict[str, Any]]:
+    cleanup_expired_reservations(cur, workspace_id)
     path_filter = ""
     params: list[Any] = [workspace_id]
     if file_paths:
@@ -587,6 +589,7 @@ def reserve_symbols(
     ttl_minutes: int | None = 120,
 ) -> dict[str, Any]:
     with conn.cursor() as cur:
+        cleanup_expired_reservations(cur, workspace_id)
         agent_id = upsert_agent(conn, agent_name)
         targets = resolve_symbol_targets(cur, workspace_id, symbols)
         conflicts = active_symbol_reservations(cur, workspace_id, symbols)
@@ -719,6 +722,7 @@ def active_symbol_reservations(
     workspace_id: str,
     symbols: list[str] | None = None,
 ) -> list[dict[str, Any]]:
+    cleanup_expired_reservations(cur, workspace_id)
     symbol_filter = ""
     params: list[Any] = [workspace_id]
     if symbols:
@@ -901,3 +905,45 @@ def close_handoff_summary(
         closed = cur.rowcount
     conn.commit()
     return closed
+
+
+def cleanup_expired_reservations(cur: Cursor, workspace_id: str | None = None) -> dict[str, int]:
+    workspace_filter = "AND workspace_id = %s" if workspace_id else ""
+    params = (workspace_id,) if workspace_id else ()
+    cur.execute(
+        f"""
+        UPDATE file_reservations
+        SET released_at = now(),
+            metadata = metadata || '{{"release_reason": "expired"}}'::jsonb
+        WHERE released_at IS NULL
+          AND expires_at IS NOT NULL
+          AND expires_at <= now()
+          {workspace_filter}
+        """,
+        params,
+    )
+    file_count = cur.rowcount
+    cur.execute(
+        f"""
+        UPDATE symbol_reservations
+        SET released_at = now(),
+            metadata = metadata || '{{"release_reason": "expired"}}'::jsonb
+        WHERE released_at IS NULL
+          AND expires_at IS NOT NULL
+          AND expires_at <= now()
+          {workspace_filter}
+        """,
+        params,
+    )
+    symbol_count = cur.rowcount
+    return {"file_reservations": file_count, "symbol_reservations": symbol_count}
+
+
+def cleanup_expired_reservations_for_workspace(
+    conn: Connection,
+    workspace_id: str | None = None,
+) -> dict[str, int]:
+    with conn.cursor() as cur:
+        result = cleanup_expired_reservations(cur, workspace_id)
+    conn.commit()
+    return result

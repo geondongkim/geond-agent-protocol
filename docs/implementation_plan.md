@@ -159,7 +159,7 @@ Tasks:
 
 - [ ] Add tree-sitter runtime.
 - [x] Support Python first with a minimal stdlib `ast` indexer.
-- [ ] Support TypeScript/JavaScript second.
+- [x] Support TypeScript/JavaScript second with a minimal regex-based indexer.
 - [x] Extract files, modules, classes, functions, methods, imports, and same-file basic calls.
 - [x] Store entities in `code_entities`.
 - [x] Store relationships in `code_edges`.
@@ -210,7 +210,7 @@ Tasks:
 
 - [x] Add `reserve_files` and `release_reservation`.
 - [x] Track active agent tasks through `agent_actions` and workspace timeline resources.
-- [ ] Add stale reservation expiry.
+- [x] Add stale reservation expiry cleanup.
 - [x] Add handoff summaries.
 - [x] Add conflict warnings when two agents target the same files.
 - [x] Add conflict warnings when two agents target the same symbols.
@@ -304,6 +304,9 @@ Completed locally:
 - Azure OpenAI, gateway, GitHub Models, and local embedding provider modes are documented and wired into the provider layer.
 - Claude Desktop, Continue, and VS Code MCP client config examples are available under `examples/mcp_clients`.
 - `benchmark-search` measures keyword/vector/hybrid retrieval latency for fixture or imported data.
+- `benchmark-search --save` persists runs and `benchmark-report` compares saved runs.
+- TypeScript/JavaScript indexing stores modules, imports, classes, functions, methods, and same-file call edges.
+- Expired file and symbol reservations are marked released automatically on conflict paths and manually through `cleanup-reservations`.
 - `examples/python_service` and `docs/demo.md` provide a runnable local demo path.
 
 Known implementation notes:

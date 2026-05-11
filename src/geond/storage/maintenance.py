@@ -153,6 +153,7 @@ def count_workspace_rows(cur: Any, workspace_id: str) -> dict[str, int]:
         "file_reservations",
         "symbol_reservations",
         "handoff_summaries",
+        "benchmark_runs",
         "redaction_findings",
     ):
         cur.execute(f"SELECT count(*) FROM {table} WHERE workspace_id = %s", (workspace_id,))

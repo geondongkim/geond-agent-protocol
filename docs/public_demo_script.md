@@ -31,11 +31,27 @@ uv run geond index-python examples/python_service \
 
 Show `build_answer` in [examples/python_service/service.py](../examples/python_service/service.py).
 
+Optional TypeScript shot:
+
+```bash
+uv run geond index-ts-js examples/typescript_service \
+    --root examples/typescript_service \
+    --workspace-uri file:///sample/geond \
+    --workspace-name geond-sample
+```
+
 ## Retrieval Shot
 
 ```bash
 uv run geond search app_context --mode keyword --workspace-uri file:///sample/geond
-uv run geond benchmark-search app_context build_answer --mode keyword --repeat 5 --workspace-uri file:///sample/geond
+uv run geond benchmark-search app_context build_answer \
+    --mode keyword \
+    --repeat 5 \
+    --workspace-uri file:///sample/geond \
+    --save \
+    --label public-demo-keyword
+
+uv run geond benchmark-report --workspace-uri file:///sample/geond
 ```
 
 Show:
@@ -60,6 +76,12 @@ uv run geond record-handoff <workspace-id> \
     --to-agent codex \
     --summary "build_answer is indexed and reserved for a rename check." \
     --next-step "Read symbol conflicts before editing service.py"
+```
+
+Then clean expired reservations if the recording uses short TTLs:
+
+```bash
+uv run geond cleanup-reservations --workspace-id <workspace-id>
 ```
 
 Show:

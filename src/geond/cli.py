@@ -8,6 +8,7 @@ from geond.adapters.codex import parse_storage as parse_codex_storage
 from geond.adapters.codex import to_summary as codex_to_summary
 from geond.adapters.vscode_copilot import parse_storage, to_summary
 from geond.code_graph.python_indexer import index_python_path
+from geond.code_graph.ts_js_indexer import index_ts_js_path
 from geond.config import get_settings
 from geond.db import connect, run_schema_file
 from geond.embeddings import get_embedding_provider
@@ -16,11 +17,17 @@ from geond.retrieval.simple import (
     search_dev_memory,
     vector_search_dev_memory,
 )
-from geond.storage.benchmark import benchmark_search
+from geond.storage.benchmark import (
+    benchmark_search,
+    compare_benchmark_runs,
+    list_benchmark_runs,
+    save_benchmark_run,
+)
 from geond.storage.code_graph import store_code_index
 from geond.storage.embeddings import embed_pending_messages, embedding_stats
 from geond.storage.maintenance import purge_workspace, seed_sample_workspace
 from geond.storage.repository import (
+    cleanup_expired_reservations_for_workspace,
     list_active_file_reservations,
     list_active_symbol_reservations,
     list_handoff_summaries,
@@ -89,6 +96,14 @@ def main() -> None:
     index_python.add_argument("--workspace-name", required=True)
     index_python.add_argument("--root", type=Path)
 
+    index_ts_js = subparsers.add_parser(
+        "index-ts-js", help="Index TypeScript/JavaScript files into the code graph tables"
+    )
+    index_ts_js.add_argument("path", type=Path)
+    index_ts_js.add_argument("--workspace-uri", required=True)
+    index_ts_js.add_argument("--workspace-name", required=True)
+    index_ts_js.add_argument("--root", type=Path)
+
     seed_sample = subparsers.add_parser(
         "seed-sample", help="Insert a small sample workspace and session"
     )
@@ -102,6 +117,11 @@ def main() -> None:
     conflicts.add_argument("workspace_id")
     conflicts.add_argument("--file", dest="files", action="append")
     conflicts.add_argument("--symbol", dest="symbols", action="append")
+
+    cleanup_reservations = subparsers.add_parser(
+        "cleanup-reservations", help="Mark expired file and symbol reservations as released"
+    )
+    cleanup_reservations.add_argument("--workspace-id")
 
     reserve_symbols_cmd = subparsers.add_parser(
         "reserve-symbols", help="Reserve code symbols for agent work"
@@ -144,6 +164,15 @@ def main() -> None:
     benchmark.add_argument("--limit", type=int, default=10)
     benchmark.add_argument("--workspace-uri")
     benchmark.add_argument("--source")
+    benchmark.add_argument("--save", action="store_true")
+    benchmark.add_argument("--label", default="")
+
+    benchmark_report = subparsers.add_parser(
+        "benchmark-report", help="Compare saved benchmark runs"
+    )
+    benchmark_report.add_argument("--workspace-uri")
+    benchmark_report.add_argument("--mode")
+    benchmark_report.add_argument("--limit", type=int, default=20)
     args = parser.parse_args()
 
     if args.command == "migrate":
@@ -166,6 +195,36 @@ def main() -> None:
                 source=args.source,
                 provider=provider,
             )
+            if args.save:
+                run_id = save_benchmark_run(
+                    conn,
+                    result,
+                    label=args.label,
+                    workspace_uri=args.workspace_uri,
+                    provider=settings.embedding_provider if provider else None,
+                    model=provider.model if provider else None,
+                    metadata={"source": "cli"},
+                )
+                result["benchmark_run_id"] = run_id
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+    if args.command == "benchmark-report":
+        with connect(get_settings()) as conn:
+            if args.mode:
+                result = {
+                    "runs": list_benchmark_runs(
+                        conn,
+                        workspace_uri=args.workspace_uri,
+                        mode=args.mode,
+                        limit=args.limit,
+                    )
+                }
+            else:
+                result = compare_benchmark_runs(
+                    conn,
+                    workspace_uri=args.workspace_uri,
+                    limit=args.limit,
+                )
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return
     if args.command == "parse-vscode":
@@ -294,6 +353,26 @@ def main() -> None:
         )
         return
 
+    if args.command == "index-ts-js":
+        root_path = args.root or args.path
+        indexed_files = index_ts_js_path(args.path, root_path=root_path)
+        with connect(get_settings()) as conn:
+            workspace_id = upsert_workspace(
+                conn,
+                root_uri=args.workspace_uri,
+                name=args.workspace_name,
+                metadata={"source": "cli"},
+            )
+            stats = store_code_index(conn, workspace_id, indexed_files)
+        print(
+            json.dumps(
+                {"status": "ok", "workspace_id": workspace_id, **stats},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
+
     if args.command == "seed-sample":
         with connect(get_settings()) as conn:
             run_schema_file(conn, args.schema)
@@ -324,6 +403,12 @@ def main() -> None:
                 ),
             }
         print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "cleanup-reservations":
+        with connect(get_settings()) as conn:
+            result = cleanup_expired_reservations_for_workspace(conn, args.workspace_id)
+        print(json.dumps({"status": "ok", **result}, ensure_ascii=False, indent=2))
         return
 
     if args.command == "reserve-symbols":

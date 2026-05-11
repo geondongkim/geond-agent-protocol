@@ -170,6 +170,14 @@ uv run geond index-python "C:/path/to/project" \
     --workspace-name "my-project"
 ```
 
+Index TypeScript or JavaScript code into the local code graph:
+
+```bash
+uv run geond index-ts-js "C:/path/to/project" \
+    --workspace-uri "file:///C:/path/to/project" \
+    --workspace-name "my-project"
+```
+
 Use the MCP tool `get_symbol_context` or the Python API to retrieve functions, classes, methods, modules, and imports stored in `code_entities`.
 
 Run the MCP server:
@@ -219,6 +227,19 @@ Delete a workspace and its cascaded local data:
 
 ```bash
 uv run geond purge-workspace "file:///sample/geond" --yes
+```
+
+Clean up expired reservations:
+
+```bash
+uv run geond cleanup-reservations --workspace-id "<workspace-id>"
+```
+
+Save and compare retrieval benchmarks:
+
+```bash
+uv run geond benchmark-search "app_context" --mode keyword --save --label baseline
+uv run geond benchmark-report --workspace-uri "file:///sample/geond"
 ```
 
 ## Status

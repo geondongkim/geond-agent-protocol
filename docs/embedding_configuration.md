@@ -98,18 +98,29 @@ Information needed:
 - embedding dimensions
 - regional/compliance constraints
 
-The MVP now includes an Azure OpenAI embedding adapter using API-key auth:
+The MVP now includes an Azure OpenAI embedding adapter using API-key or Entra ID auth:
 
 ```env
 GEOND_EMBEDDING_PROVIDER=azure-openai
 GEOND_AZURE_OPENAI_ENDPOINT=https://<resource>.openai.azure.com
 GEOND_AZURE_OPENAI_API_KEY=<key>
+GEOND_AZURE_OPENAI_AUTH_MODE=api-key
 GEOND_AZURE_OPENAI_API_VERSION=2024-10-21
 GEOND_AZURE_OPENAI_EMBEDDING_DEPLOYMENT=<deployment-name>
 GEOND_EMBEDDING_DIMENSIONS=1536
 ```
 
-Entra ID auth and Foundry project-managed model deployment are still future hardening items.
+For Entra ID:
+
+```env
+GEOND_EMBEDDING_PROVIDER=azure-openai
+GEOND_AZURE_OPENAI_ENDPOINT=https://<resource>.openai.azure.com
+GEOND_AZURE_OPENAI_AUTH_MODE=entra-id
+GEOND_AZURE_OPENAI_EMBEDDING_DEPLOYMENT=<deployment-name>
+GEOND_EMBEDDING_DIMENSIONS=1536
+```
+
+Foundry project-managed model deployment is still a future hardening item.
 
 ## 6. Local Embeddings
 
@@ -175,4 +186,4 @@ For the next implementation step:
 2. Compare `keyword`, `vector`, and `hybrid` retrieval on the same imported sessions.
 3. Add redaction tests.
 4. Benchmark OpenAI, Azure OpenAI, gateway, and local providers on the same fixture queries.
-5. Add persisted benchmark runs and provider comparison reports.
+5. Expand provider comparison reports with quality metrics, cost, and token accounting.

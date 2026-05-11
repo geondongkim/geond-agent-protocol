@@ -205,6 +205,19 @@ CREATE TABLE IF NOT EXISTS handoff_summaries (
     created_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS benchmark_runs (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id uuid REFERENCES workspaces(id) ON DELETE CASCADE,
+    label text NOT NULL DEFAULT '',
+    mode text NOT NULL,
+    provider text,
+    model text,
+    repeat integer NOT NULL,
+    result jsonb NOT NULL,
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS redaction_findings (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     workspace_id uuid REFERENCES workspaces(id) ON DELETE CASCADE,
@@ -231,5 +244,6 @@ CREATE INDEX IF NOT EXISTS idx_agent_actions_workspace ON agent_actions(workspac
 CREATE INDEX IF NOT EXISTS idx_file_reservations_active ON file_reservations(workspace_id, file_path) WHERE released_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_symbol_reservations_active ON symbol_reservations(workspace_id, symbol) WHERE released_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_handoff_summaries_workspace ON handoff_summaries(workspace_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_benchmark_runs_workspace ON benchmark_runs(workspace_id, created_at DESC);
 
 INSERT INTO schema_migrations (id) VALUES ('001_initial') ON CONFLICT DO NOTHING;

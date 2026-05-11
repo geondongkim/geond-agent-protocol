@@ -11,6 +11,7 @@ from geond.config import get_settings
 from geond.db import connect, run_schema_file
 from geond.storage.code_graph import store_code_index
 from geond.storage.repository import (
+    cleanup_expired_reservations_for_workspace,
     close_handoff_summary,
     list_active_file_reservations,
     list_active_symbol_reservations,
@@ -81,6 +82,14 @@ def build_answer(prompt):
                 purpose="parallel edit",
                 ttl_minutes=30,
             )
+            expired_file = reserve_files(
+                conn,
+                workspace_id,
+                agent_name="agent-old",
+                file_paths=["old.py"],
+                purpose="expired edit",
+                ttl_minutes=-1,
+            )
             symbol_first = reserve_symbols(
                 conn,
                 workspace_id,
@@ -97,6 +106,15 @@ def build_answer(prompt):
                 purpose="edit function body",
                 ttl_minutes=30,
             )
+            expired_symbol = reserve_symbols(
+                conn,
+                workspace_id,
+                agent_name="agent-old",
+                symbols=["expired_symbol"],
+                purpose="expired symbol edit",
+                ttl_minutes=-1,
+            )
+            cleaned = cleanup_expired_reservations_for_workspace(conn, workspace_id)
             active = list_active_file_reservations(conn, workspace_id)
             active_symbols = list_active_symbol_reservations(conn, workspace_id)
             record_agent_action(
@@ -139,7 +157,11 @@ def build_answer(prompt):
             assert symbol_first["conflicts"] == []
             assert symbol_first["resolved_symbols"]["build_answer"]["file_path"] == "service.py"
             assert symbol_second["conflicts"][0]["agent_name"] == "agent-a"
+            assert expired_file["reservation_ids"]
+            assert expired_symbol["reservation_ids"]
+            assert cleaned["symbol_reservations"] >= 1
             assert len(active) == 2
+            assert all(item["file_path"] != "old.py" for item in active)
             assert len(active_symbols) == 2
             assert handoffs[0]["handoff_id"] == handoff_id
             assert reservation_resource["symbol_reservations"]

@@ -149,8 +149,9 @@ The code graph builder parses files and creates structural relationships.
 
 MVP parsing strategy:
 
-- Use tree-sitter for syntax-level entities.
-- Add language-specific extractors for Python and TypeScript first.
+- Use lightweight language-specific extractors first: Python via stdlib `ast`, and
+  TypeScript/JavaScript via a conservative declaration scanner.
+- Add tree-sitter later for syntax-level precision across more languages.
 - Later add LSP-based references when available.
 
 Entity examples:
@@ -227,6 +228,9 @@ embeddings
 summaries
 agent_actions
 file_reservations
+symbol_reservations
+handoff_summaries
+benchmark_runs
 retrieval_events
 redaction_findings
 ```

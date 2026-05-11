@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 from geond.config import Settings
 
@@ -125,21 +125,38 @@ class AzureOpenAIEmbeddingProvider:
             raise RuntimeError("Install project dependencies first: uv sync") from exc
 
         endpoint = self.settings.azure_openai_endpoint or self.settings.embedding_base_url
-        api_key = self.settings.azure_openai_api_key or self.settings.embedding_api_key
         if not endpoint:
             raise RuntimeError("GEOND_AZURE_OPENAI_ENDPOINT is required for Azure OpenAI.")
-        if not api_key:
-            raise RuntimeError("GEOND_AZURE_OPENAI_API_KEY is required for Azure OpenAI.")
         if not self.model:
             raise RuntimeError("GEOND_AZURE_OPENAI_EMBEDDING_DEPLOYMENT is required.")
 
-        client = AzureOpenAI(
-            api_key=api_key,
-            azure_endpoint=endpoint,
-            api_version=self.settings.azure_openai_api_version,
-        )
+        client_kwargs = {
+            "azure_endpoint": endpoint,
+            "api_version": self.settings.azure_openai_api_version,
+        }
+        if self.settings.azure_openai_auth_mode in {"entra-id", "entra", "aad"}:
+            client_kwargs["azure_ad_token_provider"] = azure_ad_token_provider()
+        else:
+            api_key = self.settings.azure_openai_api_key or self.settings.embedding_api_key
+            if not api_key:
+                raise RuntimeError("GEOND_AZURE_OPENAI_API_KEY is required for Azure OpenAI.")
+            client_kwargs["api_key"] = api_key
+
+        client = AzureOpenAI(**client_kwargs)
         response = client.embeddings.create(model=self.model, input=texts)
         return [item.embedding for item in response.data]
+
+
+def azure_ad_token_provider() -> Any:
+    try:
+        from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+    except ImportError as exc:
+        raise RuntimeError("Install azure-identity to use Azure OpenAI Entra ID auth.") from exc
+
+    return get_bearer_token_provider(
+        DefaultAzureCredential(),
+        "https://cognitiveservices.azure.com/.default",
+    )
 
 
 def content_hash(text: str) -> str:

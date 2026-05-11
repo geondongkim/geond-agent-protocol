@@ -27,6 +27,15 @@ uv run geond index-python examples/python_service \
     --workspace-name "geond-sample"
 ```
 
+Index the TypeScript example too:
+
+```bash
+uv run geond index-ts-js examples/typescript_service \
+    --root examples/typescript_service \
+    --workspace-uri "file:///sample/geond" \
+    --workspace-name "geond-sample"
+```
+
 Then query the symbol graph:
 
 ```bash
@@ -91,6 +100,12 @@ uv run geond record-handoff <workspace-id> \
     --next-step "Run the Python indexer after changes"
 ```
 
+Expired reservations are cleaned automatically when conflict queries run. You can also run:
+
+```bash
+uv run geond cleanup-reservations --workspace-id <workspace-id>
+```
+
 ## 6. Benchmark Retrieval
 
 Keyword mode works without embedding credentials:
@@ -99,7 +114,15 @@ Keyword mode works without embedding credentials:
 uv run geond benchmark-search app_context build_answer \
     --mode keyword \
     --repeat 5 \
-    --workspace-uri "file:///sample/geond"
+    --workspace-uri "file:///sample/geond" \
+    --save \
+    --label demo-keyword
+```
+
+Compare saved runs:
+
+```bash
+uv run geond benchmark-report --workspace-uri "file:///sample/geond"
 ```
 
 Vector and hybrid benchmark modes use the configured embedding provider. See

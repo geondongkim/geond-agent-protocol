@@ -33,10 +33,26 @@ GEOND_PRIVACY_MODE=redacted-cloud
 GEOND_EMBEDDING_PROVIDER=azure-openai
 GEOND_AZURE_OPENAI_ENDPOINT=https://<resource>.openai.azure.com
 GEOND_AZURE_OPENAI_API_KEY=<key>
+GEOND_AZURE_OPENAI_AUTH_MODE=api-key
 GEOND_AZURE_OPENAI_API_VERSION=2024-10-21
 GEOND_AZURE_OPENAI_EMBEDDING_DEPLOYMENT=text-embedding-small-prod
 GEOND_EMBEDDING_DIMENSIONS=1536
 ```
+
+For Entra ID authentication, leave the key empty and use `DefaultAzureCredential`:
+
+```env
+GEOND_PRIVACY_MODE=redacted-cloud
+GEOND_EMBEDDING_PROVIDER=azure-openai
+GEOND_AZURE_OPENAI_ENDPOINT=https://<resource>.openai.azure.com
+GEOND_AZURE_OPENAI_AUTH_MODE=entra-id
+GEOND_AZURE_OPENAI_EMBEDDING_DEPLOYMENT=text-embedding-small-prod
+GEOND_EMBEDDING_DIMENSIONS=1536
+```
+
+The token scope is `https://cognitiveservices.azure.com/.default`. Configure `az login`,
+managed identity, workload identity, or environment credentials before running embedding
+commands.
 
 ## Gateway Or OpenAI-Compatible
 
@@ -50,6 +66,14 @@ GEOND_EMBEDDING_API_KEY=<gateway-key>
 GEOND_EMBEDDING_MODEL=text-embedding-3-small
 GEOND_EMBEDDING_DIMENSIONS=1536
 ```
+
+Recommended gateway policy:
+
+- Require workspace/project headers.
+- Apply per-agent and per-workspace rate limits.
+- Log model, workspace id, latency, and status.
+- Block or redact obvious secret patterns before forwarding.
+- Route deployments from `GEOND_EMBEDDING_MODEL`.
 
 ## Local-Only
 
