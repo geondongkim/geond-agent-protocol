@@ -4,7 +4,10 @@ from typing import Any
 
 from psycopg import Connection
 
+from geond.redaction import sanitize_text
 from geond.storage.embeddings import vector_to_sql
+
+SNIPPET_CHARS = 1200
 
 
 def search_dev_memory(
@@ -28,7 +31,7 @@ def search_dev_memory(
                 m.id::text,
                 m.role,
                 m.ordinal,
-                left(m.content, 1200) AS snippet,
+                m.content,
                 ts_rank(
                     to_tsvector('simple', left(m.content, 50000)),
                     plainto_tsquery('simple', %s)
@@ -60,7 +63,7 @@ def search_dev_memory(
             message_id=row[6],
             role=row[7],
             ordinal=row[8],
-            snippet=row[9],
+            snippet=make_snippet(row[9]),
             rank=float(row[10] or 0),
         )
         for row in rows
@@ -89,7 +92,7 @@ def vector_search_dev_memory(
                 m.id::text,
                 m.role,
                 m.ordinal,
-                left(m.content, 1200) AS snippet,
+                m.content,
                 e.embedding <=> %s::vector AS distance
             FROM embeddings e
             JOIN messages m ON m.id = e.target_id
@@ -127,7 +130,7 @@ def vector_search_dev_memory(
             message_id=row[6],
             role=row[7],
             ordinal=row[8],
-            snippet=row[9],
+            snippet=make_snippet(row[9]),
             distance=float(row[10]),
             score=1.0 - float(row[10]),
         )
@@ -251,7 +254,7 @@ def explain_change(conn: Connection, file_path: str, limit: int = 10) -> dict[st
 
         cur.execute(
             """
-            SELECT s.external_id, s.title, m.ordinal, left(m.content, 1200)
+            SELECT s.external_id, s.title, m.ordinal, m.content
             FROM messages m
             JOIN sessions s ON s.id = m.session_id
             WHERE m.content ILIKE %s
@@ -279,7 +282,7 @@ def explain_change(conn: Connection, file_path: str, limit: int = 10) -> dict[st
                 "session_external_id": row[0],
                 "session_title": row[1],
                 "ordinal": row[2],
-                "snippet": row[3],
+                "snippet": make_snippet(row[3]),
             }
             for row in messages
         ],
@@ -313,3 +316,10 @@ def get_symbol_context(conn: Connection, symbol: str, limit: int = 10) -> list[d
         }
         for row in rows
     ]
+
+
+def make_snippet(content: str, limit: int = SNIPPET_CHARS) -> str:
+    sanitized, _ = sanitize_text(content)
+    if len(sanitized) <= limit:
+        return sanitized
+    return sanitized[:limit]

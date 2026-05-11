@@ -118,6 +118,10 @@ uv run geond import-codex "C:/Users/<you>/.codex/sessions" \
     --workspace-name "my-project"
 ```
 
+Codex and VS Code imports pass raw event payloads and message content through a conservative redaction baseline before persistence. It masks sensitive keys, environment secret assignments, bearer tokens, GitHub-style tokens, OpenAI-style keys, and URL passwords while recording non-secret redaction metadata in `redaction_findings`.
+
+Repeat imports update existing sessions and remove stale message rows when local session files change. Retrieval snippets are generated in Python so multilingual text is sliced on character boundaries rather than database byte boundaries.
+
 Create embeddings for imported messages:
 
 ```bash

@@ -144,8 +144,8 @@ Tasks:
 - [x] Extract user and assistant messages from `response_item` and `event_msg` records.
 - [x] Import Codex sessions into the same `sessions`, `events`, and `messages` tables used by VS Code Copilot Chat.
 - [x] Add sanitized Codex fixture tests.
-- [ ] Add DB integration tests for `import-codex`.
-- [ ] Add redaction before persisting raw Codex payloads.
+- [x] Add DB integration tests for `import-codex`.
+- [x] Add redaction before persisting raw Codex payloads.
 
 Acceptance criteria:
 
@@ -279,14 +279,21 @@ Completed locally:
 - OpenAI `text-embedding-3-small` created 40 message embeddings.
 - Korean query comparison showed `keyword` returning no results while `vector` and `hybrid` retrieved the relevant chat memory.
 - Codex JSONL fixture parsing is covered by tests.
+- Codex JSONL fixtures are explicitly tracked despite the global `*.jsonl` ignore rule.
 - Current live Codex session summary parsed successfully: 169 events and 24 messages.
 - Sanitized Codex fixture import works against local Postgres.
+- Codex DB integration test verifies import, workspace/source filtered search, and raw payload redaction.
+- Redaction baseline masks sensitive keys, env secret assignments, bearer tokens, GitHub-style tokens, OpenAI-style keys, and URL passwords before persistence.
+- VS Code Copilot Chat Korean keyword and hybrid search were revalidated against the live recovered session.
+- Retrieval snippets are now sliced in Python after fetching text, avoiding DB-side multibyte truncation issues from `left(content, 1200)`.
+- Repeat imports delete stale message rows and their message embeddings when a local session file changes shape.
 - `search_dev_memory` now supports workspace/source filters and returns message evidence objects.
 - `uv run pytest` and `uv run ruff check .` pass.
 
 Known implementation notes:
 
 - Raw message content may be very large, so text-search indexing uses `left(content, 50000)`.
+- Result snippets are generated in Python to keep multilingual output valid even when local agent storage contains awkward Unicode boundaries.
 - Embedding requests use `GEOND_EMBEDDING_MAX_CHARS` to avoid provider token limits.
 - `GEOND_EMBEDDING_BASE_URL` should stay empty for default OpenAI unless a compatible gateway is used.
-- Codex import currently stores raw event payloads; redaction should be added before broader use.
+- The redaction baseline is conservative and pattern-based; broader privacy modes still need policy controls and purge workflows.

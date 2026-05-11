@@ -25,6 +25,7 @@ coverage/
 *.sqlite3
 *.vscdb
 *.jsonl
+!tests/fixtures/**/*.jsonl
 data/
 tmp/
 .local/

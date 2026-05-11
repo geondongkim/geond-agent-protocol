@@ -3,11 +3,13 @@ from __future__ import annotations
 from typing import Any
 
 from psycopg import Connection
+from psycopg.cursor import Cursor
 from psycopg.types.json import Jsonb
 
 from geond.adapters.codex import SOURCE as CODEX_SOURCE
 from geond.adapters.codex import ParsedCodexSession
 from geond.adapters.vscode_copilot import SOURCE, ParsedCopilotSession
+from geond.redaction import RedactionFinding, redact_text, redact_value
 
 
 def upsert_workspace(
@@ -56,6 +58,7 @@ def store_codex_session(conn: Connection, workspace_id: str, session: ParsedCode
 
         for event in session.events:
             source_id = f"{CODEX_SOURCE}:{session.session_id}:{event.ordinal}"
+            redacted_raw, findings = redact_value(event.raw)
             cur.execute(
                 """
                 INSERT INTO events (
@@ -81,12 +84,15 @@ def store_codex_session(conn: Connection, workspace_id: str, session: ParsedCode
                     source_id,
                     event.event_type,
                     event.timestamp,
-                    Jsonb(event.raw),
+                    Jsonb(redacted_raw),
                 ),
             )
+            insert_redaction_findings(cur, workspace_id, CODEX_SOURCE, source_id, findings)
 
         for message in session.messages:
             source_id = f"{CODEX_SOURCE}:{session.session_id}:{message.ordinal}"
+            redacted_content, content_findings = redact_text(message.content)
+            redacted_metadata, metadata_findings = redact_value(message.metadata)
             cur.execute(
                 """
                 SELECT id::text FROM events
@@ -111,10 +117,23 @@ def store_codex_session(conn: Connection, workspace_id: str, session: ParsedCode
                     raw_event_id,
                     message.role,
                     message.ordinal,
-                    message.content,
-                    Jsonb(message.metadata),
+                    redacted_content,
+                    Jsonb(redacted_metadata),
                 ),
             )
+            insert_redaction_findings(
+                cur,
+                workspace_id,
+                CODEX_SOURCE,
+                f"{source_id}:message",
+                content_findings + metadata_findings,
+            )
+
+        delete_stale_message_rows(
+            cur,
+            session_row_id=session_row_id,
+            current_ordinals=[message.ordinal for message in session.messages],
+        )
 
     conn.commit()
     return session_row_id
@@ -150,6 +169,8 @@ def store_vscode_session(conn: Connection, workspace_id: str, session: ParsedCop
 
         for line in session.chat_lines:
             source_id = f"{SOURCE}:{session.session_id}:chat:{line.ordinal}"
+            redacted_raw, event_findings = redact_value(line.raw)
+            redacted_content, content_findings = redact_text(line.content)
             cur.execute(
                 """
                 INSERT INTO events (
@@ -171,10 +192,11 @@ def store_vscode_session(conn: Connection, workspace_id: str, session: ParsedCop
                     SOURCE,
                     source_id,
                     f"chat.kind.{line.kind}",
-                    Jsonb(line.raw),
+                    Jsonb(redacted_raw),
                 ),
             )
             event_id = cur.fetchone()[0]
+            insert_redaction_findings(cur, workspace_id, SOURCE, source_id, event_findings)
             cur.execute(
                 """
                 INSERT INTO messages (session_id, raw_event_id, role, ordinal, content, metadata)
@@ -187,15 +209,23 @@ def store_vscode_session(conn: Connection, workspace_id: str, session: ParsedCop
                 (
                     session_row_id,
                     event_id,
-                    infer_role(line.kind, line.content),
+                    infer_role(line.kind, redacted_content),
                     line.ordinal,
-                    line.content,
+                    redacted_content,
                     Jsonb({"kind": line.kind, "source": "chatSessions"}),
                 ),
+            )
+            insert_redaction_findings(
+                cur,
+                workspace_id,
+                SOURCE,
+                f"{source_id}:message",
+                content_findings,
             )
 
         for event in session.transcript_events:
             source_id = f"{SOURCE}:{session.session_id}:transcript:{event.ordinal}"
+            redacted_raw, findings = redact_value(event.raw)
             cur.execute(
                 """
                 INSERT INTO events (
@@ -216,9 +246,16 @@ def store_vscode_session(conn: Connection, workspace_id: str, session: ParsedCop
                     SOURCE,
                     source_id,
                     event.event_type,
-                    Jsonb(event.raw),
+                    Jsonb(redacted_raw),
                 ),
             )
+            insert_redaction_findings(cur, workspace_id, SOURCE, source_id, findings)
+
+        delete_stale_message_rows(
+            cur,
+            session_row_id=session_row_id,
+            current_ordinals=[line.ordinal for line in session.chat_lines],
+        )
 
         if session.editing_session.state:
             initial_contents = session.editing_session.state.get("initialFileContents", [])
@@ -255,6 +292,84 @@ def infer_role(kind: int | None, content: str) -> str:
     if kind == 1 and content and len(content) > 20:
         return "metadata_or_text"
     return "metadata"
+
+
+def insert_redaction_findings(
+    cur: Cursor,
+    workspace_id: str,
+    source: str,
+    source_id: str,
+    findings: list[RedactionFinding],
+) -> None:
+    for finding in findings:
+        cur.execute(
+            """
+            INSERT INTO redaction_findings (
+                workspace_id,
+                source,
+                source_id,
+                finding_type,
+                action,
+                metadata
+            )
+            SELECT %s, %s, %s, %s, %s, %s
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM redaction_findings
+                WHERE workspace_id = %s
+                  AND source = %s
+                  AND source_id = %s
+                  AND finding_type = %s
+                  AND metadata->>'path' = %s
+            )
+            """,
+            (
+                workspace_id,
+                source,
+                source_id,
+                finding.finding_type,
+                finding.action,
+                Jsonb({"path": finding.path, **finding.metadata}),
+                workspace_id,
+                source,
+                source_id,
+                finding.finding_type,
+                finding.path,
+            ),
+        )
+
+
+def delete_stale_message_rows(
+    cur: Cursor,
+    session_row_id: str,
+    current_ordinals: list[int],
+) -> None:
+    if current_ordinals:
+        ordinal_filter = "AND NOT (m.ordinal = ANY(%s))"
+        params = (session_row_id, current_ordinals)
+    else:
+        ordinal_filter = ""
+        params = (session_row_id,)
+
+    cur.execute(
+        f"""
+        DELETE FROM embeddings e
+        USING messages m
+        WHERE e.target_table = 'messages'
+          AND e.target_id = m.id
+          AND m.session_id = %s
+          {ordinal_filter}
+        """,
+        params,
+    )
+    cur.execute(
+        f"""
+        DELETE FROM messages m
+        WHERE m.session_id = %s
+          {ordinal_filter}
+        """,
+        params,
+    )
 
 
 def record_agent_action(

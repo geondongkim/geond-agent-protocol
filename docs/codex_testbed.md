@@ -73,6 +73,9 @@ Verified locally:
 - Parsed the live current Codex session summary without printing message content.
 - Imported the sanitized Codex fixture into local Postgres.
 - Retrieved the imported fixture with workspace/source filters and message evidence.
+- Verified DB import integration against local Postgres when it is available.
+- Verified that fake sensitive values in raw Codex payloads are redacted before persistence.
+- Verified repeat import behavior through the shared storage path used by Codex and VS Code Copilot Chat.
 
 Observed live-session summary on 2026-05-11:
 
@@ -85,7 +88,7 @@ Observed live-session summary on 2026-05-11:
 
 ## Next Improvements
 
-- Add DB integration tests for `import-codex`.
-- Add redaction before importing raw Codex payloads.
+- Add a purge workflow for already-imported sensitive records.
+- Add configurable privacy modes around raw payload retention and cloud embedding.
 - Expand evidence objects to `explain_change` and symbol retrieval.
 - Add agent coordination tools that let Codex reserve files and publish handoff notes.
