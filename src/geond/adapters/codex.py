@@ -229,7 +229,7 @@ def extract_text(value: Any, max_depth: int = 6) -> str:
         return ""
     if isinstance(value, str):
         return value
-    if isinstance(value, (int, float, bool)):
+    if isinstance(value, int | float | bool):
         return str(value)
     if isinstance(value, list):
         return "\n".join(part for item in value if (part := extract_text(item, max_depth - 1)))

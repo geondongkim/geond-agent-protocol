@@ -38,4 +38,3 @@ def test_parse_codex_storage_uses_session_index_and_limit() -> None:
     assert len(sessions) == 1
     assert sessions[0].title == "Codex parser fixture"
     assert to_summary(sessions[0])["message_count"] == 3
-

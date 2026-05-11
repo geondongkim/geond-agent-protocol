@@ -158,11 +158,11 @@ Acceptance criteria:
 Tasks:
 
 - [ ] Add tree-sitter runtime.
-- [ ] Support Python first.
+- [x] Support Python first with a minimal stdlib `ast` indexer.
 - [ ] Support TypeScript/JavaScript second.
-- [ ] Extract files, modules, classes, functions, methods, imports, and basic calls.
-- [ ] Store entities in `code_entities`.
-- [ ] Store relationships in `code_edges`.
+- [x] Extract files, modules, classes, functions, methods, imports, and same-file basic calls.
+- [x] Store entities in `code_entities`.
+- [x] Store relationships in `code_edges`.
 - [ ] Link changesets to touched entities.
 
 Acceptance criteria:
@@ -249,7 +249,7 @@ Deliverables:
 
 ## 13. Open Decisions
 
-1. Python or TypeScript for the first MCP server?
+1. Python is the first MCP server/runtime. TypeScript can be added later as a client SDK or secondary package.
 2. Should raw chat content be stored by default, or only redacted normalized events?
 3. Which embedding provider should be first-class: local model, OpenAI-compatible API, or pluggable only?
 4. Should the first demo target Continue, Claude Desktop, VS Code MCP, or a custom CLI client?
@@ -258,13 +258,11 @@ Deliverables:
 
 ## 14. Recommended Immediate Next Steps
 
-1. Add Apache-2.0 LICENSE.
-2. Add `docker-compose.yml` with Postgres + pgvector.
-3. Add initial SQL migration.
-4. Implement a read-only ingester for one sanitized Copilot session.
-5. Implement `search_dev_memory` as a simple keyword search before adding embeddings.
-6. Add tree-sitter Python symbol extraction.
-7. Wrap search in MCP.
+1. Add VS Code Copilot fixture tests with sanitized sample storage.
+2. Harden the Python code graph indexer and decide whether tree-sitter replaces or augments the stdlib `ast` path.
+3. Expose MCP resources for sessions, symbols, changesets, and workspace timelines.
+4. Add agent coordination tools: file reservations, active work, and handoff summaries.
+5. Add a public demo with a small fixture project and MCP client config.
 
 The first version should optimize for one unmistakable demo: context crosses from one agent/session into another without manual re-explanation.
 
@@ -287,7 +285,10 @@ Completed locally:
 - VS Code Copilot Chat Korean keyword and hybrid search were revalidated against the live recovered session.
 - Retrieval snippets are now sliced in Python after fetching text, avoiding DB-side multibyte truncation issues from `left(content, 1200)`.
 - Repeat imports delete stale message rows and their message embeddings when a local session file changes shape.
+- Minimal Python code graph indexing stores modules, imports, classes, functions, methods, contains/imports edges, and same-file name-matched call edges.
+- Local repository indexing verified `19` Python files, `219` code entities, and `332` code edges with no index errors.
 - `search_dev_memory` now supports workspace/source filters and returns message evidence objects.
+- `.pre-commit-config.yaml` is installed through uv and validates `ruff` plus `ruff-format`.
 - `uv run pytest` and `uv run ruff check .` pass.
 
 Known implementation notes:

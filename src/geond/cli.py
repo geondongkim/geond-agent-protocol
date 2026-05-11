@@ -7,6 +7,7 @@ from pathlib import Path
 from geond.adapters.codex import parse_storage as parse_codex_storage
 from geond.adapters.codex import to_summary as codex_to_summary
 from geond.adapters.vscode_copilot import parse_storage, to_summary
+from geond.code_graph.python_indexer import index_python_path
 from geond.config import get_settings
 from geond.db import connect, run_schema_file
 from geond.embeddings import get_embedding_provider
@@ -15,6 +16,7 @@ from geond.retrieval.simple import (
     search_dev_memory,
     vector_search_dev_memory,
 )
+from geond.storage.code_graph import store_code_index
 from geond.storage.embeddings import embed_pending_messages, embedding_stats
 from geond.storage.repository import store_codex_session, store_vscode_session, upsert_workspace
 
@@ -66,6 +68,14 @@ def main() -> None:
     search.add_argument("--limit", type=int, default=10)
     search.add_argument("--workspace-uri")
     search.add_argument("--source")
+
+    index_python = subparsers.add_parser(
+        "index-python", help="Index Python files into the code graph tables"
+    )
+    index_python.add_argument("path", type=Path)
+    index_python.add_argument("--workspace-uri", required=True)
+    index_python.add_argument("--workspace-name", required=True)
+    index_python.add_argument("--root", type=Path)
 
     args = parser.parse_args()
 
@@ -179,6 +189,26 @@ def main() -> None:
                         source=args.source,
                     )
         print(json.dumps(results, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "index-python":
+        root_path = args.root or args.path
+        indexed_files = index_python_path(args.path, root_path=root_path)
+        with connect(get_settings()) as conn:
+            workspace_id = upsert_workspace(
+                conn,
+                root_uri=args.workspace_uri,
+                name=args.workspace_name,
+                metadata={"source": "cli"},
+            )
+            stats = store_code_index(conn, workspace_id, indexed_files)
+        print(
+            json.dumps(
+                {"status": "ok", "workspace_id": workspace_id, **stats},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
         return
 
 

@@ -57,7 +57,6 @@ Codex is now the second test bed. See [docs/codex_testbed.md](docs/codex_testbed
 - [docs/model_provider_strategy.md](docs/model_provider_strategy.md) records the OpenAI MVP choices and future provider comparison plan.
 - [docs/vscode_chat_storage_structure.md](docs/vscode_chat_storage_structure.md) documents the first VS Code Copilot Chat test bed.
 - [docs/codex_testbed.md](docs/codex_testbed.md) documents the Codex JSONL test bed.
-- [docs/의식의 흐름 참고.md](docs/%EC%9D%98%EC%8B%9D%EC%9D%98%20%ED%9D%90%EB%A6%84%20%EC%B0%B8%EA%B3%A0.md) preserves the original ideation notes.
 
 ## Quick Start
 
@@ -73,6 +72,13 @@ Install dependencies with uv:
 
 ```bash
 uv sync
+```
+
+Enable local pre-commit hooks:
+
+```bash
+uv run pre-commit install
+uv run pre-commit run --all-files
 ```
 
 Start Postgres with pgvector:
@@ -144,6 +150,16 @@ uv run geond search "추가 테스트베드" \
     --workspace-uri "file:///C:/path/to/project" \
     --source codex
 ```
+
+Index Python code into the local code graph:
+
+```bash
+uv run geond index-python "C:/path/to/project" \
+    --workspace-uri "file:///C:/path/to/project" \
+    --workspace-name "my-project"
+```
+
+Use the MCP tool `get_symbol_context` or the Python API to retrieve functions, classes, methods, modules, and imports stored in `code_entities`.
 
 Run the MCP server:
 

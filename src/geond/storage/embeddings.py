@@ -120,9 +120,4 @@ def embedding_stats(conn: Connection) -> dict[str, Any]:
             """
         )
         rows = cur.fetchall()
-    return {
-        "models": [
-            {"model": row[0], "dimensions": row[1], "count": row[2]}
-            for row in rows
-        ]
-    }
+    return {"models": [{"model": row[0], "dimensions": row[1], "count": row[2]} for row in rows]}
