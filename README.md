@@ -55,9 +55,13 @@ Codex is now the second test bed. See [docs/codex_testbed.md](docs/codex_testbed
 - [docs/implementation_plan.md](docs/implementation_plan.md) breaks the work into MVP phases and acceptance criteria.
 - [docs/embedding_configuration.md](docs/embedding_configuration.md) explains embedding provider choices and what secrets/configuration are needed.
 - [docs/model_provider_strategy.md](docs/model_provider_strategy.md) records the OpenAI MVP choices and future provider comparison plan.
+- [docs/provider_extensions.md](docs/provider_extensions.md) covers OpenAI, Azure OpenAI, gateway, and local embedding modes.
+- [docs/mcp_client_config.md](docs/mcp_client_config.md) provides Claude Desktop, Continue, and VS Code MCP client examples.
+- [docs/benchmarking.md](docs/benchmarking.md) shows the current retrieval benchmark command.
 - [docs/vscode_chat_storage_structure.md](docs/vscode_chat_storage_structure.md) documents the first VS Code Copilot Chat test bed.
 - [docs/codex_testbed.md](docs/codex_testbed.md) documents the Codex JSONL test bed.
 - [docs/demo.md](docs/demo.md) walks through the current seed, retrieval, code graph, MCP, coordination, and purge demo.
+- [docs/public_demo_script.md](docs/public_demo_script.md) provides a ready-to-record public demo/GIF script.
 
 ## Quick Start
 
@@ -181,6 +185,35 @@ Useful MCP resources:
 - `geond://symbols/{symbol}`
 - `geond://changesets`
 - `geond://workspaces/{workspace_id}/timeline`
+- `geond://workspaces/{workspace_id}/reservations`
+- `geond://workspaces/{workspace_id}/handoffs`
+
+Coordinate symbol-level work from CLI or MCP:
+
+```bash
+uv run geond reserve-symbols <workspace-id> \
+    --agent-name copilot \
+    --symbol build_answer \
+    --purpose "rename check"
+
+uv run geond conflicts <workspace-id> --symbol build_answer
+```
+
+Leave a handoff summary for the next agent:
+
+```bash
+uv run geond record-handoff <workspace-id> \
+    --from-agent copilot \
+    --to-agent codex \
+    --summary "build_answer is indexed; check symbol reservations before editing." \
+    --next-step "Run pytest after changing service.py"
+```
+
+Benchmark retrieval:
+
+```bash
+uv run geond benchmark-search app_context build_answer --mode keyword --repeat 5
+```
 
 Delete a workspace and its cascaded local data:
 
@@ -190,7 +223,7 @@ uv run geond purge-workspace "file:///sample/geond" --yes
 
 ## Status
 
-Early MVP stage. The repository contains research notes, architecture, implementation plans, a local Postgres/pgvector schema, VS Code Copilot Chat and Codex read-only importers, OpenAI embedding support, keyword/vector/hybrid retrieval, and an MCP server skeleton.
+Early MVP stage. The repository contains research notes, architecture, implementation plans, a local Postgres/pgvector schema, VS Code Copilot Chat and Codex read-only importers, OpenAI/Azure/gateway/local embedding provider modes, keyword/vector/hybrid retrieval, Python code graph indexing, coordination tools, and an MCP server.
 
 ## Design Principles
 

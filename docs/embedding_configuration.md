@@ -10,7 +10,7 @@ Required decisions:
 
 | Decision | Why it matters | Example |
 |---|---|---|
-| Provider | Determines API shape and auth | MVP: `openai`; later: `azure-openai`, `openai-compatible`, `local` |
+| Provider | Determines API shape and auth | `openai`, `azure-openai`, `gateway`, `local-openai-compatible`, `ollama` |
 | Model | Determines quality, cost, multilingual behavior, and vector dimensions | `text-embedding-3-small` |
 | Dimensions | Must match DB vector column in the MVP | `1536` |
 | API key | Needed for cloud providers | `GEOND_EMBEDDING_API_KEY=...` |
@@ -98,16 +98,27 @@ Information needed:
 - embedding dimensions
 - regional/compliance constraints
 
-The MVP code currently implements OpenAI/OpenAI-compatible configuration. Azure-specific auth should be added as a provider adapter instead of overloading the basic provider.
+The MVP now includes an Azure OpenAI embedding adapter using API-key auth:
+
+```env
+GEOND_EMBEDDING_PROVIDER=azure-openai
+GEOND_AZURE_OPENAI_ENDPOINT=https://<resource>.openai.azure.com
+GEOND_AZURE_OPENAI_API_KEY=<key>
+GEOND_AZURE_OPENAI_API_VERSION=2024-10-21
+GEOND_AZURE_OPENAI_EMBEDDING_DEPLOYMENT=<deployment-name>
+GEOND_EMBEDDING_DIMENSIONS=1536
+```
+
+Entra ID auth and Foundry project-managed model deployment are still future hardening items.
 
 ## 6. Local Embeddings
 
-Local embeddings are the best privacy default for developer machines, but they add packaging and performance work.
+Local embeddings are the best privacy default for developer machines. Geond supports local OpenAI-compatible endpoints without requiring an API key.
 
 Good future options:
 
 - sentence-transformers
-- Ollama embeddings
+- Ollama embeddings through the OpenAI-compatible endpoint
 - llama.cpp-compatible embedding endpoint
 - local OpenAI-compatible gateway
 
@@ -117,6 +128,25 @@ Information needed:
 - runtime command or base URL
 - dimensions
 - CPU/GPU constraints
+
+Example:
+
+```env
+GEOND_PRIVACY_MODE=local-only
+GEOND_EMBEDDING_PROVIDER=local-openai-compatible
+GEOND_EMBEDDING_BASE_URL=http://localhost:1234/v1
+GEOND_EMBEDDING_MODEL=local-embedding-model
+GEOND_EMBEDDING_DIMENSIONS=768
+```
+
+For Ollama-style setups:
+
+```env
+GEOND_PRIVACY_MODE=local-only
+GEOND_EMBEDDING_PROVIDER=ollama
+GEOND_EMBEDDING_MODEL=nomic-embed-text
+GEOND_EMBEDDING_DIMENSIONS=768
+```
 
 ## 7. Schema Dimension Caveat
 
@@ -132,7 +162,8 @@ That matches common 1536-dimensional embedding models. If you choose a different
 
 - Do not embed raw secrets.
 - Run redaction before external API calls.
-- Use `cloud-ok` mode knowingly for the MVP: text sent for embeddings leaves the machine.
+- Use `redacted-cloud` or `cloud-ok` mode knowingly: text sent for embeddings leaves the machine.
+- Use `local-only` to block cloud embedding providers before a network call.
 - Store the embedding model and content hash with every vector.
 - Make workspace purge delete embeddings too.
 
@@ -143,5 +174,5 @@ For the next implementation step:
 1. Use OpenAI `text-embedding-3-small` for the first baseline.
 2. Compare `keyword`, `vector`, and `hybrid` retrieval on the same imported sessions.
 3. Add redaction tests.
-4. Add Azure OpenAI as the next hosted provider.
-5. Add local embeddings as the privacy-friendly mode once provider boundaries are stable.
+4. Benchmark OpenAI, Azure OpenAI, gateway, and local providers on the same fixture queries.
+5. Add persisted benchmark runs and provider comparison reports.

@@ -351,9 +351,29 @@ redaction_findings
 
 - Marks files as actively edited by an agent to reduce collision risk.
 
+`reserve_symbols`
+
+- Marks symbols as actively edited by an agent and returns active symbol conflicts.
+
+`get_symbol_conflicts`
+
+- Lists active symbol reservations for a workspace or requested symbol set.
+
 `release_reservation`
 
 - Releases a reservation when an agent finishes or aborts.
+
+`release_symbol_reservation`
+
+- Releases a symbol reservation when the agent finishes or aborts symbol-level work.
+
+`record_handoff_summary`
+
+- Stores a concise transfer note, next steps, and blockers for the next agent.
+
+`list_handoff_summaries`
+
+- Lists open or closed handoff summaries.
 
 `summarize_project_state`
 
@@ -363,6 +383,8 @@ redaction_findings
 
 - `geond://workspaces`
 - `geond://workspaces/{workspace_id}/timeline`
+- `geond://workspaces/{workspace_id}/reservations`
+- `geond://workspaces/{workspace_id}/handoffs`
 - `geond://sessions/{session_id}`
 - `geond://symbols/{entity_id}`
 - `geond://changesets/{changeset_id}`

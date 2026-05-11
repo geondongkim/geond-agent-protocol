@@ -1,0 +1,20 @@
+{
+  "servers": {
+    "geond": {
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "--directory",
+        "C:/path/to/geond-agent-protocol",
+        "run",
+        "geond-mcp"
+      ],
+      "env": {
+        "GEOND_DATABASE_URL": "postgresql://geond:geond_dev_password@localhost:55432/geond",
+        "GEOND_PRIVACY_MODE": "redacted-cloud",
+        "GEOND_EMBEDDING_PROVIDER": "openai",
+        "GEOND_EMBEDDING_MODEL": "text-embedding-3-small"
+      }
+    }
+  }
+}

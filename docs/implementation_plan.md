@@ -197,7 +197,7 @@ Tasks:
 - [x] Implement `explain_change`.
 - [x] Implement `record_agent_action`.
 - [x] Expose resources for sessions, symbols, changesets, and workspace timeline.
-- [ ] Add examples for Claude Desktop, Continue, and VS Code MCP client config if applicable.
+- [x] Add examples for Claude Desktop, Continue, and VS Code MCP client config if applicable.
 
 Acceptance criteria:
 
@@ -211,9 +211,9 @@ Tasks:
 - [x] Add `reserve_files` and `release_reservation`.
 - [x] Track active agent tasks through `agent_actions` and workspace timeline resources.
 - [ ] Add stale reservation expiry.
-- [ ] Add handoff summaries.
+- [x] Add handoff summaries.
 - [x] Add conflict warnings when two agents target the same files.
-- [ ] Add conflict warnings when two agents target the same symbols.
+- [x] Add conflict warnings when two agents target the same symbols.
 
 Acceptance criteria:
 
@@ -235,6 +235,8 @@ Deliverables:
 - Short screen recording or GIF.
 - `examples/` fixture project.
 - `docs/demo.md`.
+- MCP client config examples.
+- Retrieval benchmark command and docs.
 - Public GitHub release `v0.1.0-alpha`.
 
 ## 12. Risks and Mitigations
@@ -259,11 +261,11 @@ Deliverables:
 
 ## 14. Recommended Immediate Next Steps
 
-1. Add VS Code Copilot fixture tests with sanitized sample storage.
+1. Add stale reservation cleanup and expiry automation.
 2. Harden the Python code graph indexer and decide whether tree-sitter replaces or augments the stdlib `ast` path.
-3. Expose MCP resources for sessions, symbols, changesets, and workspace timelines.
-4. Add agent coordination tools: file reservations, active work, and handoff summaries.
-5. Add a public demo with a small fixture project and MCP client config.
+3. Persist benchmark runs and compare OpenAI, Azure OpenAI, gateway, and local providers.
+4. Add a public demo recording or GIF and prepare `v0.1.0-alpha` release notes.
+5. Add TypeScript/JavaScript code graph indexing.
 
 The first version should optimize for one unmistakable demo: context crosses from one agent/session into another without manual re-explanation.
 
@@ -294,9 +296,14 @@ Completed locally:
 - VS Code Copilot Chat sanitized fixture tests cover `state.vscdb`, `chatSessions`, transcripts, and editing session state.
 - MCP resources expose sessions, session details, symbol context, changesets, and workspace timeline.
 - Agent coordination tools reserve files, surface active reservation conflicts, and release reservations.
+- Symbol-level reservations surface conflicts through CLI and MCP.
+- Handoff summaries can be recorded, listed, closed, and shown on workspace timeline resources.
 - `seed-sample` inserts a searchable sample workspace/session.
 - `purge-workspace --yes` deletes a workspace and cascaded local data.
-- `GEOND_PRIVACY_MODE=local-only` blocks cloud embedding providers until a local provider is configured.
+- `GEOND_PRIVACY_MODE=local-only` blocks cloud embedding providers while allowing local OpenAI-compatible and Ollama-style providers.
+- Azure OpenAI, gateway, GitHub Models, and local embedding provider modes are documented and wired into the provider layer.
+- Claude Desktop, Continue, and VS Code MCP client config examples are available under `examples/mcp_clients`.
+- `benchmark-search` measures keyword/vector/hybrid retrieval latency for fixture or imported data.
 - `examples/python_service` and `docs/demo.md` provide a runnable local demo path.
 
 Known implementation notes:

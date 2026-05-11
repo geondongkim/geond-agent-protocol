@@ -22,7 +22,10 @@ def seed_sample_workspace(conn: Connection) -> dict[str, Any]:
             """,
             (workspace_uri, "geond-sample", Jsonb({"source": "seed"})),
         )
-        workspace_id = cur.fetchone()[0]
+        workspace_row = cur.fetchone()
+        if workspace_row is None:
+            raise RuntimeError("Failed to seed sample workspace")
+        workspace_id = workspace_row[0]
         cur.execute(
             """
             INSERT INTO sessions (workspace_id, source, external_id, title, metadata)
@@ -41,7 +44,10 @@ def seed_sample_workspace(conn: Connection) -> dict[str, Any]:
                 Jsonb({"source": "seed"}),
             ),
         )
-        session_id = cur.fetchone()[0]
+        session_row = cur.fetchone()
+        if session_row is None:
+            raise RuntimeError("Failed to seed sample session")
+        session_id = session_row[0]
         messages = [
             ("user", 0, "왜 service.py 파일이 바뀌었어?"),
             (
@@ -145,6 +151,8 @@ def count_workspace_rows(cur: Any, workspace_id: str) -> dict[str, int]:
         "summaries",
         "agent_actions",
         "file_reservations",
+        "symbol_reservations",
+        "handoff_summaries",
         "redaction_findings",
     ):
         cur.execute(f"SELECT count(*) FROM {table} WHERE workspace_id = %s", (workspace_id,))

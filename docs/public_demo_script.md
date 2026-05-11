@@ -1,0 +1,104 @@
+# Public Demo Script
+
+This is the first recording/GIF script for `v0.1.0-alpha`. It keeps the demo local, repeatable, and short enough for a README GIF or release note clip.
+
+## Target Story
+
+One agent leaves memory, code graph context, reservations, and a handoff. A second MCP client can retrieve that context without manual re-explanation.
+
+## Setup Shot
+
+```bash
+docker compose up -d postgres
+docker compose --profile tools run --rm geond-migrate
+uv run geond seed-sample
+```
+
+Show:
+
+- Postgres is local.
+- Seed inserts a sample workspace/session.
+- No external agent service is required.
+
+## Code Graph Shot
+
+```bash
+uv run geond index-python examples/python_service \
+    --root examples/python_service \
+    --workspace-uri file:///sample/geond \
+    --workspace-name geond-sample
+```
+
+Show `build_answer` in [examples/python_service/service.py](../examples/python_service/service.py).
+
+## Retrieval Shot
+
+```bash
+uv run geond search app_context --mode keyword --workspace-uri file:///sample/geond
+uv run geond benchmark-search app_context build_answer --mode keyword --repeat 5 --workspace-uri file:///sample/geond
+```
+
+Show:
+
+- prior session memory returns evidence
+- benchmark output is structured JSON
+
+## Coordination Shot
+
+Use the workspace id returned from `seed-sample`.
+
+```bash
+uv run geond reserve-symbols <workspace-id> \
+    --agent-name copilot \
+    --symbol build_answer \
+    --purpose "prepare rename"
+
+uv run geond conflicts <workspace-id> --symbol build_answer
+
+uv run geond record-handoff <workspace-id> \
+    --from-agent copilot \
+    --to-agent codex \
+    --summary "build_answer is indexed and reserved for a rename check." \
+    --next-step "Read symbol conflicts before editing service.py"
+```
+
+Show:
+
+- symbol-level conflict appears before another agent edits
+- handoff is stored as durable memory
+
+## MCP Shot
+
+Start the server:
+
+```bash
+uv run geond-mcp
+```
+
+In the MCP client, show resources/tools:
+
+- `geond://sessions`
+- `geond://symbols/build_answer`
+- `geond://workspaces/<workspace-id>/timeline`
+- `geond://workspaces/<workspace-id>/reservations`
+- `geond://workspaces/<workspace-id>/handoffs`
+- `search_dev_memory`
+- `get_symbol_conflicts`
+- `list_handoff_summaries`
+
+Client config examples are in [examples/mcp_clients](../examples/mcp_clients).
+
+## Cleanup Shot
+
+```bash
+uv run geond purge-workspace file:///sample/geond --yes
+```
+
+Show cascaded deletion counts.
+
+## Capture Notes
+
+- Keep the terminal width around 100 columns.
+- Hide `.env` and any shell history that may contain secrets.
+- Use keyword mode for the GIF so the demo does not depend on external embedding credentials.
+- For a longer video, add a second pass with hybrid retrieval after configuring an embedding provider.

@@ -20,6 +20,13 @@ class Settings:
     embedding_api_key: str = os.getenv("GEOND_EMBEDDING_API_KEY") or os.getenv("OPENAI_API_KEY", "")
     embedding_dimensions: int = int(os.getenv("GEOND_EMBEDDING_DIMENSIONS", "1536"))
     embedding_max_chars: int = int(os.getenv("GEOND_EMBEDDING_MAX_CHARS", "3000"))
+    azure_openai_endpoint: str = os.getenv("GEOND_AZURE_OPENAI_ENDPOINT", "")
+    azure_openai_api_key: str = os.getenv("GEOND_AZURE_OPENAI_API_KEY", "")
+    azure_openai_api_version: str = os.getenv("GEOND_AZURE_OPENAI_API_VERSION", "2024-10-21")
+    azure_openai_embedding_deployment: str = os.getenv(
+        "GEOND_AZURE_OPENAI_EMBEDDING_DEPLOYMENT",
+        "",
+    )
     openai_api_key: str = os.getenv("OPENAI_API_KEY") or os.getenv("GEOND_EMBEDDING_API_KEY", "")
     llm_model_reasoning: str = os.getenv("GEOND_LLM_MODEL_REASONING") or "gpt-5.4"
     llm_model_balanced: str = os.getenv("GEOND_LLM_MODEL_BALANCED") or "gpt-5.4-mini"

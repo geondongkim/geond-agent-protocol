@@ -5,6 +5,11 @@ from typing import Any
 from psycopg import Connection
 
 from geond.retrieval.simple import get_symbol_context, make_snippet
+from geond.storage.repository import (
+    list_active_file_reservations,
+    list_active_symbol_reservations,
+    list_handoff_summaries,
+)
 
 
 def list_sessions(conn: Connection, limit: int = 50) -> list[dict[str, Any]]:
@@ -158,6 +163,31 @@ def list_changesets(conn: Connection, limit: int = 50) -> list[dict[str, Any]]:
     ]
 
 
+def get_workspace_reservations(conn: Connection, workspace_id: str) -> dict[str, Any]:
+    return {
+        "workspace_id": workspace_id,
+        "file_reservations": list_active_file_reservations(conn, workspace_id),
+        "symbol_reservations": list_active_symbol_reservations(conn, workspace_id),
+    }
+
+
+def get_workspace_handoffs(
+    conn: Connection,
+    workspace_id: str,
+    status: str | None = None,
+    limit: int = 50,
+) -> dict[str, Any]:
+    return {
+        "workspace_id": workspace_id,
+        "handoffs": list_handoff_summaries(
+            conn,
+            workspace_id_or_uri=workspace_id,
+            status=status,
+            limit=limit,
+        ),
+    }
+
+
 def get_workspace_timeline(
     conn: Connection,
     workspace_id: str,
@@ -209,11 +239,31 @@ def get_workspace_timeline(
                 FROM file_reservations fr
                 LEFT JOIN agents a ON a.id = fr.agent_id
                 WHERE fr.workspace_id = %s
+                UNION ALL
+                SELECT
+                    'symbol_reservation' AS item_kind,
+                    sr.id::text AS item_id,
+                    a.name AS source,
+                    coalesce(sr.qualified_name, sr.symbol) || ' ' || sr.purpose AS title,
+                    sr.created_at AS occurred_at
+                FROM symbol_reservations sr
+                LEFT JOIN agents a ON a.id = sr.agent_id
+                WHERE sr.workspace_id = %s
+                UNION ALL
+                SELECT
+                    'handoff_summary' AS item_kind,
+                    hs.id::text AS item_id,
+                    a.name AS source,
+                    hs.summary AS title,
+                    hs.created_at AS occurred_at
+                FROM handoff_summaries hs
+                LEFT JOIN agents a ON a.id = hs.from_agent_id
+                WHERE hs.workspace_id = %s
             ) timeline
             ORDER BY occurred_at DESC
             LIMIT %s
             """,
-            (workspace[0], workspace[0], workspace[0], limit),
+            (workspace[0], workspace[0], workspace[0], workspace[0], workspace[0], limit),
         )
         rows = cur.fetchall()
 

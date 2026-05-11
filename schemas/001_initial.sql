@@ -176,6 +176,35 @@ CREATE TABLE IF NOT EXISTS file_reservations (
     created_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS symbol_reservations (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    agent_id uuid REFERENCES agents(id) ON DELETE SET NULL,
+    symbol text NOT NULL,
+    qualified_name text,
+    file_path text,
+    purpose text NOT NULL DEFAULT '',
+    expires_at timestamptz,
+    released_at timestamptz,
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS handoff_summaries (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    from_agent_id uuid REFERENCES agents(id) ON DELETE SET NULL,
+    to_agent_id uuid REFERENCES agents(id) ON DELETE SET NULL,
+    to_agent_name text,
+    status text NOT NULL DEFAULT 'open',
+    summary text NOT NULL,
+    next_steps jsonb NOT NULL DEFAULT '[]'::jsonb,
+    blocked_on jsonb NOT NULL DEFAULT '[]'::jsonb,
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    closed_at timestamptz,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS redaction_findings (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     workspace_id uuid REFERENCES workspaces(id) ON DELETE CASCADE,
@@ -200,5 +229,7 @@ CREATE INDEX IF NOT EXISTS idx_embeddings_target ON embeddings(target_table, tar
 CREATE INDEX IF NOT EXISTS idx_embeddings_vector_hnsw ON embeddings USING hnsw (embedding vector_cosine_ops) WHERE embedding IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_agent_actions_workspace ON agent_actions(workspace_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_file_reservations_active ON file_reservations(workspace_id, file_path) WHERE released_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_symbol_reservations_active ON symbol_reservations(workspace_id, symbol) WHERE released_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_handoff_summaries_workspace ON handoff_summaries(workspace_id, created_at DESC);
 
 INSERT INTO schema_migrations (id) VALUES ('001_initial') ON CONFLICT DO NOTHING;

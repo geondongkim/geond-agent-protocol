@@ -16,10 +16,21 @@ from geond.retrieval.simple import (
     search_dev_memory,
     vector_search_dev_memory,
 )
+from geond.storage.benchmark import benchmark_search
 from geond.storage.code_graph import store_code_index
 from geond.storage.embeddings import embed_pending_messages, embedding_stats
 from geond.storage.maintenance import purge_workspace, seed_sample_workspace
-from geond.storage.repository import store_codex_session, store_vscode_session, upsert_workspace
+from geond.storage.repository import (
+    list_active_file_reservations,
+    list_active_symbol_reservations,
+    list_handoff_summaries,
+    record_handoff_summary,
+    release_symbol_reservation,
+    reserve_symbols,
+    store_codex_session,
+    store_vscode_session,
+    upsert_workspace,
+)
 
 
 def main() -> None:
@@ -87,6 +98,52 @@ def main() -> None:
     purge.add_argument("workspace_id_or_uri")
     purge.add_argument("--yes", action="store_true", help="Confirm deletion")
 
+    conflicts = subparsers.add_parser("conflicts", help="List active file and symbol reservations")
+    conflicts.add_argument("workspace_id")
+    conflicts.add_argument("--file", dest="files", action="append")
+    conflicts.add_argument("--symbol", dest="symbols", action="append")
+
+    reserve_symbols_cmd = subparsers.add_parser(
+        "reserve-symbols", help="Reserve code symbols for agent work"
+    )
+    reserve_symbols_cmd.add_argument("workspace_id")
+    reserve_symbols_cmd.add_argument("--agent-name", required=True)
+    reserve_symbols_cmd.add_argument("--symbol", dest="symbols", action="append", required=True)
+    reserve_symbols_cmd.add_argument("--purpose", default="")
+    reserve_symbols_cmd.add_argument("--ttl-minutes", type=int, default=120)
+
+    release_symbol = subparsers.add_parser("release-symbol", help="Release a symbol reservation")
+    release_symbol.add_argument("workspace_id")
+    release_symbol_target = release_symbol.add_mutually_exclusive_group(required=True)
+    release_symbol_target.add_argument("--reservation-id")
+    release_symbol_target.add_argument("--symbol")
+    release_symbol.add_argument("--agent-name")
+
+    record_handoff = subparsers.add_parser(
+        "record-handoff", help="Record a handoff summary for future agents"
+    )
+    record_handoff.add_argument("workspace_id")
+    record_handoff.add_argument("--from-agent", required=True)
+    record_handoff.add_argument("--to-agent")
+    record_handoff.add_argument("--summary", required=True)
+    record_handoff.add_argument("--next-step", dest="next_steps", action="append")
+    record_handoff.add_argument("--blocked-on", dest="blocked_on", action="append")
+    record_handoff.add_argument("--status", default="open")
+
+    list_handoffs = subparsers.add_parser("list-handoffs", help="List handoff summaries")
+    list_handoffs.add_argument("--workspace-id-or-uri")
+    list_handoffs.add_argument("--status")
+    list_handoffs.add_argument("--limit", type=int, default=50)
+
+    benchmark = subparsers.add_parser(
+        "benchmark-search", help="Measure retrieval latency for one or more queries"
+    )
+    benchmark.add_argument("queries", nargs="+")
+    benchmark.add_argument("--mode", choices=["keyword", "vector", "hybrid"], default="keyword")
+    benchmark.add_argument("--repeat", type=int, default=3)
+    benchmark.add_argument("--limit", type=int, default=10)
+    benchmark.add_argument("--workspace-uri")
+    benchmark.add_argument("--source")
     args = parser.parse_args()
 
     if args.command == "migrate":
@@ -95,6 +152,22 @@ def main() -> None:
         print(json.dumps({"status": "ok", "schema": str(args.schema)}, ensure_ascii=False))
         return
 
+    if args.command == "benchmark-search":
+        settings = get_settings()
+        provider = get_embedding_provider(settings) if args.mode in {"vector", "hybrid"} else None
+        with connect(settings) as conn:
+            result = benchmark_search(
+                conn,
+                queries=args.queries,
+                mode=args.mode,
+                repeat=args.repeat,
+                limit=args.limit,
+                workspace_uri=args.workspace_uri,
+                source=args.source,
+                provider=provider,
+            )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
     if args.command == "parse-vscode":
         sessions = parse_storage(args.storage_path, args.session_id)
         summaries = [to_summary(session) for session in sessions]
@@ -233,6 +306,74 @@ def main() -> None:
             raise SystemExit("Refusing to purge without --yes")
         with connect(get_settings()) as conn:
             result = purge_workspace(conn, args.workspace_id_or_uri)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "conflicts":
+        with connect(get_settings()) as conn:
+            result = {
+                "file_reservations": list_active_file_reservations(
+                    conn,
+                    args.workspace_id,
+                    args.files,
+                ),
+                "symbol_reservations": list_active_symbol_reservations(
+                    conn,
+                    args.workspace_id,
+                    args.symbols,
+                ),
+            }
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "reserve-symbols":
+        with connect(get_settings()) as conn:
+            result = reserve_symbols(
+                conn,
+                workspace_id=args.workspace_id,
+                agent_name=args.agent_name,
+                symbols=args.symbols,
+                purpose=args.purpose,
+                ttl_minutes=args.ttl_minutes,
+            )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "release-symbol":
+        with connect(get_settings()) as conn:
+            released = release_symbol_reservation(
+                conn,
+                workspace_id=args.workspace_id,
+                reservation_id=args.reservation_id,
+                symbol=args.symbol,
+                agent_name=args.agent_name,
+            )
+        print(json.dumps({"released": released}, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "record-handoff":
+        with connect(get_settings()) as conn:
+            handoff_id = record_handoff_summary(
+                conn,
+                workspace_id=args.workspace_id,
+                from_agent_name=args.from_agent,
+                to_agent_name=args.to_agent,
+                summary=args.summary,
+                next_steps=args.next_steps,
+                blocked_on=args.blocked_on,
+                status=args.status,
+            )
+        print(json.dumps({"handoff_id": handoff_id}, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "list-handoffs":
+        with connect(get_settings()) as conn:
+            result = list_handoff_summaries(
+                conn,
+                workspace_id_or_uri=args.workspace_id_or_uri,
+                status=args.status,
+                limit=args.limit,
+            )
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return
 
