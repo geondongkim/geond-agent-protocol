@@ -18,6 +18,7 @@ from geond.retrieval.simple import (
 )
 from geond.storage.code_graph import store_code_index
 from geond.storage.embeddings import embed_pending_messages, embedding_stats
+from geond.storage.maintenance import purge_workspace, seed_sample_workspace
 from geond.storage.repository import store_codex_session, store_vscode_session, upsert_workspace
 
 
@@ -76,6 +77,15 @@ def main() -> None:
     index_python.add_argument("--workspace-uri", required=True)
     index_python.add_argument("--workspace-name", required=True)
     index_python.add_argument("--root", type=Path)
+
+    seed_sample = subparsers.add_parser(
+        "seed-sample", help="Insert a small sample workspace and session"
+    )
+    seed_sample.add_argument("--schema", type=Path, default=Path("schemas/001_initial.sql"))
+
+    purge = subparsers.add_parser("purge-workspace", help="Delete one workspace and its data")
+    purge.add_argument("workspace_id_or_uri")
+    purge.add_argument("--yes", action="store_true", help="Confirm deletion")
 
     args = parser.parse_args()
 
@@ -209,6 +219,21 @@ def main() -> None:
                 indent=2,
             )
         )
+        return
+
+    if args.command == "seed-sample":
+        with connect(get_settings()) as conn:
+            run_schema_file(conn, args.schema)
+            result = seed_sample_workspace(conn)
+        print(json.dumps({"status": "ok", **result}, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "purge-workspace":
+        if not args.yes:
+            raise SystemExit("Refusing to purge without --yes")
+        with connect(get_settings()) as conn:
+            result = purge_workspace(conn, args.workspace_id_or_uri)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
         return
 
 

@@ -420,3 +420,159 @@ def record_agent_action(
         action_id = cur.fetchone()[0]
     conn.commit()
     return action_id
+
+
+def upsert_agent(conn: Connection, agent_name: str, kind: str = "coding-agent") -> str:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO agents (name, kind)
+            VALUES (%s, %s)
+            ON CONFLICT (name, kind) DO UPDATE SET name = EXCLUDED.name
+            RETURNING id::text
+            """,
+            (agent_name, kind),
+        )
+        agent_id = cur.fetchone()[0]
+    return agent_id
+
+
+def reserve_files(
+    conn: Connection,
+    workspace_id: str,
+    agent_name: str,
+    file_paths: list[str],
+    purpose: str = "",
+    ttl_minutes: int | None = 120,
+) -> dict[str, Any]:
+    with conn.cursor() as cur:
+        agent_id = upsert_agent(conn, agent_name)
+        conflicts = active_file_reservations(cur, workspace_id, file_paths)
+        reservation_ids: list[str] = []
+        for file_path in file_paths:
+            cur.execute(
+                """
+                INSERT INTO file_reservations (
+                    workspace_id,
+                    agent_id,
+                    file_path,
+                    purpose,
+                    expires_at
+                )
+                VALUES (
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    CASE
+                        WHEN %s::integer IS NULL THEN NULL
+                        ELSE now() + make_interval(mins => %s::integer)
+                    END
+                )
+                RETURNING id::text
+                """,
+                (workspace_id, agent_id, file_path, purpose, ttl_minutes, ttl_minutes),
+            )
+            reservation_ids.append(cur.fetchone()[0])
+    conn.commit()
+    return {
+        "reservation_ids": reservation_ids,
+        "conflicts": conflicts,
+    }
+
+
+def release_reservation(
+    conn: Connection,
+    workspace_id: str,
+    reservation_id: str | None = None,
+    file_path: str | None = None,
+    agent_name: str | None = None,
+) -> int:
+    if not reservation_id and not file_path:
+        raise ValueError("reservation_id or file_path is required")
+
+    with conn.cursor() as cur:
+        agent_filter = ""
+        params: list[Any] = [workspace_id]
+        if reservation_id:
+            target_filter = "id::text = %s"
+            params.append(reservation_id)
+        else:
+            target_filter = "file_path = %s"
+            params.append(file_path)
+
+        if agent_name:
+            agent_filter = """
+              AND agent_id IN (
+                  SELECT id FROM agents WHERE name = %s AND kind = 'coding-agent'
+              )
+            """
+            params.append(agent_name)
+
+        cur.execute(
+            f"""
+            UPDATE file_reservations
+            SET released_at = now()
+            WHERE workspace_id = %s
+              AND released_at IS NULL
+              AND {target_filter}
+              {agent_filter}
+            """,
+            params,
+        )
+        released = cur.rowcount
+    conn.commit()
+    return released
+
+
+def active_file_reservations(
+    cur: Cursor,
+    workspace_id: str,
+    file_paths: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    path_filter = ""
+    params: list[Any] = [workspace_id]
+    if file_paths:
+        path_filter = "AND fr.file_path = ANY(%s)"
+        params.append(file_paths)
+
+    cur.execute(
+        f"""
+        SELECT
+            fr.id::text,
+            fr.file_path,
+            fr.purpose,
+            fr.expires_at,
+            fr.created_at,
+            a.name
+        FROM file_reservations fr
+        LEFT JOIN agents a ON a.id = fr.agent_id
+        WHERE fr.workspace_id = %s
+          AND fr.released_at IS NULL
+          AND (fr.expires_at IS NULL OR fr.expires_at > now())
+          {path_filter}
+        ORDER BY fr.created_at DESC
+        """,
+        params,
+    )
+    rows = cur.fetchall()
+    return [
+        {
+            "reservation_id": row[0],
+            "file_path": row[1],
+            "purpose": row[2],
+            "expires_at": row[3].isoformat() if row[3] else None,
+            "created_at": row[4].isoformat() if row[4] else None,
+            "agent_name": row[5],
+        }
+        for row in rows
+    ]
+
+
+def list_active_file_reservations(
+    conn: Connection,
+    workspace_id: str,
+    file_paths: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    with conn.cursor() as cur:
+        return active_file_reservations(cur, workspace_id, file_paths)

@@ -57,6 +57,7 @@ Codex is now the second test bed. See [docs/codex_testbed.md](docs/codex_testbed
 - [docs/model_provider_strategy.md](docs/model_provider_strategy.md) records the OpenAI MVP choices and future provider comparison plan.
 - [docs/vscode_chat_storage_structure.md](docs/vscode_chat_storage_structure.md) documents the first VS Code Copilot Chat test bed.
 - [docs/codex_testbed.md](docs/codex_testbed.md) documents the Codex JSONL test bed.
+- [docs/demo.md](docs/demo.md) walks through the current seed, retrieval, code graph, MCP, coordination, and purge demo.
 
 ## Quick Start
 
@@ -93,6 +94,12 @@ Apply the initial schema:
 
 ```bash
 docker compose --profile tools run --rm geond-migrate
+```
+
+Insert a small sample workspace and session:
+
+```bash
+uv run geond seed-sample
 ```
 
 Parse a VS Code Copilot Chat workspaceStorage folder without writing to the database:
@@ -165,6 +172,20 @@ Run the MCP server:
 
 ```bash
 uv run geond-mcp
+```
+
+Useful MCP resources:
+
+- `geond://sessions`
+- `geond://sessions/{session_external_id}`
+- `geond://symbols/{symbol}`
+- `geond://changesets`
+- `geond://workspaces/{workspace_id}/timeline`
+
+Delete a workspace and its cascaded local data:
+
+```bash
+uv run geond purge-workspace "file:///sample/geond" --yes
 ```
 
 ## Status

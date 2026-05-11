@@ -1,0 +1,3 @@
+{"kind":1,"v":{"message":"사용자 질문: Flask application context 문제를 확인해줘."}}
+{"kind":2,"v":{"text":"응답: app_context 안에서 데이터베이스 초기화를 수행하도록 변경했습니다."}}
+{"kind":1,"v":{"content":"GEOND_EMBEDDING_API_KEY=dummy-secret-value should be redacted"}}

@@ -102,7 +102,7 @@ Tasks:
 - [x] Create initial SQL migration.
 - [x] Add tables: `workspaces`, `agents`, `sessions`, `messages`, `events`, `file_snapshots`, `changesets`, `code_entities`, `code_edges`, `embeddings`, `agent_actions`, `file_reservations`.
 - [x] Add indexes for workspace, session, file path, entity name, and baseline text search.
-- [ ] Add seed script with sample workspace and session.
+- [x] Add seed script with sample workspace and session.
 
 Acceptance criteria:
 
@@ -119,7 +119,7 @@ Tasks:
 - [x] Parse `GitHub.copilot-chat/transcripts/{sessionId}.jsonl`.
 - [x] Parse `chatEditingSessions/{sessionId}/state.json`.
 - [x] Link messages to file snapshots where possible.
-- [ ] Add fixture tests using sanitized sample data.
+- [x] Add fixture tests using sanitized sample data.
 
 Important design choice:
 
@@ -196,7 +196,7 @@ Tasks:
 - [x] Implement `get_symbol_context`.
 - [x] Implement `explain_change`.
 - [x] Implement `record_agent_action`.
-- [ ] Expose resources for sessions, symbols, changesets, and workspace timeline.
+- [x] Expose resources for sessions, symbols, changesets, and workspace timeline.
 - [ ] Add examples for Claude Desktop, Continue, and VS Code MCP client config if applicable.
 
 Acceptance criteria:
@@ -208,11 +208,12 @@ Acceptance criteria:
 
 Tasks:
 
-- [ ] Add `reserve_files` and `release_reservation`.
-- [ ] Track active agent tasks.
+- [x] Add `reserve_files` and `release_reservation`.
+- [x] Track active agent tasks through `agent_actions` and workspace timeline resources.
 - [ ] Add stale reservation expiry.
 - [ ] Add handoff summaries.
-- [ ] Add conflict warnings when two agents target the same files/symbols.
+- [x] Add conflict warnings when two agents target the same files.
+- [ ] Add conflict warnings when two agents target the same symbols.
 
 Acceptance criteria:
 
@@ -290,6 +291,13 @@ Completed locally:
 - `search_dev_memory` now supports workspace/source filters and returns message evidence objects.
 - `.pre-commit-config.yaml` is installed through uv and validates `ruff` plus `ruff-format`.
 - `uv run pytest` and `uv run ruff check .` pass.
+- VS Code Copilot Chat sanitized fixture tests cover `state.vscdb`, `chatSessions`, transcripts, and editing session state.
+- MCP resources expose sessions, session details, symbol context, changesets, and workspace timeline.
+- Agent coordination tools reserve files, surface active reservation conflicts, and release reservations.
+- `seed-sample` inserts a searchable sample workspace/session.
+- `purge-workspace --yes` deletes a workspace and cascaded local data.
+- `GEOND_PRIVACY_MODE=local-only` blocks cloud embedding providers until a local provider is configured.
+- `examples/python_service` and `docs/demo.md` provide a runnable local demo path.
 
 Known implementation notes:
 

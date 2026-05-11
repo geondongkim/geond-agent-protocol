@@ -1,0 +1,2 @@
+{"type":"userMessage","data":{"message":"Flask context 테스트가 실패합니다."}}
+{"type":"toolCall","data":{"summary":"pytest tests/test_app.py 실행"}}

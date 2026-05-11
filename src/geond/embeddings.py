@@ -28,6 +28,15 @@ class DisabledEmbeddingProvider:
 def get_embedding_provider(settings: Settings) -> EmbeddingProvider:
     if settings.embedding_provider in {"", "none", "disabled"}:
         return DisabledEmbeddingProvider()
+    if settings.privacy_mode == "local-only" and settings.embedding_provider in {
+        "openai",
+        "openai-compatible",
+        "github-models",
+    }:
+        raise RuntimeError(
+            "GEOND_PRIVACY_MODE=local-only blocks cloud embedding providers. "
+            "Use GEOND_EMBEDDING_PROVIDER=none or a local provider."
+        )
     if settings.embedding_provider in {"openai", "openai-compatible", "github-models"}:
         return OpenAICompatibleEmbeddingProvider(settings)
     raise ValueError(f"Unsupported embedding provider: {settings.embedding_provider}")

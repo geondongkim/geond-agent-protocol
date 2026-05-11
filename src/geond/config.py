@@ -29,6 +29,7 @@ class Settings:
         "true",
         "yes",
     }
+    privacy_mode: str = os.getenv("GEOND_PRIVACY_MODE", "redacted-cloud").lower()
     max_import_bytes: int = int(os.getenv("GEOND_MAX_IMPORT_BYTES", "104857600"))
 
 
