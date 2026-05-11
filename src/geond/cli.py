@@ -37,6 +37,7 @@ from geond.storage.repository import (
     list_active_file_reservations,
     list_active_symbol_reservations,
     list_handoff_summaries,
+    record_changeset,
     record_handoff_summary,
     release_symbol_reservation,
     reserve_symbols,
@@ -262,6 +263,19 @@ def main() -> None:
     benchmark_report.add_argument("--mode")
     benchmark_report.add_argument("--limit", type=int, default=20)
     benchmark_report.add_argument("--format", choices=["json", "markdown"], default="json")
+
+    record_changeset_cmd = subparsers.add_parser(
+        "record-changeset",
+        help="Record a changed file set and link it to indexed code entities",
+    )
+    record_changeset_cmd.add_argument("--workspace-uri", required=True)
+    record_changeset_cmd.add_argument("--workspace-name", required=True)
+    record_changeset_cmd.add_argument("--file", dest="files", action="append", required=True)
+    record_changeset_cmd.add_argument("--status", default="modified")
+    record_changeset_cmd.add_argument("--git-commit")
+    record_changeset_cmd.add_argument("--branch")
+    record_changeset_cmd.add_argument("--intent")
+    record_changeset_cmd.add_argument("--summary", default="")
     args = parser.parse_args()
 
     if args.command == "migrate":
@@ -325,6 +339,32 @@ def main() -> None:
             print(format_benchmark_report_markdown(result))
         else:
             print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+    if args.command == "record-changeset":
+        with connect(get_settings()) as conn:
+            workspace_id = upsert_workspace(
+                conn,
+                root_uri=args.workspace_uri,
+                name=args.workspace_name,
+                metadata={"source": "cli"},
+            )
+            result = record_changeset(
+                conn,
+                workspace_id=workspace_id,
+                files=[{"file_path": file_path, "status": args.status} for file_path in args.files],
+                git_commit=args.git_commit,
+                branch=args.branch,
+                intent=args.intent,
+                summary=args.summary,
+                metadata={"source": "cli"},
+            )
+        print(
+            json.dumps(
+                {"status": "ok", "workspace_id": workspace_id, **result},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
         return
     if args.command == "parse-vscode":
         sessions = parse_storage(args.storage_path, args.session_id)

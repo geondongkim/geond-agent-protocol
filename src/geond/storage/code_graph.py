@@ -6,6 +6,7 @@ from psycopg import Connection
 from psycopg.types.json import Jsonb
 
 from geond.code_graph.python_indexer import IndexedPythonFile
+from geond.storage.changesets import link_changesets_to_code_entities_cursor
 
 
 def store_code_index(
@@ -105,12 +106,21 @@ def store_code_index(
                 )
                 edge_count += 1
 
+        linked_entities = 0
+        if file_paths:
+            linked_entities = link_changesets_to_code_entities_cursor(
+                cur,
+                workspace_id,
+                file_paths=file_paths,
+            )
+
     conn.commit()
     return {
         "indexed_files": len(indexed_files),
         "file_paths": file_paths,
         "entities": entity_count,
         "edges": edge_count,
+        "linked_change_entities": linked_entities,
         "errors": [
             {"file_path": item.file_path, "errors": item.errors}
             for item in indexed_files

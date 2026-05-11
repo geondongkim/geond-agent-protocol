@@ -136,10 +136,12 @@ def list_changesets(conn: Connection, limit: int = 50) -> list[dict[str, Any]]:
                 c.intent,
                 c.summary,
                 c.created_at,
-                count(cf.id) AS file_count
+                count(DISTINCT cf.id) AS file_count,
+                count(DISTINCT celnk.code_entity_id) AS linked_entity_count
             FROM changesets c
             JOIN workspaces w ON w.id = c.workspace_id
             LEFT JOIN change_files cf ON cf.changeset_id = c.id
+            LEFT JOIN change_entities celnk ON celnk.changeset_id = c.id
             GROUP BY c.id, w.id, w.root_uri
             ORDER BY c.created_at DESC
             LIMIT %s
@@ -158,6 +160,7 @@ def list_changesets(conn: Connection, limit: int = 50) -> list[dict[str, Any]]:
             "summary": row[6],
             "created_at": row[7].isoformat() if row[7] else None,
             "file_count": row[8],
+            "linked_entity_count": row[9],
         }
         for row in rows
     ]

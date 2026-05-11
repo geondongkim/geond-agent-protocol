@@ -241,7 +241,15 @@ def explain_change(conn: Connection, file_path: str, limit: int = 10) -> dict[st
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT fs.file_uri, fs.content_hash, s.external_id, s.title, fs.metadata
+            SELECT
+                fs.id::text,
+                fs.workspace_id::text,
+                fs.file_uri,
+                fs.file_path,
+                fs.content_hash,
+                s.external_id,
+                s.title,
+                fs.metadata
             FROM file_snapshots fs
             LEFT JOIN sessions s ON s.id = fs.session_id
             WHERE fs.file_uri ILIKE %s OR fs.file_path ILIKE %s
@@ -254,9 +262,18 @@ def explain_change(conn: Connection, file_path: str, limit: int = 10) -> dict[st
 
         cur.execute(
             """
-            SELECT s.external_id, s.title, m.ordinal, m.content
+            SELECT
+                w.id::text,
+                w.root_uri,
+                s.source,
+                s.external_id,
+                s.title,
+                m.id::text,
+                m.ordinal,
+                m.content
             FROM messages m
             JOIN sessions s ON s.id = m.session_id
+            JOIN workspaces w ON w.id = s.workspace_id
             WHERE m.content ILIKE %s
             ORDER BY m.created_at DESC
             LIMIT %s
@@ -265,26 +282,166 @@ def explain_change(conn: Connection, file_path: str, limit: int = 10) -> dict[st
         )
         messages = cur.fetchall()
 
+        cur.execute(
+            """
+            SELECT
+                c.id::text,
+                c.workspace_id::text,
+                w.root_uri,
+                c.git_commit,
+                c.branch,
+                c.intent,
+                c.summary,
+                c.created_at,
+                cf.id::text,
+                cf.file_path,
+                cf.status,
+                cf.additions,
+                cf.deletions,
+                cf.metadata,
+                count(ce.id) AS linked_entity_count
+            FROM change_files cf
+            JOIN changesets c ON c.id = cf.changeset_id
+            JOIN workspaces w ON w.id = c.workspace_id
+            LEFT JOIN change_entities celnk ON celnk.change_file_id = cf.id
+            LEFT JOIN code_entities ce ON ce.id = celnk.code_entity_id
+            WHERE cf.file_path ILIKE %s
+            GROUP BY c.id, w.root_uri, cf.id
+            ORDER BY c.created_at DESC
+            LIMIT %s
+            """,
+            (pattern, limit),
+        )
+        changesets = cur.fetchall()
+
+        cur.execute(
+            """
+            SELECT DISTINCT
+                ce.id::text,
+                ce.workspace_id::text,
+                ce.kind,
+                ce.name,
+                ce.qualified_name,
+                ce.file_path,
+                ce.start_line,
+                ce.end_line,
+                ce.signature,
+                c.id::text,
+                c.summary,
+                cf.file_path,
+                cf.status,
+                celnk.match_type,
+                celnk.confidence
+            FROM change_files cf
+            JOIN changesets c ON c.id = cf.changeset_id
+            JOIN change_entities celnk ON celnk.change_file_id = cf.id
+            JOIN code_entities ce ON ce.id = celnk.code_entity_id
+            WHERE cf.file_path ILIKE %s
+            ORDER BY c.id::text, ce.start_line NULLS LAST, ce.qualified_name NULLS LAST
+            LIMIT %s
+            """,
+            (pattern, max(limit * 5, limit)),
+        )
+        touched_entities = cur.fetchall()
+
     return {
         "file_path": file_path,
         "snapshots": [
             {
-                "file_uri": row[0],
-                "content_hash": row[1],
-                "session_external_id": row[2],
-                "session_title": row[3],
-                "metadata": row[4],
+                "snapshot_id": row[0],
+                "workspace_id": row[1],
+                "file_uri": row[2],
+                "file_path": row[3],
+                "content_hash": row[4],
+                "session_external_id": row[5],
+                "session_title": row[6],
+                "metadata": row[7],
+                "evidence": {
+                    "kind": "file_snapshot",
+                    "snapshot_id": row[0],
+                    "workspace_id": row[1],
+                    "file_uri": row[2],
+                    "file_path": row[3],
+                },
             }
             for row in snapshots
         ],
         "related_messages": [
             {
-                "session_external_id": row[0],
-                "session_title": row[1],
-                "ordinal": row[2],
-                "snippet": make_snippet(row[3]),
+                "workspace_id": row[0],
+                "workspace_uri": row[1],
+                "source": row[2],
+                "session_external_id": row[3],
+                "session_title": row[4],
+                "message_id": row[5],
+                "ordinal": row[6],
+                "snippet": make_snippet(row[7]),
+                "evidence": {
+                    "kind": "message",
+                    "workspace_id": row[0],
+                    "workspace_uri": row[1],
+                    "source": row[2],
+                    "session_external_id": row[3],
+                    "message_id": row[5],
+                    "ordinal": row[6],
+                },
             }
             for row in messages
+        ],
+        "changesets": [
+            {
+                "changeset_id": row[0],
+                "workspace_id": row[1],
+                "workspace_uri": row[2],
+                "git_commit": row[3],
+                "branch": row[4],
+                "intent": row[5],
+                "summary": row[6],
+                "created_at": row[7].isoformat() if row[7] else None,
+                "change_file_id": row[8],
+                "file_path": row[9],
+                "status": row[10],
+                "additions": row[11],
+                "deletions": row[12],
+                "metadata": row[13],
+                "linked_entity_count": row[14],
+                "evidence": {
+                    "kind": "changeset",
+                    "changeset_id": row[0],
+                    "change_file_id": row[8],
+                    "workspace_id": row[1],
+                    "file_path": row[9],
+                },
+            }
+            for row in changesets
+        ],
+        "touched_entities": [
+            {
+                "entity_id": row[0],
+                "workspace_id": row[1],
+                "kind": row[2],
+                "name": row[3],
+                "qualified_name": row[4],
+                "file_path": row[5],
+                "start_line": row[6],
+                "end_line": row[7],
+                "signature": row[8],
+                "changeset_id": row[9],
+                "changeset_summary": row[10],
+                "change_file_path": row[11],
+                "change_status": row[12],
+                "match_type": row[13],
+                "confidence": row[14],
+                "evidence": {
+                    "kind": "code_entity",
+                    "entity_id": row[0],
+                    "workspace_id": row[1],
+                    "qualified_name": row[4],
+                    "file_path": row[5],
+                    "changeset_id": row[9],
+                },
+            }
+            for row in touched_entities
         ],
     }
 
@@ -294,7 +451,17 @@ def get_symbol_context(conn: Connection, symbol: str, limit: int = 10) -> list[d
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT kind, name, qualified_name, file_path, start_line, end_line, signature, metadata
+            SELECT
+                id::text,
+                workspace_id::text,
+                kind,
+                name,
+                qualified_name,
+                file_path,
+                start_line,
+                end_line,
+                signature,
+                metadata
             FROM code_entities
             WHERE name ILIKE %s OR qualified_name ILIKE %s
             ORDER BY created_at DESC
@@ -303,16 +470,83 @@ def get_symbol_context(conn: Connection, symbol: str, limit: int = 10) -> list[d
             (pattern, pattern, limit),
         )
         rows = cur.fetchall()
+        entity_ids = [row[0] for row in rows]
+        changesets_by_entity: dict[str, list[dict[str, Any]]] = {
+            entity_id: [] for entity_id in entity_ids
+        }
+        if entity_ids:
+            cur.execute(
+                """
+                SELECT
+                    celnk.code_entity_id::text,
+                    c.id::text,
+                    c.workspace_id::text,
+                    w.root_uri,
+                    c.git_commit,
+                    c.branch,
+                    c.intent,
+                    c.summary,
+                    c.created_at,
+                    cf.id::text,
+                    cf.file_path,
+                    cf.status,
+                    celnk.match_type,
+                    celnk.confidence
+                FROM change_entities celnk
+                JOIN changesets c ON c.id = celnk.changeset_id
+                JOIN workspaces w ON w.id = c.workspace_id
+                JOIN change_files cf ON cf.id = celnk.change_file_id
+                WHERE celnk.code_entity_id = ANY(%s::uuid[])
+                ORDER BY c.created_at DESC
+                """,
+                (entity_ids,),
+            )
+            for row in cur.fetchall():
+                changesets_by_entity.setdefault(row[0], []).append(
+                    {
+                        "changeset_id": row[1],
+                        "workspace_id": row[2],
+                        "workspace_uri": row[3],
+                        "git_commit": row[4],
+                        "branch": row[5],
+                        "intent": row[6],
+                        "summary": row[7],
+                        "created_at": row[8].isoformat() if row[8] else None,
+                        "change_file_id": row[9],
+                        "file_path": row[10],
+                        "status": row[11],
+                        "match_type": row[12],
+                        "confidence": row[13],
+                        "evidence": {
+                            "kind": "changeset",
+                            "changeset_id": row[1],
+                            "change_file_id": row[9],
+                            "workspace_id": row[2],
+                            "file_path": row[10],
+                        },
+                    }
+                )
+
     return [
         {
-            "kind": row[0],
-            "name": row[1],
-            "qualified_name": row[2],
-            "file_path": row[3],
-            "start_line": row[4],
-            "end_line": row[5],
-            "signature": row[6],
-            "metadata": row[7],
+            "entity_id": row[0],
+            "workspace_id": row[1],
+            "kind": row[2],
+            "name": row[3],
+            "qualified_name": row[4],
+            "file_path": row[5],
+            "start_line": row[6],
+            "end_line": row[7],
+            "signature": row[8],
+            "metadata": row[9],
+            "related_changesets": changesets_by_entity.get(row[0], []),
+            "evidence": {
+                "kind": "code_entity",
+                "entity_id": row[0],
+                "workspace_id": row[1],
+                "qualified_name": row[4],
+                "file_path": row[5],
+            },
         }
         for row in rows
     ]

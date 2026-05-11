@@ -145,6 +145,7 @@ def count_workspace_rows(cur: Any, workspace_id: str) -> dict[str, int]:
         "events",
         "file_snapshots",
         "changesets",
+        "change_entities",
         "code_entities",
         "code_edges",
         "embeddings",

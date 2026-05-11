@@ -12,6 +12,7 @@ from geond.adapters.codex import SOURCE as CODEX_SOURCE
 from geond.adapters.codex import ParsedCodexSession
 from geond.adapters.vscode_copilot import SOURCE, ParsedCopilotSession
 from geond.redaction import RedactionFinding, redact_text, redact_value
+from geond.storage.changesets import link_changesets_to_code_entities_cursor
 
 
 def upsert_workspace(
@@ -34,6 +35,94 @@ def upsert_workspace(
         workspace_id = cur.fetchone()[0]
     conn.commit()
     return workspace_id
+
+
+def record_changeset(
+    conn: Connection,
+    workspace_id: str,
+    files: list[dict[str, Any]],
+    git_commit: str | None = None,
+    branch: str | None = None,
+    intent: str | None = None,
+    summary: str = "",
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    if not files:
+        raise ValueError("at least one changed file is required")
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO changesets (
+                workspace_id,
+                git_commit,
+                branch,
+                intent,
+                summary,
+                metadata
+            )
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING id::text
+            """,
+            (
+                workspace_id,
+                git_commit,
+                branch,
+                intent,
+                summary,
+                Jsonb(metadata or {}),
+            ),
+        )
+        changeset_id = cur.fetchone()[0]
+        changed_files: list[dict[str, Any]] = []
+        for item in files:
+            file_path = str(item.get("file_path") or "").strip()
+            if not file_path:
+                raise ValueError("changed file entries require file_path")
+            cur.execute(
+                """
+                INSERT INTO change_files (
+                    changeset_id,
+                    file_path,
+                    status,
+                    additions,
+                    deletions,
+                    patch,
+                    metadata
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING id::text
+                """,
+                (
+                    changeset_id,
+                    file_path,
+                    item.get("status") or "modified",
+                    item.get("additions"),
+                    item.get("deletions"),
+                    item.get("patch"),
+                    Jsonb(item.get("metadata") or {}),
+                ),
+            )
+            changed_files.append(
+                {
+                    "change_file_id": cur.fetchone()[0],
+                    "file_path": file_path,
+                    "status": item.get("status") or "modified",
+                }
+            )
+
+        linked_entities = link_changesets_to_code_entities_cursor(
+            cur,
+            workspace_id,
+            changeset_ids=[changeset_id],
+        )
+
+    conn.commit()
+    return {
+        "changeset_id": changeset_id,
+        "files": changed_files,
+        "linked_change_entities": linked_entities,
+    }
 
 
 def store_codex_session(conn: Connection, workspace_id: str, session: ParsedCodexSession) -> str:

@@ -98,6 +98,9 @@ opt-in because it can be long-running:
 Sanitized evidence from the latest run is stored in
 [docs/azure_validation/20260512-combined](azure_validation/20260512-combined).
 
+For the full deployment walkthrough, including Azure Portal steps and AWS/GCP
+resource analogues, see [docs/deployment_guide.md](deployment_guide.md).
+
 ## Local-Only
 
 Local-only blocks cloud providers before a network call is made.

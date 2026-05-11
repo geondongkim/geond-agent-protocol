@@ -224,6 +224,7 @@ changesets
 change_files
 code_entities
 code_edges
+change_entities
 embeddings
 summaries
 agent_actions
@@ -300,6 +301,21 @@ redaction_findings
 - `edge_type`
 - `confidence`
 - `metadata`
+
+`change_entities`
+
+- `id`
+- `workspace_id`
+- `changeset_id`
+- `change_file_id`
+- `code_entity_id`
+- `match_type` (`file_path` now, `line_range` later)
+- `confidence`
+- `metadata`
+
+This table links changed files to indexed symbols so `explain_change` and
+`get_symbol_context` can return concrete evidence about which functions,
+classes, or modules were touched by a changeset.
 
 `agent_actions`
 

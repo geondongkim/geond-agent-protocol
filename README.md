@@ -57,9 +57,11 @@ validation status, and improvement plan.
 - [docs/embedding_configuration.md](docs/embedding_configuration.md) explains embedding provider choices and what secrets/configuration are needed.
 - [docs/model_provider_strategy.md](docs/model_provider_strategy.md) records the OpenAI MVP choices and future provider comparison plan.
 - [docs/provider_extensions.md](docs/provider_extensions.md) covers OpenAI, Azure OpenAI, gateway, and local embedding modes.
+- [docs/deployment_guide.md](docs/deployment_guide.md) explains Azure CLI and Azure Portal deployment flows with AWS/GCP resource analogues.
 - [docs/mcp_client_config.md](docs/mcp_client_config.md) provides Claude Desktop, Continue, and VS Code MCP client examples.
 - [docs/benchmarking.md](docs/benchmarking.md) shows the current retrieval benchmark command.
 - [docs/azure_validation/README.md](docs/azure_validation/README.md) records the temporary Azure OpenAI, APIM, and VM validation workflow and sanitized evidence.
+- [docs/improvement_backlog.md](docs/improvement_backlog.md) lists prioritized next improvements for evidence quality, deployment, retrieval, and adoption.
 - [docs/agent_testbeds.md](docs/agent_testbeds.md) compares the Copilot Chat, Codex, and Claude Code test beds.
 - [docs/vscode_chat_storage_structure.md](docs/vscode_chat_storage_structure.md) documents the first VS Code Copilot Chat test bed.
 - [docs/codex_testbed.md](docs/codex_testbed.md) documents the Codex JSONL test bed.
@@ -205,6 +207,17 @@ uv run geond index-tree-sitter "C:/path/to/project" \
 
 Use the MCP tool `get_symbol_context` or the Python API to retrieve functions, classes, methods, modules, and imports stored in `code_entities`.
 
+Record a changeset and link it to indexed code entities:
+
+```bash
+uv run geond record-changeset \
+    --workspace-uri "file:///C:/path/to/project" \
+    --workspace-name "my-project" \
+    --file "src/service.py" \
+    --intent "explain recent service change" \
+    --summary "Updated service behavior after agent review."
+```
+
 Run the MCP server:
 
 ```bash
@@ -255,6 +268,7 @@ Run a temporary Azure validation smoke test:
 ```
 
 The smoke script creates a tagged temporary resource group, validates Azure OpenAI embeddings, APIM Consumption gateway scaffolding, and a B2s VM multilingual embedding benchmark, then deletes the resource group. Sanitized evidence from the latest validation is in [docs/azure_validation/20260512-combined](docs/azure_validation/20260512-combined).
+For a step-by-step CLI and Azure Portal walkthrough, see [docs/deployment_guide.md](docs/deployment_guide.md).
 
 Delete a workspace and its cascaded local data:
 
@@ -286,7 +300,7 @@ Demo asset:
 
 ## Status
 
-Early MVP stage. The repository contains research notes, architecture, implementation plans, a local Postgres/pgvector schema, VS Code Copilot Chat, Codex, and Claude Code importers, OpenAI/Azure/gateway/local embedding provider modes, keyword/vector/hybrid retrieval, AST/regex/tree-sitter code graph indexing, benchmark quality metrics, coordination tools, demo assets, Azure samples, and an MCP server.
+Early MVP stage. The repository contains research notes, architecture, implementation plans, a local Postgres/pgvector schema, VS Code Copilot Chat, Codex, and Claude Code importers, OpenAI/Azure/gateway/local embedding provider modes, keyword/vector/hybrid retrieval, AST/regex/tree-sitter code graph indexing, changeset-to-symbol evidence links, benchmark quality metrics, coordination tools, demo assets, Azure samples, and an MCP server.
 
 ## Design Principles
 

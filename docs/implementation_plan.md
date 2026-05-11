@@ -184,7 +184,7 @@ Tasks:
 - [x] Extract files, modules, classes, functions, methods, imports, and same-file basic calls.
 - [x] Store entities in `code_entities`.
 - [x] Store relationships in `code_edges`.
-- [ ] Link changesets to touched entities.
+- [x] Link changesets to touched entities.
 
 Acceptance criteria:
 
@@ -201,7 +201,7 @@ Tasks:
 - [x] Add pgvector search when embeddings are configured.
 - [x] Implement first-pass hybrid scoring: keyword reciprocal rank + vector reciprocal rank.
 - [x] Return evidence objects for `search_dev_memory` results.
-- [ ] Expand evidence objects to `explain_change` and symbol retrieval.
+- [x] Expand evidence objects to `explain_change` and symbol retrieval.
 
 Acceptance criteria:
 
@@ -279,6 +279,8 @@ Current status:
 - [x] Reproducible GIF renderer added at `scripts/render_demo_gif.py`.
 - [x] APIM AI gateway policy sample added under `examples/azure/apim`.
 - [x] Foundry project-managed deployment skeleton added under `examples/azure/foundry`.
+- [x] Azure CLI and Azure Portal deployment guide added with AWS/GCP resource analogues.
+- [x] Changeset-to-code-entity links now surface touched symbols in `explain_change` and symbol context results.
 
 ## 12. Risks and Mitigations
 
@@ -302,11 +304,16 @@ Current status:
 
 ## 14. Recommended Immediate Next Steps
 
-1. Validate the tree-sitter index path on a larger mixed-language repository and tune duplicate import handling.
-2. Run saved benchmark comparisons across OpenAI, Azure OpenAI, APIM gateway, and local providers using the same judgments file.
-3. Expand benchmark reports with token usage and provider billing dimensions when gateways expose them.
-4. Turn the scripted GIF into a narrated public video and prepare `v0.1.0-alpha` release notes.
-5. Add stricter privacy-mode policy around raw event retention for thinking/tool payloads.
+1. Add patch-hunk parsing so changesets link to exact changed symbols by line range, not only by file path.
+2. Define a canonical evidence reference schema shared by messages, snapshots, symbols, changesets, and benchmark runs.
+3. Validate the tree-sitter index path on a larger mixed-language repository and tune duplicate import handling.
+4. Run saved benchmark comparisons across OpenAI, Azure OpenAI, APIM gateway, and local providers using the same judgments file.
+5. Expand benchmark reports with token usage and provider billing dimensions when gateways expose them.
+6. Turn the scripted GIF into a narrated public video and prepare `v0.1.0-alpha` release notes.
+7. Add stricter privacy-mode policy around raw event retention for thinking/tool payloads.
+8. Move long-lived Azure validation resources to Bicep or Terraform under `infra/` and validate with `what-if` before deployment.
+
+See [docs/improvement_backlog.md](improvement_backlog.md) for the deeper prioritized backlog.
 
 The first version should optimize for one unmistakable demo: context crosses from one agent/session into another without manual re-explanation.
 
@@ -349,6 +356,8 @@ Completed locally:
 - `benchmark-search --judgments` reports `recall_at_k`, `mrr`, and `ndcg_at_k`; `benchmark-report --format markdown` renders comparison tables.
 - TypeScript/JavaScript indexing stores modules, imports, classes, functions, methods, and same-file call edges.
 - `index-tree-sitter` indexes mixed Python/TypeScript/JavaScript paths and merges syntax-derived structure with AST/regex call-edge fallback.
+- Changesets can be recorded from the CLI and linked to indexed code entities by touched file path.
+- `explain_change` and `get_symbol_context` now return evidence objects and related changeset links for touched symbols.
 - Claude Code fixture parsing and DB import are covered by tests, including source-filtered retrieval and redaction.
 - Expired file and symbol reservations are marked released automatically on conflict paths and manually through `cleanup-reservations`.
 - `examples/python_service` and `docs/demo.md` provide a runnable local demo path.

@@ -124,6 +124,19 @@ CREATE TABLE IF NOT EXISTS code_edges (
     created_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS change_entities (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    changeset_id uuid NOT NULL REFERENCES changesets(id) ON DELETE CASCADE,
+    change_file_id uuid NOT NULL REFERENCES change_files(id) ON DELETE CASCADE,
+    code_entity_id uuid NOT NULL REFERENCES code_entities(id) ON DELETE CASCADE,
+    match_type text NOT NULL DEFAULT 'file_path',
+    confidence double precision NOT NULL DEFAULT 0.8,
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (change_file_id, code_entity_id)
+);
+
 CREATE TABLE IF NOT EXISTS embeddings (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
@@ -238,6 +251,8 @@ CREATE INDEX IF NOT EXISTS idx_file_snapshots_workspace_path ON file_snapshots(w
 CREATE INDEX IF NOT EXISTS idx_code_entities_workspace_name ON code_entities(workspace_id, name);
 CREATE INDEX IF NOT EXISTS idx_code_entities_workspace_path ON code_entities(workspace_id, file_path);
 CREATE INDEX IF NOT EXISTS idx_code_edges_workspace_type ON code_edges(workspace_id, edge_type);
+CREATE INDEX IF NOT EXISTS idx_change_entities_workspace ON change_entities(workspace_id, changeset_id);
+CREATE INDEX IF NOT EXISTS idx_change_entities_code_entity ON change_entities(code_entity_id);
 CREATE INDEX IF NOT EXISTS idx_embeddings_target ON embeddings(target_table, target_id, model);
 CREATE INDEX IF NOT EXISTS idx_embeddings_vector_hnsw ON embeddings USING hnsw (embedding vector_cosine_ops) WHERE embedding IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_agent_actions_workspace ON agent_actions(workspace_id, created_at DESC);

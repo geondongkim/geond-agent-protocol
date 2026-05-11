@@ -23,3 +23,7 @@ For a cheaper partial pass, skip slow resources explicitly:
 ```powershell
 .\scripts\azure_validation_smoke.ps1 -SkipApim -SkipVm
 ```
+
+For step-by-step Azure CLI commands, Azure Portal instructions, AWS/GCP resource
+analogues, and cost-signal guidance, see
+[docs/deployment_guide.md](../deployment_guide.md).
