@@ -1,0 +1,38 @@
+# Local secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Node/TypeScript
+node_modules/
+dist/
+build/
+coverage/
+
+# Local data and databases
+*.db
+*.sqlite
+*.sqlite3
+*.vscdb
+*.jsonl
+data/
+tmp/
+.local/
+
+# VS Code and OS noise
+.vscode/
+.DS_Store
+Thumbs.db
+
+# One-off local investigation scripts
+_*.py
+migrate_chat_offline.py
