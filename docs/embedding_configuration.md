@@ -1,6 +1,6 @@
 # Embedding Configuration
 
-Geond can run without embeddings. The MVP starts with keyword and metadata search, then adds vector retrieval when an embedding provider is configured.
+Geond can run without embeddings, but the MVP intentionally uses embeddings so keyword-only retrieval can be compared with vector and hybrid retrieval.
 
 ## 1. What I Need From You
 
@@ -10,8 +10,8 @@ Required decisions:
 
 | Decision | Why it matters | Example |
 |---|---|---|
-| Provider | Determines API shape and auth | `none`, `openai`, `openai-compatible`, `github-models`, later `local` |
-| Model | Determines quality, cost, and vector dimensions | `text-embedding-3-small` |
+| Provider | Determines API shape and auth | MVP: `openai`; later: `azure-openai`, `openai-compatible`, `local` |
+| Model | Determines quality, cost, multilingual behavior, and vector dimensions | `text-embedding-3-small` |
 | Dimensions | Must match DB vector column in the MVP | `1536` |
 | API key | Needed for cloud providers | `GEOND_EMBEDDING_API_KEY=...` |
 | Base URL | Needed for OpenAI-compatible hosts | `https://api.openai.com/v1` or provider-specific |
@@ -19,21 +19,30 @@ Required decisions:
 
 ## 2. Recommended MVP Setup
 
-Start with embeddings disabled.
+Start with OpenAI embeddings enabled.
 
 ```env
-GEOND_EMBEDDING_PROVIDER=none
+GEOND_EMBEDDING_PROVIDER=openai
+GEOND_EMBEDDING_MODEL=text-embedding-3-small
+GEOND_EMBEDDING_BASE_URL=
+GEOND_EMBEDDING_API_KEY=your_api_key_here
+GEOND_EMBEDDING_DIMENSIONS=1536
+GEOND_EMBEDDING_MAX_CHARS=3000
 ```
 
-This keeps the first importer and MCP tools local-only. It is enough for:
+Leave `GEOND_EMBEDDING_BASE_URL` empty for the default OpenAI endpoint. Set it only for OpenAI-compatible gateways or non-default hosts.
+
+`GEOND_EMBEDDING_MAX_CHARS` keeps very large tool outputs under provider token limits. The raw message can still be stored locally; the embedding request uses the truncated text.
+
+This enables:
 
 - parsing VS Code Copilot Chat sessions
 - storing messages and events
 - keyword search
+- vector search
+- hybrid keyword + vector search
 - explaining file changes from imported file snapshots
 - testing MCP connectivity
-
-Then enable embeddings only after redaction and data retention choices are clear.
 
 ## 3. OpenAI-Compatible Provider
 
@@ -47,10 +56,10 @@ GEOND_EMBEDDING_API_KEY=your_api_key_here
 GEOND_EMBEDDING_DIMENSIONS=1536
 ```
 
-Install optional dependencies:
+Install dependencies with uv:
 
 ```bash
-pip install -e .[embeddings]
+uv sync
 ```
 
 ## 4. GitHub Models
@@ -74,7 +83,7 @@ GEOND_EMBEDDING_API_KEY=<github-token>
 GEOND_EMBEDDING_DIMENSIONS=<model-dimensions>
 ```
 
-Before locking this in, verify the exact embedding model and endpoint from the current GitHub Models catalog.
+Before locking this in, verify the exact embedding model and endpoint from the current GitHub Models catalog. GitHub Models is not the MVP default.
 
 ## 5. Azure OpenAI or Microsoft Foundry
 
@@ -89,7 +98,7 @@ Information needed:
 - embedding dimensions
 - regional/compliance constraints
 
-The MVP code currently implements OpenAI-compatible configuration. Azure-specific auth should be added as a provider adapter instead of overloading the basic provider.
+The MVP code currently implements OpenAI/OpenAI-compatible configuration. Azure-specific auth should be added as a provider adapter instead of overloading the basic provider.
 
 ## 6. Local Embeddings
 
@@ -123,7 +132,7 @@ That matches common 1536-dimensional embedding models. If you choose a different
 
 - Do not embed raw secrets.
 - Run redaction before external API calls.
-- Keep `GEOND_EMBEDDING_PROVIDER=none` until the redaction policy is implemented.
+- Use `cloud-ok` mode knowingly for the MVP: text sent for embeddings leaves the machine.
 - Store the embedding model and content hash with every vector.
 - Make workspace purge delete embeddings too.
 
@@ -131,8 +140,8 @@ That matches common 1536-dimensional embedding models. If you choose a different
 
 For the next implementation step:
 
-1. Keep embeddings disabled.
-2. Finish keyword search and import flow.
+1. Use OpenAI `text-embedding-3-small` for the first baseline.
+2. Compare `keyword`, `vector`, and `hybrid` retrieval on the same imported sessions.
 3. Add redaction tests.
-4. Add OpenAI-compatible embeddings behind an explicit command.
-5. Add local embeddings as the privacy-friendly default once retrieval quality is proven.
+4. Add Azure OpenAI as the next hosted provider.
+5. Add local embeddings as the privacy-friendly mode once provider boundaries are stable.

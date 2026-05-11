@@ -9,6 +9,7 @@ COPY pyproject.toml README.md LICENSE ./
 COPY src ./src
 COPY schemas ./schemas
 
-RUN pip install --no-cache-dir -e .
+RUN pip install --no-cache-dir uv \
+    && uv pip install --system --no-cache -e .
 
 CMD ["geond-mcp"]

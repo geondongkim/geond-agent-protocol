@@ -6,19 +6,47 @@ from mcp.server.fastmcp import FastMCP
 
 from geond.config import get_settings
 from geond.db import connect
+from geond.embeddings import get_embedding_provider
 from geond.retrieval.simple import explain_change as explain_change_query
 from geond.retrieval.simple import get_symbol_context as get_symbol_context_query
+from geond.retrieval.simple import hybrid_search_dev_memory as hybrid_search_dev_memory_query
 from geond.retrieval.simple import search_dev_memory as search_dev_memory_query
+from geond.retrieval.simple import vector_search_dev_memory as vector_search_dev_memory_query
 from geond.storage.repository import record_agent_action as record_agent_action_row
 
 mcp = FastMCP("geond-agent-protocol")
 
 
 @mcp.tool()
-def search_dev_memory(query: str, limit: int = 10) -> list[dict[str, Any]]:
+def search_dev_memory(
+    query: str,
+    limit: int = 10,
+    mode: str = "hybrid",
+) -> list[dict[str, Any]]:
     """Search shared development memory across imported sessions and messages."""
-    with connect(get_settings()) as conn:
-        return search_dev_memory_query(conn, query, limit)
+    settings = get_settings()
+    with connect(settings) as conn:
+        if mode == "keyword":
+            return search_dev_memory_query(conn, query, limit)
+
+        provider = get_embedding_provider(settings)
+        query_vector = provider.embed([query])[0]
+        if mode == "vector":
+            return vector_search_dev_memory_query(
+                conn,
+                query_vector=query_vector,
+                model=provider.model,
+                limit=limit,
+            )
+        if mode == "hybrid":
+            return hybrid_search_dev_memory_query(
+                conn,
+                query=query,
+                query_vector=query_vector,
+                model=provider.model,
+                limit=limit,
+            )
+        raise ValueError("mode must be one of: keyword, vector, hybrid")
 
 
 @mcp.tool()

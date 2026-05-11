@@ -49,9 +49,7 @@ class OpenAICompatibleEmbeddingProvider:
         try:
             from openai import OpenAI
         except ImportError as exc:
-            raise RuntimeError(
-                "Install embedding extras first: pip install -e .[embeddings]"
-            ) from exc
+            raise RuntimeError("Install project dependencies first: uv sync") from exc
 
         if not self.settings.embedding_api_key:
             raise RuntimeError("GEOND_EMBEDDING_API_KEY is required for embeddings.")

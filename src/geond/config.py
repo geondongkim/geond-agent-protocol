@@ -14,11 +14,16 @@ class Settings:
         "GEOND_DATABASE_URL",
         "postgresql://geond:geond_dev_password@localhost:55432/geond",
     )
-    embedding_provider: str = os.getenv("GEOND_EMBEDDING_PROVIDER", "none").lower()
-    embedding_model: str = os.getenv("GEOND_EMBEDDING_MODEL", "")
+    embedding_provider: str = (os.getenv("GEOND_EMBEDDING_PROVIDER") or "openai").lower()
+    embedding_model: str = os.getenv("GEOND_EMBEDDING_MODEL") or "text-embedding-3-small"
     embedding_base_url: str = os.getenv("GEOND_EMBEDDING_BASE_URL", "")
-    embedding_api_key: str = os.getenv("GEOND_EMBEDDING_API_KEY", "")
+    embedding_api_key: str = os.getenv("GEOND_EMBEDDING_API_KEY") or os.getenv("OPENAI_API_KEY", "")
     embedding_dimensions: int = int(os.getenv("GEOND_EMBEDDING_DIMENSIONS", "1536"))
+    embedding_max_chars: int = int(os.getenv("GEOND_EMBEDDING_MAX_CHARS", "3000"))
+    openai_api_key: str = os.getenv("OPENAI_API_KEY") or os.getenv("GEOND_EMBEDDING_API_KEY", "")
+    llm_model_reasoning: str = os.getenv("GEOND_LLM_MODEL_REASONING") or "gpt-5.4"
+    llm_model_balanced: str = os.getenv("GEOND_LLM_MODEL_BALANCED") or "gpt-5.4-mini"
+    llm_model_fast: str = os.getenv("GEOND_LLM_MODEL_FAST") or "gpt-5.4-nano"
     store_raw_payloads: bool = os.getenv("GEOND_STORE_RAW_PAYLOADS", "false").lower() in {
         "1",
         "true",

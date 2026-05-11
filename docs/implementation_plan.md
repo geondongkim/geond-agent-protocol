@@ -155,8 +155,8 @@ Tasks:
 - [x] Implement keyword search over messages.
 - [x] Add embedding provider abstraction.
 - [x] Add local/no-op embedding mode for privacy-first development.
-- [ ] Add pgvector search when embeddings are configured.
-- [ ] Implement hybrid scoring: semantic + symbol + recency + intent.
+- [x] Add pgvector search when embeddings are configured.
+- [x] Implement first-pass hybrid scoring: keyword reciprocal rank + vector reciprocal rank.
 - [ ] Return evidence objects, not only plain text.
 
 Acceptance criteria:
@@ -244,3 +244,20 @@ Deliverables:
 7. Wrap search in MCP.
 
 The first version should optimize for one unmistakable demo: context crosses from one agent/session into another without manual re-explanation.
+
+## 15. MVP Verification Snapshot
+
+Completed locally:
+
+- `uv sync` dependency management works.
+- Docker Postgres with pgvector starts successfully.
+- Initial schema migration runs successfully.
+- VS Code Copilot Chat session import works with large tool-output messages after limiting text-search indexing.
+- OpenAI `text-embedding-3-small` created 40 message embeddings.
+- Korean query comparison showed `keyword` returning no results while `vector` and `hybrid` retrieved the relevant chat memory.
+
+Known implementation notes:
+
+- Raw message content may be very large, so text-search indexing uses `left(content, 50000)`.
+- Embedding requests use `GEOND_EMBEDDING_MAX_CHARS` to avoid provider token limits.
+- `GEOND_EMBEDDING_BASE_URL` should stay empty for default OpenAI unless a compatible gateway is used.

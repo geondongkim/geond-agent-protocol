@@ -190,11 +190,14 @@ CREATE TABLE IF NOT EXISTS redaction_findings (
 CREATE INDEX IF NOT EXISTS idx_sessions_workspace ON sessions(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_events_workspace_session ON events(workspace_id, session_id);
 CREATE INDEX IF NOT EXISTS idx_messages_session_ordinal ON messages(session_id, ordinal);
-CREATE INDEX IF NOT EXISTS idx_messages_content_trgm_seed ON messages USING gin (to_tsvector('simple', content));
+DROP INDEX IF EXISTS idx_messages_content_trgm_seed;
+CREATE INDEX IF NOT EXISTS idx_messages_content_tsv_seed ON messages USING gin (to_tsvector('simple', left(content, 50000)));
 CREATE INDEX IF NOT EXISTS idx_file_snapshots_workspace_path ON file_snapshots(workspace_id, file_path);
 CREATE INDEX IF NOT EXISTS idx_code_entities_workspace_name ON code_entities(workspace_id, name);
 CREATE INDEX IF NOT EXISTS idx_code_entities_workspace_path ON code_entities(workspace_id, file_path);
 CREATE INDEX IF NOT EXISTS idx_code_edges_workspace_type ON code_edges(workspace_id, edge_type);
+CREATE INDEX IF NOT EXISTS idx_embeddings_target ON embeddings(target_table, target_id, model);
+CREATE INDEX IF NOT EXISTS idx_embeddings_vector_hnsw ON embeddings USING hnsw (embedding vector_cosine_ops) WHERE embedding IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_agent_actions_workspace ON agent_actions(workspace_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_file_reservations_active ON file_reservations(workspace_id, file_path) WHERE released_at IS NULL;
 
