@@ -1,0 +1,145 @@
+{
+  "run_id": "20260512-combined",
+  "location": "koreacentral",
+  "resource_group": "rg-geond-validate-* (all deleted)",
+  "source_runs": {
+    "azure_openai": "20260512-033246",
+    "apim_smoke": "20260512-033519",
+    "vm_slm": "20260512-051143"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.CognitiveServices/accounts",
+      "sku": "S0",
+      "purpose": "temporary Azure OpenAI embedding validation"
+    },
+    {
+      "type": "Microsoft.CognitiveServices/accounts/deployments",
+      "sku": "GlobalStandard",
+      "model": "text-embedding-3-small",
+      "capacity": 7,
+      "rate_limits_observed": [
+        {
+          "key": "request",
+          "count": 7,
+          "renewal_period_seconds": 10
+        },
+        {
+          "key": "token",
+          "count": 7000,
+          "renewal_period_seconds": 60
+        }
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service",
+      "sku": "Consumption",
+      "purpose": "temporary APIM gateway API/backend smoke"
+    },
+    {
+      "type": "Microsoft.Compute/virtualMachines",
+      "sku": "Standard_B2s",
+      "purpose": "temporary multilingual local embedding benchmark"
+    }
+  ],
+  "steps": [
+    {
+      "name": "create-azure-openai-account",
+      "status": "ok",
+      "duration_seconds": 36.729
+    },
+    {
+      "name": "create-embedding-deployment-globalstandard",
+      "status": "ok",
+      "duration_seconds": 4.54,
+      "details": {
+        "model": "text-embedding-3-small",
+        "sku": "GlobalStandard",
+        "capacity": 7,
+        "provisioning_state": "Succeeded"
+      }
+    },
+    {
+      "name": "azure-openai-geond-benchmark",
+      "status": "ok",
+      "duration_seconds": 17.35,
+      "details": {
+        "embedded": 10,
+        "benchmark_file": "azure_openai_benchmark.md"
+      }
+    },
+    {
+      "name": "create-apim-consumption",
+      "status": "ok",
+      "duration_seconds": 131.237,
+      "details": {
+        "sku": "Consumption",
+        "location": "Korea Central"
+      }
+    },
+    {
+      "name": "create-apim-backends",
+      "status": "ok",
+      "duration_seconds": 7.625,
+      "details": {
+        "backend_count": 3
+      }
+    },
+    {
+      "name": "create-apim-api",
+      "status": "ok",
+      "duration_seconds": 2.35,
+      "details": {
+        "api_id": "geond-openai",
+        "subscription_required": false
+      }
+    },
+    {
+      "name": "apply-apim-ai-gateway-policy",
+      "status": "blocked",
+      "details": {
+        "reason": "The APIM policy REST smoke exceeded the terminal timeout during the first full run. The validation script now makes policy application opt-in with -ApplyApimPolicy."
+      }
+    },
+    {
+      "name": "create-b2s-vm",
+      "status": "ok",
+      "duration_seconds": 75.124,
+      "details": {
+        "size": "Standard_B2s",
+        "os": "Ubuntu 22.04"
+      }
+    },
+    {
+      "name": "vm-slm-multilingual-benchmark",
+      "status": "ok",
+      "duration_seconds": 64.31,
+      "details": {
+        "model": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+        "cpu_count": 2,
+        "mem_total_kb": 4007648,
+        "load_seconds": 29.793,
+        "encode_seconds": 0.293,
+        "mrr": 0.8333,
+        "benchmark_file": "slm_vm_benchmark.json"
+      }
+    }
+  ],
+  "cost_inputs": {
+    "vm_sku": "Standard_B2s",
+    "vm_linux_retail_usd_per_hour_koreacentral": 0.052,
+    "vm_observed_runtime_minutes": 11.8,
+    "vm_compute_estimate_usd": 0.0102,
+    "azure_openai_sku": "S0",
+    "azure_openai_deployment_sku": "GlobalStandard",
+    "azure_openai_deployment_capacity": 7,
+    "azure_openai_messages_embedded": 10,
+    "apim_sku": "Consumption",
+    "note": "This is not an invoice. It captures resource SKUs, runtimes, and usage signals for later cost calculation. Storage, network, APIM, and Azure OpenAI usage charges should be checked against Azure Cost Management for exact billing."
+  },
+  "cleanup": {
+    "status": "deleted",
+    "verified_by": "az group list --query \"[?starts_with(name, 'rg-geond-validate-')]\" returned [] after deleting the remaining early test group",
+    "remaining_geond_validation_resource_groups": []
+  }
+}

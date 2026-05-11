@@ -65,3 +65,25 @@ adding DB storage and CLI import paths.
   OpenAI-compatible providers using the same judgments file.
 - Record one handoff summary from each agent persona and verify timeline order.
 - Exercise purge workflow after importing a fixture containing a fake secret.
+
+## Azure Smoke Validation
+
+The 20260512 validation pass created temporary Azure resources in Korea Central
+to prove provider and deployment paths against real infrastructure. Sanitized
+evidence is stored in
+[`docs/azure_validation/20260512-combined`](azure_validation/20260512-combined).
+
+Validated surfaces:
+
+- Azure OpenAI S0 account with `text-embedding-3-small` `GlobalStandard`
+  deployment at capacity `7`.
+- Geond `azure-openai` embedding provider embedding 10 messages and running a
+  hybrid retrieval benchmark.
+- APIM Consumption gateway scaffold with three backends and a `geond-openai`
+  API. Full APIM policy application remains opt-in after a long-running REST
+  smoke exceeded the terminal timeout.
+- `Standard_B2s` Ubuntu VM running multilingual MiniLM embeddings for Korean
+  and English probes; observed MRR was `0.8333`.
+
+Cleanup status: all `rg-geond-validate-*` resource groups were deleted, and a
+final Azure group query returned an empty list.

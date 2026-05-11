@@ -59,6 +59,7 @@ validation status, and improvement plan.
 - [docs/provider_extensions.md](docs/provider_extensions.md) covers OpenAI, Azure OpenAI, gateway, and local embedding modes.
 - [docs/mcp_client_config.md](docs/mcp_client_config.md) provides Claude Desktop, Continue, and VS Code MCP client examples.
 - [docs/benchmarking.md](docs/benchmarking.md) shows the current retrieval benchmark command.
+- [docs/azure_validation/README.md](docs/azure_validation/README.md) records the temporary Azure OpenAI, APIM, and VM validation workflow and sanitized evidence.
 - [docs/agent_testbeds.md](docs/agent_testbeds.md) compares the Copilot Chat, Codex, and Claude Code test beds.
 - [docs/vscode_chat_storage_structure.md](docs/vscode_chat_storage_structure.md) documents the first VS Code Copilot Chat test bed.
 - [docs/codex_testbed.md](docs/codex_testbed.md) documents the Codex JSONL test bed.
@@ -246,6 +247,14 @@ Benchmark retrieval:
 ```bash
 uv run geond benchmark-search app_context build_answer --mode keyword --repeat 5
 ```
+
+Run a temporary Azure validation smoke test:
+
+```powershell
+.\scripts\azure_validation_smoke.ps1
+```
+
+The smoke script creates a tagged temporary resource group, validates Azure OpenAI embeddings, APIM Consumption gateway scaffolding, and a B2s VM multilingual embedding benchmark, then deletes the resource group. Sanitized evidence from the latest validation is in [docs/azure_validation/20260512-combined](docs/azure_validation/20260512-combined).
 
 Delete a workspace and its cascaded local data:
 

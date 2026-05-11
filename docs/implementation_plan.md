@@ -258,6 +258,19 @@ Deliverables:
 - `docs/demo.md`.
 - MCP client config examples.
 - Retrieval benchmark command and docs.
+
+Status update:
+
+- [x] Static public demo GIF generated for the local protocol walkthrough.
+- [x] Temporary Azure validation smoke added for Azure OpenAI, APIM Consumption, and B2s VM SLM benchmark.
+- [x] Sanitized Azure evidence and GIF stored in `docs/azure_validation/20260512-combined`.
+
+Azure validation notes:
+
+- Azure OpenAI S0 with `text-embedding-3-small` `GlobalStandard` capacity 7 successfully embedded 10 Geond messages and ran a hybrid benchmark.
+- APIM Consumption successfully created an API and three backends for the gateway scaffold. Full policy REST application is opt-in because the first policy smoke exceeded the terminal timeout.
+- A temporary `Standard_B2s` Ubuntu VM ran `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` on Korean/English retrieval probes with MRR `0.8333`.
+- All `rg-geond-validate-*` resource groups were deleted and the final Azure group query returned an empty list.
 - Public GitHub release `v0.1.0-alpha`.
 
 Current status:

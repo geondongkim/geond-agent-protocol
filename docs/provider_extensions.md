@@ -78,6 +78,26 @@ Recommended gateway policy:
 An Azure API Management version of this policy is available at
 [examples/azure/apim/geond-openai-gateway-policy.xml](../examples/azure/apim/geond-openai-gateway-policy.xml).
 
+## Azure Validation Smoke
+
+The repository includes a repeatable smoke script for real Azure validation:
+
+```powershell
+.\scripts\azure_validation_smoke.ps1
+```
+
+The script creates a tagged temporary resource group, validates Azure OpenAI
+embeddings, APIM Consumption gateway scaffolding, and a B2s VM local multilingual
+embedding benchmark, then deletes the resource group. APIM policy application is
+opt-in because it can be long-running:
+
+```powershell
+.\scripts\azure_validation_smoke.ps1 -ApplyApimPolicy
+```
+
+Sanitized evidence from the latest run is stored in
+[docs/azure_validation/20260512-combined](azure_validation/20260512-combined).
+
 ## Local-Only
 
 Local-only blocks cloud providers before a network call is made.

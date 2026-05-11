@@ -1,0 +1,40 @@
+{
+  "model": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+  "platform": "Linux-6.8.0-1052-azure-x86_64-with-glibc2.35",
+  "python_version": "3.10.12",
+  "cpu_count": 2,
+  "mem_total_kb": 4007648,
+  "doc_count": 5,
+  "query_count": 3,
+  "load_seconds": 29.793,
+  "encode_seconds": 0.293,
+  "mrr": 0.8333,
+  "rows": [
+    {
+      "query": "왜 service.py 파일이 바뀌었어?",
+      "expected_doc_index": 1,
+      "rank": 2,
+      "top_doc_index": 0,
+      "top_score": 0.349553,
+      "expected_score": 0.284054
+    },
+    {
+      "query": "How does Claude Code record tool calls?",
+      "expected_doc_index": 2,
+      "rank": 1,
+      "top_doc_index": 2,
+      "top_score": 0.540093,
+      "expected_score": 0.540093
+    },
+    {
+      "query": "TypeScript 심볼 인덱싱은 무엇으로 하나요?",
+      "expected_doc_index": 3,
+      "rank": 1,
+      "top_doc_index": 3,
+      "top_score": 0.488555,
+      "expected_score": 0.488555
+    }
+  ],
+  "source": "Temporary Azure Standard_B2s VM run",
+  "note": "The successful VM run produced these metrics before the first parser version failed while extracting JSON from Azure CLI output on Windows. The script now emits base64 JSON to avoid non-ASCII output loss."
+}
