@@ -5,10 +5,17 @@ from typing import Any
 from psycopg import Connection
 from psycopg.types.json import Jsonb
 
-from geond.adapters.vscode_copilot import ParsedCopilotSession, SOURCE
+from geond.adapters.codex import SOURCE as CODEX_SOURCE
+from geond.adapters.codex import ParsedCodexSession
+from geond.adapters.vscode_copilot import SOURCE, ParsedCopilotSession
 
 
-def upsert_workspace(conn: Connection, root_uri: str, name: str, metadata: dict[str, Any] | None = None) -> str:
+def upsert_workspace(
+    conn: Connection,
+    root_uri: str,
+    name: str,
+    metadata: dict[str, Any] | None = None,
+) -> str:
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -23,6 +30,94 @@ def upsert_workspace(conn: Connection, root_uri: str, name: str, metadata: dict[
         workspace_id = cur.fetchone()[0]
     conn.commit()
     return workspace_id
+
+
+def store_codex_session(conn: Connection, workspace_id: str, session: ParsedCodexSession) -> str:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO sessions (workspace_id, source, external_id, title, metadata)
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (workspace_id, source, external_id)
+            DO UPDATE SET title = EXCLUDED.title,
+                          metadata = sessions.metadata || EXCLUDED.metadata,
+                          updated_at = now()
+            RETURNING id::text
+            """,
+            (
+                workspace_id,
+                CODEX_SOURCE,
+                session.session_id,
+                session.title,
+                Jsonb(session.metadata),
+            ),
+        )
+        session_row_id = cur.fetchone()[0]
+
+        for event in session.events:
+            source_id = f"{CODEX_SOURCE}:{session.session_id}:{event.ordinal}"
+            cur.execute(
+                """
+                INSERT INTO events (
+                    workspace_id,
+                    session_id,
+                    source,
+                    source_id,
+                    event_type,
+                    occurred_at,
+                    payload
+                )
+                VALUES (%s, %s, %s, %s, %s, %s::timestamptz, %s)
+                ON CONFLICT (source, source_id)
+                DO UPDATE SET event_type = EXCLUDED.event_type,
+                              occurred_at = EXCLUDED.occurred_at,
+                              payload = EXCLUDED.payload
+                RETURNING id::text
+                """,
+                (
+                    workspace_id,
+                    session_row_id,
+                    CODEX_SOURCE,
+                    source_id,
+                    event.event_type,
+                    event.timestamp,
+                    Jsonb(event.raw),
+                ),
+            )
+
+        for message in session.messages:
+            source_id = f"{CODEX_SOURCE}:{session.session_id}:{message.ordinal}"
+            cur.execute(
+                """
+                SELECT id::text FROM events
+                WHERE source = %s AND source_id = %s
+                """,
+                (CODEX_SOURCE, source_id),
+            )
+            row = cur.fetchone()
+            raw_event_id = row[0] if row else None
+            cur.execute(
+                """
+                INSERT INTO messages (session_id, raw_event_id, role, ordinal, content, metadata)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (session_id, ordinal)
+                DO UPDATE SET content = EXCLUDED.content,
+                              metadata = EXCLUDED.metadata,
+                              raw_event_id = EXCLUDED.raw_event_id,
+                              role = EXCLUDED.role
+                """,
+                (
+                    session_row_id,
+                    raw_event_id,
+                    message.role,
+                    message.ordinal,
+                    message.content,
+                    Jsonb(message.metadata),
+                ),
+            )
+
+    conn.commit()
+    return session_row_id
 
 
 def store_vscode_session(conn: Connection, workspace_id: str, session: ParsedCopilotSession) -> str:
@@ -57,7 +152,14 @@ def store_vscode_session(conn: Connection, workspace_id: str, session: ParsedCop
             source_id = f"{SOURCE}:{session.session_id}:chat:{line.ordinal}"
             cur.execute(
                 """
-                INSERT INTO events (workspace_id, session_id, source, source_id, event_type, payload)
+                INSERT INTO events (
+                    workspace_id,
+                    session_id,
+                    source,
+                    source_id,
+                    event_type,
+                    payload
+                )
                 VALUES (%s, %s, %s, %s, %s, %s)
                 ON CONFLICT (source, source_id)
                 DO UPDATE SET payload = EXCLUDED.payload
@@ -96,7 +198,14 @@ def store_vscode_session(conn: Connection, workspace_id: str, session: ParsedCop
             source_id = f"{SOURCE}:{session.session_id}:transcript:{event.ordinal}"
             cur.execute(
                 """
-                INSERT INTO events (workspace_id, session_id, source, source_id, event_type, payload)
+                INSERT INTO events (
+                    workspace_id,
+                    session_id,
+                    source,
+                    source_id,
+                    event_type,
+                    payload
+                )
                 VALUES (%s, %s, %s, %s, %s, %s)
                 ON CONFLICT (source, source_id)
                 DO UPDATE SET payload = EXCLUDED.payload
@@ -112,10 +221,17 @@ def store_vscode_session(conn: Connection, workspace_id: str, session: ParsedCop
             )
 
         if session.editing_session.state:
-            for file_uri, content_hash in session.editing_session.state.get("initialFileContents", []):
+            initial_contents = session.editing_session.state.get("initialFileContents", [])
+            for file_uri, content_hash in initial_contents:
                 cur.execute(
                     """
-                    INSERT INTO file_snapshots (workspace_id, session_id, file_uri, content_hash, metadata)
+                    INSERT INTO file_snapshots (
+                        workspace_id,
+                        session_id,
+                        file_uri,
+                        content_hash,
+                        metadata
+                    )
                     VALUES (%s, %s, %s, %s, %s)
                     ON CONFLICT (workspace_id, file_uri, content_hash)
                     DO UPDATE SET metadata = file_snapshots.metadata || EXCLUDED.metadata
@@ -164,7 +280,15 @@ def record_agent_action(
         agent_id = cur.fetchone()[0]
         cur.execute(
             """
-            INSERT INTO agent_actions (workspace_id, agent_id, action_type, intent, status, summary, metadata)
+            INSERT INTO agent_actions (
+                workspace_id,
+                agent_id,
+                action_type,
+                intent,
+                status,
+                summary,
+                metadata
+            )
             VALUES (%s, %s, %s, %s, %s, %s, %s)
             RETURNING id::text
             """,

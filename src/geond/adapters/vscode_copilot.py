@@ -151,7 +151,9 @@ def parse_editing_session(storage_path: Path, session_id: str) -> ParsedEditingS
         return ParsedEditingSession()
 
     state = json.loads(state_file.read_text(encoding="utf-8"))
-    content_hashes = sorted(path.name for path in contents_dir.iterdir()) if contents_dir.exists() else []
+    content_hashes = (
+        sorted(path.name for path in contents_dir.iterdir()) if contents_dir.exists() else []
+    )
     return ParsedEditingSession(
         state=state,
         content_count=len(content_hashes),

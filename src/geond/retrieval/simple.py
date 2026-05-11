@@ -7,14 +7,25 @@ from psycopg import Connection
 from geond.storage.embeddings import vector_to_sql
 
 
-def search_dev_memory(conn: Connection, query: str, limit: int = 10) -> list[dict[str, Any]]:
+def search_dev_memory(
+    conn: Connection,
+    query: str,
+    limit: int = 10,
+    workspace_uri: str | None = None,
+    source: str | None = None,
+) -> list[dict[str, Any]]:
     pattern = f"%{query}%"
     with conn.cursor() as cur:
         cur.execute(
             """
             SELECT
+                w.id::text,
+                w.root_uri,
+                w.name,
+                s.source,
                 s.external_id,
                 s.title,
+                m.id::text,
                 m.role,
                 m.ordinal,
                 left(m.content, 1200) AS snippet,
@@ -24,24 +35,34 @@ def search_dev_memory(conn: Connection, query: str, limit: int = 10) -> list[dic
                 ) AS rank
             FROM messages m
             JOIN sessions s ON s.id = m.session_id
-            WHERE m.content ILIKE %s
-               OR to_tsvector('simple', left(m.content, 50000)) @@ plainto_tsquery('simple', %s)
+            JOIN workspaces w ON w.id = s.workspace_id
+            WHERE (
+                m.content ILIKE %s
+                OR to_tsvector('simple', left(m.content, 50000)) @@ plainto_tsquery('simple', %s)
+            )
+              AND (%s::text IS NULL OR w.root_uri = %s::text)
+              AND (%s::text IS NULL OR s.source = %s::text)
             ORDER BY rank DESC NULLS LAST, m.created_at DESC
             LIMIT %s
             """,
-            (query, pattern, query, limit),
+            (query, pattern, query, workspace_uri, workspace_uri, source, source, limit),
         )
         rows = cur.fetchall()
     return [
-        {
-            "mode": "keyword",
-            "session_external_id": row[0],
-            "session_title": row[1],
-            "role": row[2],
-            "ordinal": row[3],
-            "snippet": row[4],
-            "rank": float(row[5] or 0),
-        }
+        message_result(
+            mode="keyword",
+            workspace_id=row[0],
+            workspace_uri=row[1],
+            workspace_name=row[2],
+            source=row[3],
+            session_external_id=row[4],
+            session_title=row[5],
+            message_id=row[6],
+            role=row[7],
+            ordinal=row[8],
+            snippet=row[9],
+            rank=float(row[10] or 0),
+        )
         for row in rows
     ]
 
@@ -51,14 +72,21 @@ def vector_search_dev_memory(
     query_vector: list[float],
     model: str,
     limit: int = 10,
+    workspace_uri: str | None = None,
+    source: str | None = None,
 ) -> list[dict[str, Any]]:
     vector_literal = vector_to_sql(query_vector)
     with conn.cursor() as cur:
         cur.execute(
             """
             SELECT
+                w.id::text,
+                w.root_uri,
+                w.name,
+                s.source,
                 s.external_id,
                 s.title,
+                m.id::text,
                 m.role,
                 m.ordinal,
                 left(m.content, 1200) AS snippet,
@@ -66,26 +94,43 @@ def vector_search_dev_memory(
             FROM embeddings e
             JOIN messages m ON m.id = e.target_id
             JOIN sessions s ON s.id = m.session_id
+            JOIN workspaces w ON w.id = s.workspace_id
             WHERE e.target_table = 'messages'
               AND e.model = %s
               AND e.embedding IS NOT NULL
+              AND (%s::text IS NULL OR w.root_uri = %s::text)
+              AND (%s::text IS NULL OR s.source = %s::text)
             ORDER BY e.embedding <=> %s::vector ASC
             LIMIT %s
             """,
-            (vector_literal, model, vector_literal, limit),
+            (
+                vector_literal,
+                model,
+                workspace_uri,
+                workspace_uri,
+                source,
+                source,
+                vector_literal,
+                limit,
+            ),
         )
         rows = cur.fetchall()
     return [
-        {
-            "mode": "vector",
-            "session_external_id": row[0],
-            "session_title": row[1],
-            "role": row[2],
-            "ordinal": row[3],
-            "snippet": row[4],
-            "distance": float(row[5]),
-            "score": 1.0 - float(row[5]),
-        }
+        message_result(
+            mode="vector",
+            workspace_id=row[0],
+            workspace_uri=row[1],
+            workspace_name=row[2],
+            source=row[3],
+            session_external_id=row[4],
+            session_title=row[5],
+            message_id=row[6],
+            role=row[7],
+            ordinal=row[8],
+            snippet=row[9],
+            distance=float(row[10]),
+            score=1.0 - float(row[10]),
+        )
         for row in rows
     ]
 
@@ -96,13 +141,28 @@ def hybrid_search_dev_memory(
     query_vector: list[float],
     model: str,
     limit: int = 10,
+    workspace_uri: str | None = None,
+    source: str | None = None,
 ) -> list[dict[str, Any]]:
-    keyword_results = search_dev_memory(conn, query, limit=limit)
-    vector_results = vector_search_dev_memory(conn, query_vector, model=model, limit=limit)
-    merged: dict[tuple[str, int], dict[str, Any]] = {}
+    keyword_results = search_dev_memory(
+        conn,
+        query,
+        limit=limit,
+        workspace_uri=workspace_uri,
+        source=source,
+    )
+    vector_results = vector_search_dev_memory(
+        conn,
+        query_vector,
+        model=model,
+        limit=limit,
+        workspace_uri=workspace_uri,
+        source=source,
+    )
+    merged: dict[str, dict[str, Any]] = {}
 
     for rank, item in enumerate(keyword_results):
-        key = (item["session_external_id"], item["ordinal"])
+        key = item["message_id"]
         merged[key] = {
             **item,
             "mode": "hybrid",
@@ -112,7 +172,7 @@ def hybrid_search_dev_memory(
         }
 
     for rank, item in enumerate(vector_results):
-        key = (item["session_external_id"], item["ordinal"])
+        key = item["message_id"]
         contribution = 1.0 / (rank + 1)
         if key in merged:
             merged[key]["vector_rank"] = rank + 1
@@ -128,6 +188,49 @@ def hybrid_search_dev_memory(
             }
 
     return sorted(merged.values(), key=lambda item: item["hybrid_score"], reverse=True)[:limit]
+
+
+def message_result(
+    *,
+    mode: str,
+    workspace_id: str,
+    workspace_uri: str,
+    workspace_name: str,
+    source: str,
+    session_external_id: str,
+    session_title: str,
+    message_id: str,
+    role: str,
+    ordinal: int,
+    snippet: str,
+    **scores: Any,
+) -> dict[str, Any]:
+    evidence = {
+        "kind": "message",
+        "workspace_id": workspace_id,
+        "workspace_uri": workspace_uri,
+        "workspace_name": workspace_name,
+        "source": source,
+        "session_external_id": session_external_id,
+        "session_title": session_title,
+        "message_id": message_id,
+        "ordinal": ordinal,
+    }
+    return {
+        "mode": mode,
+        "workspace_id": workspace_id,
+        "workspace_uri": workspace_uri,
+        "workspace_name": workspace_name,
+        "source": source,
+        "session_external_id": session_external_id,
+        "session_title": session_title,
+        "message_id": message_id,
+        "role": role,
+        "ordinal": ordinal,
+        "snippet": snippet,
+        "evidence": evidence,
+        **scores,
+    }
 
 
 def explain_change(conn: Connection, file_path: str, limit: int = 10) -> dict[str, Any]:

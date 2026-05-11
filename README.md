@@ -42,9 +42,11 @@ flowchart LR
 - Help agents coordinate by recording file reservations, active tasks, and handoff notes.
 - Provide a local-first Docker setup using Postgres and pgvector.
 
-## First Test Bed
+## Test Beds
 
 The first research target is VS Code GitHub Copilot Chat storage. See [docs/vscode_chat_storage_structure.md](docs/vscode_chat_storage_structure.md) for the storage investigation and recovery notes.
+
+Codex is now the second test bed. See [docs/codex_testbed.md](docs/codex_testbed.md) for the local JSONL session parser and validation path.
 
 ## Documentation
 
@@ -54,6 +56,7 @@ The first research target is VS Code GitHub Copilot Chat storage. See [docs/vsco
 - [docs/embedding_configuration.md](docs/embedding_configuration.md) explains embedding provider choices and what secrets/configuration are needed.
 - [docs/model_provider_strategy.md](docs/model_provider_strategy.md) records the OpenAI MVP choices and future provider comparison plan.
 - [docs/vscode_chat_storage_structure.md](docs/vscode_chat_storage_structure.md) documents the first VS Code Copilot Chat test bed.
+- [docs/codex_testbed.md](docs/codex_testbed.md) documents the Codex JSONL test bed.
 - [docs/의식의 흐름 참고.md](docs/%EC%9D%98%EC%8B%9D%EC%9D%98%20%ED%9D%90%EB%A6%84%20%EC%B0%B8%EA%B3%A0.md) preserves the original ideation notes.
 
 ## Quick Start
@@ -100,6 +103,21 @@ uv run geond import-vscode "C:/path/to/workspaceStorage/<hash>" \
     --workspace-name "my-project"
 ```
 
+Parse a Codex session or Codex sessions directory without writing to the database:
+
+```bash
+uv run geond parse-codex "C:/Users/<you>/.codex/sessions" --limit 5
+```
+
+Import Codex sessions into Geond:
+
+```bash
+uv run geond import-codex "C:/Users/<you>/.codex/sessions" \
+    --limit 5 \
+    --workspace-uri "file:///C:/path/to/project" \
+    --workspace-name "my-project"
+```
+
 Create embeddings for imported messages:
 
 ```bash
@@ -114,6 +132,15 @@ uv run geond search "왜 이 파일이 바뀌었어?" --mode vector
 uv run geond search "왜 이 파일이 바뀌었어?" --mode hybrid
 ```
 
+Limit retrieval to one workspace or source:
+
+```bash
+uv run geond search "추가 테스트베드" \
+    --mode keyword \
+    --workspace-uri "file:///C:/path/to/project" \
+    --source codex
+```
+
 Run the MCP server:
 
 ```bash
@@ -122,7 +149,7 @@ uv run geond-mcp
 
 ## Status
 
-Early MVP stage. The repository contains research notes, architecture, implementation plans, a local Postgres/pgvector schema, a VS Code Copilot Chat read-only importer, OpenAI embedding support, keyword/vector/hybrid retrieval, and an MCP server skeleton.
+Early MVP stage. The repository contains research notes, architecture, implementation plans, a local Postgres/pgvector schema, VS Code Copilot Chat and Codex read-only importers, OpenAI embedding support, keyword/vector/hybrid retrieval, and an MCP server skeleton.
 
 ## Design Principles
 

@@ -27,7 +27,7 @@ def embed_pending_messages(
         vectors = provider.embed(texts)
         with conn.cursor() as cur:
             for (message_id, workspace_id, target_kind, content), embedded_text, vector in zip(
-                rows, texts, vectors
+                rows, texts, vectors, strict=True
             ):
                 cur.execute(
                     """

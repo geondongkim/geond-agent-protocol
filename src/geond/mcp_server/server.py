@@ -22,12 +22,20 @@ def search_dev_memory(
     query: str,
     limit: int = 10,
     mode: str = "hybrid",
+    workspace_uri: str | None = None,
+    source: str | None = None,
 ) -> list[dict[str, Any]]:
     """Search shared development memory across imported sessions and messages."""
     settings = get_settings()
     with connect(settings) as conn:
         if mode == "keyword":
-            return search_dev_memory_query(conn, query, limit)
+            return search_dev_memory_query(
+                conn,
+                query,
+                limit,
+                workspace_uri=workspace_uri,
+                source=source,
+            )
 
         provider = get_embedding_provider(settings)
         query_vector = provider.embed([query])[0]
@@ -37,6 +45,8 @@ def search_dev_memory(
                 query_vector=query_vector,
                 model=provider.model,
                 limit=limit,
+                workspace_uri=workspace_uri,
+                source=source,
             )
         if mode == "hybrid":
             return hybrid_search_dev_memory_query(
@@ -45,6 +55,8 @@ def search_dev_memory(
                 query_vector=query_vector,
                 model=provider.model,
                 limit=limit,
+                workspace_uri=workspace_uri,
+                source=source,
             )
         raise ValueError("mode must be one of: keyword, vector, hybrid")
 

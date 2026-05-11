@@ -4,6 +4,8 @@ import argparse
 import json
 from pathlib import Path
 
+from geond.adapters.codex import parse_storage as parse_codex_storage
+from geond.adapters.codex import to_summary as codex_to_summary
 from geond.adapters.vscode_copilot import parse_storage, to_summary
 from geond.config import get_settings
 from geond.db import connect, run_schema_file
@@ -14,7 +16,7 @@ from geond.retrieval.simple import (
     vector_search_dev_memory,
 )
 from geond.storage.embeddings import embed_pending_messages, embedding_stats
-from geond.storage.repository import store_vscode_session, upsert_workspace
+from geond.storage.repository import store_codex_session, store_vscode_session, upsert_workspace
 
 
 def main() -> None:
@@ -30,6 +32,13 @@ def main() -> None:
     parse_vscode.add_argument("storage_path", type=Path)
     parse_vscode.add_argument("--session-id")
 
+    parse_codex = subparsers.add_parser(
+        "parse-codex", help="Parse Codex JSONL sessions without writing to DB"
+    )
+    parse_codex.add_argument("storage_path", type=Path)
+    parse_codex.add_argument("--session-id")
+    parse_codex.add_argument("--limit", type=int)
+
     import_vscode = subparsers.add_parser(
         "import-vscode", help="Import VS Code Copilot Chat storage into Geond DB"
     )
@@ -37,6 +46,13 @@ def main() -> None:
     import_vscode.add_argument("--session-id")
     import_vscode.add_argument("--workspace-uri", required=True)
     import_vscode.add_argument("--workspace-name", required=True)
+
+    import_codex = subparsers.add_parser("import-codex", help="Import Codex JSONL sessions")
+    import_codex.add_argument("storage_path", type=Path)
+    import_codex.add_argument("--session-id")
+    import_codex.add_argument("--limit", type=int)
+    import_codex.add_argument("--workspace-uri", required=True)
+    import_codex.add_argument("--workspace-name", required=True)
 
     embed_messages = subparsers.add_parser(
         "embed-messages", help="Create embeddings for imported message records"
@@ -48,6 +64,8 @@ def main() -> None:
     search.add_argument("query")
     search.add_argument("--mode", choices=["keyword", "vector", "hybrid"], default="hybrid")
     search.add_argument("--limit", type=int, default=10)
+    search.add_argument("--workspace-uri")
+    search.add_argument("--source")
 
     args = parser.parse_args()
 
@@ -59,7 +77,14 @@ def main() -> None:
 
     if args.command == "parse-vscode":
         sessions = parse_storage(args.storage_path, args.session_id)
-        print(json.dumps([to_summary(session) for session in sessions], ensure_ascii=False, indent=2))
+        summaries = [to_summary(session) for session in sessions]
+        print(json.dumps(summaries, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "parse-codex":
+        sessions = parse_codex_storage(args.storage_path, args.session_id, args.limit)
+        summaries = [codex_to_summary(session) for session in sessions]
+        print(json.dumps(summaries, ensure_ascii=False, indent=2))
         return
 
     if args.command == "import-vscode":
@@ -72,6 +97,25 @@ def main() -> None:
                 metadata={"source": "cli"},
             )
             stored = [store_vscode_session(conn, workspace_id, session) for session in sessions]
+        print(
+            json.dumps(
+                {"status": "ok", "workspace_id": workspace_id, "imported_sessions": stored},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
+
+    if args.command == "import-codex":
+        sessions = parse_codex_storage(args.storage_path, args.session_id, args.limit)
+        with connect(get_settings()) as conn:
+            workspace_id = upsert_workspace(
+                conn,
+                root_uri=args.workspace_uri,
+                name=args.workspace_name,
+                metadata={"source": "cli"},
+            )
+            stored = [store_codex_session(conn, workspace_id, session) for session in sessions]
         print(
             json.dumps(
                 {"status": "ok", "workspace_id": workspace_id, "imported_sessions": stored},
@@ -105,7 +149,13 @@ def main() -> None:
         settings = get_settings()
         with connect(settings) as conn:
             if args.mode == "keyword":
-                results = search_dev_memory(conn, args.query, args.limit)
+                results = search_dev_memory(
+                    conn,
+                    args.query,
+                    args.limit,
+                    workspace_uri=args.workspace_uri,
+                    source=args.source,
+                )
             else:
                 provider = get_embedding_provider(settings)
                 query_vector = provider.embed([args.query])[0]
@@ -115,6 +165,8 @@ def main() -> None:
                         query_vector=query_vector,
                         model=provider.model,
                         limit=args.limit,
+                        workspace_uri=args.workspace_uri,
+                        source=args.source,
                     )
                 else:
                     results = hybrid_search_dev_memory(
@@ -123,6 +175,8 @@ def main() -> None:
                         query_vector=query_vector,
                         model=provider.model,
                         limit=args.limit,
+                        workspace_uri=args.workspace_uri,
+                        source=args.source,
                     )
         print(json.dumps(results, ensure_ascii=False, indent=2))
         return

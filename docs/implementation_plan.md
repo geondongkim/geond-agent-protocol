@@ -17,6 +17,7 @@
 - Docker Compose 기반 Postgres + pgvector
 - 기본 DB schema
 - VS Code Copilot Chat storage parser
+- Codex JSONL session parser as a second test bed
 - Git diff/file snapshot ingester
 - tree-sitter 기반 Python/TypeScript symbol indexer
 - MCP server skeleton
@@ -131,6 +132,27 @@ Acceptance criteria:
 - Import is repeatable without duplicating records.
 - Import does not require VS Code to be running.
 
+## 6.5. Codex Test Bed
+
+Status: parser and CLI path added.
+
+Tasks:
+
+- [x] Parse Codex JSONL rollout session files.
+- [x] Read `session_index.jsonl` titles when available.
+- [x] Extract `session_meta` metadata such as cwd, originator, CLI version, source, model provider, and model.
+- [x] Extract user and assistant messages from `response_item` and `event_msg` records.
+- [x] Import Codex sessions into the same `sessions`, `events`, and `messages` tables used by VS Code Copilot Chat.
+- [x] Add sanitized Codex fixture tests.
+- [ ] Add DB integration tests for `import-codex`.
+- [ ] Add redaction before persisting raw Codex payloads.
+
+Acceptance criteria:
+
+- A live Codex session can be parsed without printing full message content.
+- Imported Codex messages can be searched through the same keyword/vector/hybrid retrieval path.
+- The parser treats Codex local storage as best-effort implementation detail, not as a public API.
+
 ## 7. Phase 4: Code Graph Indexer
 
 Tasks:
@@ -157,7 +179,8 @@ Tasks:
 - [x] Add local/no-op embedding mode for privacy-first development.
 - [x] Add pgvector search when embeddings are configured.
 - [x] Implement first-pass hybrid scoring: keyword reciprocal rank + vector reciprocal rank.
-- [ ] Return evidence objects, not only plain text.
+- [x] Return evidence objects for `search_dev_memory` results.
+- [ ] Expand evidence objects to `explain_change` and symbol retrieval.
 
 Acceptance criteria:
 
@@ -255,9 +278,15 @@ Completed locally:
 - VS Code Copilot Chat session import works with large tool-output messages after limiting text-search indexing.
 - OpenAI `text-embedding-3-small` created 40 message embeddings.
 - Korean query comparison showed `keyword` returning no results while `vector` and `hybrid` retrieved the relevant chat memory.
+- Codex JSONL fixture parsing is covered by tests.
+- Current live Codex session summary parsed successfully: 169 events and 24 messages.
+- Sanitized Codex fixture import works against local Postgres.
+- `search_dev_memory` now supports workspace/source filters and returns message evidence objects.
+- `uv run pytest` and `uv run ruff check .` pass.
 
 Known implementation notes:
 
 - Raw message content may be very large, so text-search indexing uses `left(content, 50000)`.
 - Embedding requests use `GEOND_EMBEDDING_MAX_CHARS` to avoid provider token limits.
 - `GEOND_EMBEDDING_BASE_URL` should stay empty for default OpenAI unless a compatible gateway is used.
+- Codex import currently stores raw event payloads; redaction should be added before broader use.
