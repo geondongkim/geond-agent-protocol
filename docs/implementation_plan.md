@@ -134,7 +134,7 @@ Acceptance criteria:
 
 ## 6.5. Codex Test Bed
 
-Status: parser and CLI path added.
+Status: parser, CLI, DB import, redaction, and fixture path added.
 
 Tasks:
 
@@ -153,13 +153,34 @@ Acceptance criteria:
 - Imported Codex messages can be searched through the same keyword/vector/hybrid retrieval path.
 - The parser treats Codex local storage as best-effort implementation detail, not as a public API.
 
+## 6.75. Claude Code Test Bed
+
+Status: parser, CLI, DB import, redaction, and fixture path added.
+
+Tasks:
+
+- [x] Parse Claude Code JSONL files under `~/.claude/projects`.
+- [x] Extract `cwd`, `gitBranch`, `version`, `sessionId`, `uuid`, `parentUuid`, and timestamps.
+- [x] Keep `thinking` and tool-only records as events rather than retrieval messages.
+- [x] Capture tool calls in event and message metadata.
+- [x] Import Claude Code sessions into shared `sessions`, `events`, and `messages` tables.
+- [x] Derive workspace identity from JSONL `cwd` when CLI args are omitted.
+- [x] Add sanitized Claude Code fixture tests and DB import tests.
+
+Acceptance criteria:
+
+- A Claude Code session can be parsed without printing full message content.
+- Imported Claude Code messages can be searched with `--source claude-code`.
+- Fake secrets in Claude Code payloads are redacted before persistence.
+
 ## 7. Phase 4: Code Graph Indexer
 
 Tasks:
 
-- [ ] Add tree-sitter runtime.
+- [x] Add tree-sitter runtime.
 - [x] Support Python first with a minimal stdlib `ast` indexer.
 - [x] Support TypeScript/JavaScript second with a minimal regex-based indexer.
+- [x] Add a tree-sitter-backed mixed Python/TypeScript/JavaScript index path with AST/regex fallback.
 - [x] Extract files, modules, classes, functions, methods, imports, and same-file basic calls.
 - [x] Store entities in `code_entities`.
 - [x] Store relationships in `code_edges`.
@@ -239,6 +260,13 @@ Deliverables:
 - Retrieval benchmark command and docs.
 - Public GitHub release `v0.1.0-alpha`.
 
+Current status:
+
+- [x] Scripted GIF asset generated at `docs/assets/geond_demo.gif`.
+- [x] Reproducible GIF renderer added at `scripts/render_demo_gif.py`.
+- [x] APIM AI gateway policy sample added under `examples/azure/apim`.
+- [x] Foundry project-managed deployment skeleton added under `examples/azure/foundry`.
+
 ## 12. Risks and Mitigations
 
 | Risk | Impact | Mitigation |
@@ -261,11 +289,11 @@ Deliverables:
 
 ## 14. Recommended Immediate Next Steps
 
-1. Add stale reservation cleanup and expiry automation.
-2. Harden the Python code graph indexer and decide whether tree-sitter replaces or augments the stdlib `ast` path.
-3. Persist benchmark runs and compare OpenAI, Azure OpenAI, gateway, and local providers.
-4. Add a public demo recording or GIF and prepare `v0.1.0-alpha` release notes.
-5. Add TypeScript/JavaScript code graph indexing.
+1. Validate the tree-sitter index path on a larger mixed-language repository and tune duplicate import handling.
+2. Run saved benchmark comparisons across OpenAI, Azure OpenAI, APIM gateway, and local providers using the same judgments file.
+3. Expand benchmark reports with token usage and provider billing dimensions when gateways expose them.
+4. Turn the scripted GIF into a narrated public video and prepare `v0.1.0-alpha` release notes.
+5. Add stricter privacy-mode policy around raw event retention for thinking/tool payloads.
 
 The first version should optimize for one unmistakable demo: context crosses from one agent/session into another without manual re-explanation.
 
@@ -305,9 +333,13 @@ Completed locally:
 - Claude Desktop, Continue, and VS Code MCP client config examples are available under `examples/mcp_clients`.
 - `benchmark-search` measures keyword/vector/hybrid retrieval latency for fixture or imported data.
 - `benchmark-search --save` persists runs and `benchmark-report` compares saved runs.
+- `benchmark-search --judgments` reports `recall_at_k`, `mrr`, and `ndcg_at_k`; `benchmark-report --format markdown` renders comparison tables.
 - TypeScript/JavaScript indexing stores modules, imports, classes, functions, methods, and same-file call edges.
+- `index-tree-sitter` indexes mixed Python/TypeScript/JavaScript paths and merges syntax-derived structure with AST/regex call-edge fallback.
+- Claude Code fixture parsing and DB import are covered by tests, including source-filtered retrieval and redaction.
 - Expired file and symbol reservations are marked released automatically on conflict paths and manually through `cleanup-reservations`.
 - `examples/python_service` and `docs/demo.md` provide a runnable local demo path.
+- `docs/assets/geond_demo.gif` and Azure Foundry/APIM samples provide public demo and deployment starting points.
 
 Known implementation notes:
 

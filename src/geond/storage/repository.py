@@ -6,6 +6,8 @@ from psycopg import Connection
 from psycopg.cursor import Cursor
 from psycopg.types.json import Jsonb
 
+from geond.adapters.claude_code import SOURCE as CLAUDE_CODE_SOURCE
+from geond.adapters.claude_code import ParsedClaudeCodeSession
 from geond.adapters.codex import SOURCE as CODEX_SOURCE
 from geond.adapters.codex import ParsedCodexSession
 from geond.adapters.vscode_copilot import SOURCE, ParsedCopilotSession
@@ -137,6 +139,130 @@ def store_codex_session(conn: Connection, workspace_id: str, session: ParsedCode
 
     conn.commit()
     return session_row_id
+
+
+def store_claude_code_session(
+    conn: Connection,
+    workspace_id: str,
+    session: ParsedClaudeCodeSession,
+) -> str:
+    title = title_from_claude_metadata(session)
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO sessions (workspace_id, source, external_id, title, metadata)
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (workspace_id, source, external_id)
+            DO UPDATE SET title = EXCLUDED.title,
+                          metadata = sessions.metadata || EXCLUDED.metadata,
+                          updated_at = now()
+            RETURNING id::text
+            """,
+            (
+                workspace_id,
+                CLAUDE_CODE_SOURCE,
+                session.session_id,
+                title,
+                Jsonb(session.metadata),
+            ),
+        )
+        session_row_id = cur.fetchone()[0]
+
+        for event in session.events:
+            source_id = f"{CLAUDE_CODE_SOURCE}:{session.session_id}:{event.ordinal}"
+            redacted_raw, findings = redact_value(event.raw)
+            cur.execute(
+                """
+                INSERT INTO events (
+                    workspace_id,
+                    session_id,
+                    source,
+                    source_id,
+                    event_type,
+                    occurred_at,
+                    payload
+                )
+                VALUES (%s, %s, %s, %s, %s, %s::timestamptz, %s)
+                ON CONFLICT (source, source_id)
+                DO UPDATE SET event_type = EXCLUDED.event_type,
+                              occurred_at = EXCLUDED.occurred_at,
+                              payload = EXCLUDED.payload
+                """,
+                (
+                    workspace_id,
+                    session_row_id,
+                    CLAUDE_CODE_SOURCE,
+                    source_id,
+                    event.record_type,
+                    event.timestamp,
+                    Jsonb(redacted_raw),
+                ),
+            )
+            insert_redaction_findings(cur, workspace_id, CLAUDE_CODE_SOURCE, source_id, findings)
+
+        for message in session.messages:
+            source_id = f"{CLAUDE_CODE_SOURCE}:{session.session_id}:{message.ordinal}"
+            redacted_content, content_findings = redact_text(message.content)
+            metadata = {
+                **message.metadata,
+                "source": CLAUDE_CODE_SOURCE,
+                "timestamp": message.timestamp,
+                "tool_calls": message.tool_calls,
+            }
+            redacted_metadata, metadata_findings = redact_value(metadata)
+            cur.execute(
+                """
+                SELECT id::text FROM events
+                WHERE source = %s AND source_id = %s
+                """,
+                (CLAUDE_CODE_SOURCE, source_id),
+            )
+            row = cur.fetchone()
+            raw_event_id = row[0] if row else None
+            cur.execute(
+                """
+                INSERT INTO messages (session_id, raw_event_id, role, ordinal, content, metadata)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (session_id, ordinal)
+                DO UPDATE SET content = EXCLUDED.content,
+                              metadata = EXCLUDED.metadata,
+                              raw_event_id = EXCLUDED.raw_event_id,
+                              role = EXCLUDED.role
+                """,
+                (
+                    session_row_id,
+                    raw_event_id,
+                    message.role,
+                    message.ordinal,
+                    redacted_content,
+                    Jsonb(redacted_metadata),
+                ),
+            )
+            insert_redaction_findings(
+                cur,
+                workspace_id,
+                CLAUDE_CODE_SOURCE,
+                f"{source_id}:message",
+                content_findings + metadata_findings,
+            )
+
+        delete_stale_message_rows(
+            cur,
+            session_row_id=session_row_id,
+            current_ordinals=[message.ordinal for message in session.messages],
+        )
+
+    conn.commit()
+    return session_row_id
+
+
+def title_from_claude_metadata(session: ParsedClaudeCodeSession) -> str:
+    cwd = session.metadata.get("cwd")
+    if isinstance(cwd, str) and cwd.strip():
+        normalized = cwd.replace("\\", "/").rstrip("/")
+        if normalized:
+            return normalized.rsplit("/", 1)[-1] or session.session_id
+    return session.session_id
 
 
 def store_vscode_session(conn: Connection, workspace_id: str, session: ParsedCopilotSession) -> str:

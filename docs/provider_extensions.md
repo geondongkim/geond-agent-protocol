@@ -75,6 +75,9 @@ Recommended gateway policy:
 - Block or redact obvious secret patterns before forwarding.
 - Route deployments from `GEOND_EMBEDDING_MODEL`.
 
+An Azure API Management version of this policy is available at
+[examples/azure/apim/geond-openai-gateway-policy.xml](../examples/azure/apim/geond-openai-gateway-policy.xml).
+
 ## Local-Only
 
 Local-only blocks cloud providers before a network call is made.
@@ -108,5 +111,16 @@ uv run geond benchmark-search app_context --mode keyword --repeat 5
 Use vector or hybrid mode after configuring a provider:
 
 ```bash
-uv run geond benchmark-search app_context build_answer --mode hybrid --repeat 3
+uv run geond benchmark-search app_context build_answer \
+    --mode hybrid \
+    --repeat 3 \
+    --judgments examples/benchmarks/search_judgments.json \
+    --save \
+    --label gateway-hybrid
+```
+
+Compare saved runs:
+
+```bash
+uv run geond benchmark-report --format markdown
 ```

@@ -88,7 +88,12 @@ Observed live-session summary on 2026-05-11:
 
 ## Next Improvements
 
-- Add a purge workflow for already-imported sensitive records.
-- Add configurable privacy modes around raw payload retention and cloud embedding.
-- Expand evidence objects to `explain_change` and symbol retrieval.
-- Add agent coordination tools that let Codex reserve files and publish handoff notes.
+- Keep fixture coverage current as Codex JSONL record types evolve.
+- Compare Codex retrieval quality against Copilot Chat and Claude Code with the
+  shared benchmark judgments.
+- Use `index-tree-sitter` before symbol reservations when validating code-aware
+  handoffs.
+- Exercise purge and privacy modes on imported Codex sessions that include fake
+  secret fixtures.
+
+For the cross-agent comparison, see [agent_testbeds.md](agent_testbeds.md).

@@ -23,7 +23,8 @@ The protocol stores development events in a local database, then exposes them th
 flowchart LR
     A[VS Code / Copilot Chat] --> I[Adapters]
     B[CLI Agents / Codex-like Tools] --> I
-    C[Continue / Other MCP Clients] --> M[MCP Server]
+    C[Claude Code] --> I
+    D[Continue / Other MCP Clients] --> M[MCP Server]
     I --> G[Geond Core]
     M --> G
     G --> P[(Postgres + pgvector)]
@@ -44,9 +45,9 @@ flowchart LR
 
 ## Test Beds
 
-The first research target is VS Code GitHub Copilot Chat storage. See [docs/vscode_chat_storage_structure.md](docs/vscode_chat_storage_structure.md) for the storage investigation and recovery notes.
-
-Codex is now the second test bed. See [docs/codex_testbed.md](docs/codex_testbed.md) for the local JSONL session parser and validation path.
+The current test beds are VS Code GitHub Copilot Chat, Codex, and Claude Code.
+See [docs/agent_testbeds.md](docs/agent_testbeds.md) for the comparison,
+validation status, and improvement plan.
 
 ## Documentation
 
@@ -58,6 +59,7 @@ Codex is now the second test bed. See [docs/codex_testbed.md](docs/codex_testbed
 - [docs/provider_extensions.md](docs/provider_extensions.md) covers OpenAI, Azure OpenAI, gateway, and local embedding modes.
 - [docs/mcp_client_config.md](docs/mcp_client_config.md) provides Claude Desktop, Continue, and VS Code MCP client examples.
 - [docs/benchmarking.md](docs/benchmarking.md) shows the current retrieval benchmark command.
+- [docs/agent_testbeds.md](docs/agent_testbeds.md) compares the Copilot Chat, Codex, and Claude Code test beds.
 - [docs/vscode_chat_storage_structure.md](docs/vscode_chat_storage_structure.md) documents the first VS Code Copilot Chat test bed.
 - [docs/codex_testbed.md](docs/codex_testbed.md) documents the Codex JSONL test bed.
 - [docs/demo.md](docs/demo.md) walks through the current seed, retrieval, code graph, MCP, coordination, and purge demo.
@@ -135,7 +137,21 @@ uv run geond import-codex "C:/Users/<you>/.codex/sessions" \
     --workspace-name "my-project"
 ```
 
-Codex and VS Code imports pass raw event payloads and message content through a conservative redaction baseline before persistence. It masks sensitive keys, environment secret assignments, bearer tokens, GitHub-style tokens, OpenAI-style keys, and URL passwords while recording non-secret redaction metadata in `redaction_findings`.
+Parse Claude Code sessions without writing to the database:
+
+```bash
+uv run geond parse-claude-code "C:/Users/<you>/.claude/projects" --limit 5
+```
+
+Import Claude Code sessions into Geond. If `--workspace-uri` and
+`--workspace-name` are omitted, Geond derives them from Claude Code's JSONL
+`cwd` metadata:
+
+```bash
+uv run geond import-claude-code "C:/Users/<you>/.claude/projects" --limit 5
+```
+
+Copilot Chat, Codex, and Claude Code imports pass raw event payloads and message content through a conservative redaction baseline before persistence. It masks sensitive keys, environment secret assignments, bearer tokens, GitHub-style tokens, OpenAI-style keys, and URL passwords while recording non-secret redaction metadata in `redaction_findings`.
 
 Repeat imports update existing sessions and remove stale message rows when local session files change. Retrieval snippets are generated in Python so multilingual text is sliced on character boundaries rather than database byte boundaries.
 
@@ -174,6 +190,14 @@ Index TypeScript or JavaScript code into the local code graph:
 
 ```bash
 uv run geond index-ts-js "C:/path/to/project" \
+    --workspace-uri "file:///C:/path/to/project" \
+    --workspace-name "my-project"
+```
+
+Index Python, TypeScript, and JavaScript with the tree-sitter-backed path:
+
+```bash
+uv run geond index-tree-sitter "C:/path/to/project" \
     --workspace-uri "file:///C:/path/to/project" \
     --workspace-name "my-project"
 ```
@@ -238,13 +262,22 @@ uv run geond cleanup-reservations --workspace-id "<workspace-id>"
 Save and compare retrieval benchmarks:
 
 ```bash
-uv run geond benchmark-search "app_context" --mode keyword --save --label baseline
-uv run geond benchmark-report --workspace-uri "file:///sample/geond"
+uv run geond benchmark-search "app_context" "build_answer" \
+    --mode keyword \
+    --judgments examples/benchmarks/search_judgments.json \
+    --save \
+    --label baseline
+
+uv run geond benchmark-report --workspace-uri "file:///sample/geond" --format markdown
 ```
+
+Demo asset:
+
+![Geond demo](docs/assets/geond_demo.gif)
 
 ## Status
 
-Early MVP stage. The repository contains research notes, architecture, implementation plans, a local Postgres/pgvector schema, VS Code Copilot Chat and Codex read-only importers, OpenAI/Azure/gateway/local embedding provider modes, keyword/vector/hybrid retrieval, Python code graph indexing, coordination tools, and an MCP server.
+Early MVP stage. The repository contains research notes, architecture, implementation plans, a local Postgres/pgvector schema, VS Code Copilot Chat, Codex, and Claude Code importers, OpenAI/Azure/gateway/local embedding provider modes, keyword/vector/hybrid retrieval, AST/regex/tree-sitter code graph indexing, benchmark quality metrics, coordination tools, demo assets, Azure samples, and an MCP server.
 
 ## Design Principles
 

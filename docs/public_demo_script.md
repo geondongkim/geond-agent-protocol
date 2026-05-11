@@ -2,6 +2,13 @@
 
 This is the first recording/GIF script for `v0.1.0-alpha`. It keeps the demo local, repeatable, and short enough for a README GIF or release note clip.
 
+Current scripted demo asset: [docs/assets/geond_demo.gif](assets/geond_demo.gif).
+Regenerate it with:
+
+```bash
+uv run python scripts/render_demo_gif.py
+```
+
 ## Target Story
 
 One agent leaves memory, code graph context, reservations, and a handoff. A second MCP client can retrieve that context without manual re-explanation.
@@ -23,7 +30,7 @@ Show:
 ## Code Graph Shot
 
 ```bash
-uv run geond index-python examples/python_service \
+uv run geond index-tree-sitter examples/python_service \
     --root examples/python_service \
     --workspace-uri file:///sample/geond \
     --workspace-name geond-sample
@@ -34,7 +41,7 @@ Show `build_answer` in [examples/python_service/service.py](../examples/python_s
 Optional TypeScript shot:
 
 ```bash
-uv run geond index-ts-js examples/typescript_service \
+uv run geond index-tree-sitter examples/typescript_service \
     --root examples/typescript_service \
     --workspace-uri file:///sample/geond \
     --workspace-name geond-sample
@@ -51,13 +58,13 @@ uv run geond benchmark-search app_context build_answer \
     --save \
     --label public-demo-keyword
 
-uv run geond benchmark-report --workspace-uri file:///sample/geond
+uv run geond benchmark-report --workspace-uri file:///sample/geond --format markdown
 ```
 
 Show:
 
 - prior session memory returns evidence
-- benchmark output is structured JSON
+- benchmark output includes latency and optional quality metrics
 
 ## Coordination Shot
 

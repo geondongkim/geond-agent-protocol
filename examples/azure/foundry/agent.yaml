@@ -1,0 +1,17 @@
+name: geond-memory-agent
+version: 0.1.0
+description: Hosted agent wrapper that exposes Geond MCP memory to Foundry workflows.
+protocol: responses
+runtime:
+  image: <registry>.azurecr.io/geond-memory-agent:<tag>
+  cpu: "1"
+  memory: 2Gi
+environment:
+  GEOND_DATABASE_URL: postgresql://<user>:<password>@<host>:5432/geond
+  GEOND_EMBEDDING_PROVIDER: gateway
+  GEOND_EMBEDDING_BASE_URL: https://<apim-name>.azure-api.net/openai/v1
+  GEOND_EMBEDDING_MODEL: text-embedding-3-small
+  GEOND_PRIVACY_MODE: redacted-cloud
+health:
+  path: /health
+  intervalSeconds: 30

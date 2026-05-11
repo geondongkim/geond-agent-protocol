@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 
+from geond.adapters.claude_code import parse_storage as parse_claude_code_storage
+from geond.adapters.claude_code import to_summary as claude_code_to_summary
 from geond.adapters.codex import parse_storage as parse_codex_storage
 from geond.adapters.codex import to_summary as codex_to_summary
 from geond.adapters.vscode_copilot import parse_storage, to_summary
 from geond.code_graph.python_indexer import index_python_path
+from geond.code_graph.tree_sitter_indexer import index_tree_sitter_path
 from geond.code_graph.ts_js_indexer import index_ts_js_path
 from geond.config import get_settings
 from geond.db import connect, run_schema_file
@@ -20,7 +24,9 @@ from geond.retrieval.simple import (
 from geond.storage.benchmark import (
     benchmark_search,
     compare_benchmark_runs,
+    format_benchmark_report_markdown,
     list_benchmark_runs,
+    load_judgments,
     save_benchmark_run,
 )
 from geond.storage.code_graph import store_code_index
@@ -34,10 +40,64 @@ from geond.storage.repository import (
     record_handoff_summary,
     release_symbol_reservation,
     reserve_symbols,
+    store_claude_code_session,
     store_codex_session,
     store_vscode_session,
     upsert_workspace,
 )
+
+
+def workspace_uri_from_cwd(cwd: object) -> str:
+    if not isinstance(cwd, str) or not cwd.strip():
+        return "claude-code://unknown-workspace"
+    normalized = cwd.strip().replace("\\", "/")
+    if re.match(r"^[A-Za-z]:/", normalized):
+        return f"file:///{normalized}"
+    if normalized.startswith("/"):
+        return f"file://{normalized}"
+    return f"file:///{normalized}"
+
+
+def workspace_name_from_uri(workspace_uri: str) -> str:
+    normalized = workspace_uri.rstrip("/").replace("\\", "/")
+    if normalized.startswith("file://"):
+        normalized = normalized.removeprefix("file://")
+    name = normalized.rsplit("/", 1)[-1]
+    return name or "claude-code-workspace"
+
+
+def format_benchmark_result_markdown(result: dict[str, object]) -> str:
+    lines = [
+        "# Benchmark Result",
+        "",
+        f"- Mode: `{result.get('mode')}`",
+        f"- Repeat: `{result.get('repeat')}`",
+        f"- Limit: `{result.get('limit')}`",
+        "",
+        "| Query | Results | Min ms | Avg ms | Max ms | Recall@k | MRR | nDCG@k |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    for query in result.get("queries", []):
+        if not isinstance(query, dict):
+            continue
+        quality = query.get("quality") if isinstance(query.get("quality"), dict) else {}
+        row_template = (
+            "| {query} | {result_count} | {min_ms} | {avg_ms} | {max_ms} | "
+            "{recall} | {mrr} | {ndcg} |"
+        )
+        lines.append(
+            row_template.format(
+                query=str(query.get("query") or "").replace("|", "\\|"),
+                result_count=query.get("result_count") or 0,
+                min_ms=query.get("min_ms") or "",
+                avg_ms=query.get("avg_ms") or "",
+                max_ms=query.get("max_ms") or "",
+                recall=quality.get("recall_at_k") or "",
+                mrr=quality.get("mrr") or "",
+                ndcg=quality.get("ndcg_at_k") or "",
+            )
+        )
+    return "\n".join(lines)
 
 
 def main() -> None:
@@ -60,6 +120,13 @@ def main() -> None:
     parse_codex.add_argument("--session-id")
     parse_codex.add_argument("--limit", type=int)
 
+    parse_claude = subparsers.add_parser(
+        "parse-claude-code", help="Parse Claude Code JSONL sessions without writing to DB"
+    )
+    parse_claude.add_argument("storage_path", nargs="?", type=Path)
+    parse_claude.add_argument("--session-id")
+    parse_claude.add_argument("--limit", type=int)
+
     import_vscode = subparsers.add_parser(
         "import-vscode", help="Import VS Code Copilot Chat storage into Geond DB"
     )
@@ -74,6 +141,15 @@ def main() -> None:
     import_codex.add_argument("--limit", type=int)
     import_codex.add_argument("--workspace-uri", required=True)
     import_codex.add_argument("--workspace-name", required=True)
+
+    import_claude = subparsers.add_parser(
+        "import-claude-code", help="Import Claude Code JSONL sessions"
+    )
+    import_claude.add_argument("storage_path", nargs="?", type=Path)
+    import_claude.add_argument("--session-id")
+    import_claude.add_argument("--limit", type=int)
+    import_claude.add_argument("--workspace-uri")
+    import_claude.add_argument("--workspace-name")
 
     embed_messages = subparsers.add_parser(
         "embed-messages", help="Create embeddings for imported message records"
@@ -103,6 +179,15 @@ def main() -> None:
     index_ts_js.add_argument("--workspace-uri", required=True)
     index_ts_js.add_argument("--workspace-name", required=True)
     index_ts_js.add_argument("--root", type=Path)
+
+    index_tree_sitter = subparsers.add_parser(
+        "index-tree-sitter",
+        help="Index Python/TypeScript/JavaScript files with tree-sitter precision",
+    )
+    index_tree_sitter.add_argument("path", type=Path)
+    index_tree_sitter.add_argument("--workspace-uri", required=True)
+    index_tree_sitter.add_argument("--workspace-name", required=True)
+    index_tree_sitter.add_argument("--root", type=Path)
 
     seed_sample = subparsers.add_parser(
         "seed-sample", help="Insert a small sample workspace and session"
@@ -166,6 +251,9 @@ def main() -> None:
     benchmark.add_argument("--source")
     benchmark.add_argument("--save", action="store_true")
     benchmark.add_argument("--label", default="")
+    benchmark.add_argument("--judgments", type=Path)
+    benchmark.add_argument("--include-results", action="store_true")
+    benchmark.add_argument("--format", choices=["json", "markdown"], default="json")
 
     benchmark_report = subparsers.add_parser(
         "benchmark-report", help="Compare saved benchmark runs"
@@ -173,6 +261,7 @@ def main() -> None:
     benchmark_report.add_argument("--workspace-uri")
     benchmark_report.add_argument("--mode")
     benchmark_report.add_argument("--limit", type=int, default=20)
+    benchmark_report.add_argument("--format", choices=["json", "markdown"], default="json")
     args = parser.parse_args()
 
     if args.command == "migrate":
@@ -184,6 +273,7 @@ def main() -> None:
     if args.command == "benchmark-search":
         settings = get_settings()
         provider = get_embedding_provider(settings) if args.mode in {"vector", "hybrid"} else None
+        judgments = load_judgments(args.judgments) if args.judgments else None
         with connect(settings) as conn:
             result = benchmark_search(
                 conn,
@@ -194,6 +284,8 @@ def main() -> None:
                 workspace_uri=args.workspace_uri,
                 source=args.source,
                 provider=provider,
+                judgments=judgments,
+                include_results=args.include_results,
             )
             if args.save:
                 run_id = save_benchmark_run(
@@ -206,11 +298,21 @@ def main() -> None:
                     metadata={"source": "cli"},
                 )
                 result["benchmark_run_id"] = run_id
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        if args.format == "markdown":
+            print(format_benchmark_result_markdown(result))
+        else:
+            print(json.dumps(result, ensure_ascii=False, indent=2))
         return
     if args.command == "benchmark-report":
         with connect(get_settings()) as conn:
-            if args.mode:
+            if args.format == "markdown" or not args.mode:
+                result = compare_benchmark_runs(
+                    conn,
+                    workspace_uri=args.workspace_uri,
+                    mode=args.mode,
+                    limit=args.limit,
+                )
+            else:
                 result = {
                     "runs": list_benchmark_runs(
                         conn,
@@ -219,13 +321,10 @@ def main() -> None:
                         limit=args.limit,
                     )
                 }
-            else:
-                result = compare_benchmark_runs(
-                    conn,
-                    workspace_uri=args.workspace_uri,
-                    limit=args.limit,
-                )
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        if args.format == "markdown":
+            print(format_benchmark_report_markdown(result))
+        else:
+            print(json.dumps(result, ensure_ascii=False, indent=2))
         return
     if args.command == "parse-vscode":
         sessions = parse_storage(args.storage_path, args.session_id)
@@ -236,6 +335,12 @@ def main() -> None:
     if args.command == "parse-codex":
         sessions = parse_codex_storage(args.storage_path, args.session_id, args.limit)
         summaries = [codex_to_summary(session) for session in sessions]
+        print(json.dumps(summaries, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "parse-claude-code":
+        sessions = parse_claude_code_storage(args.storage_path, args.session_id, args.limit)
+        summaries = [claude_code_to_summary(session) for session in sessions]
         print(json.dumps(summaries, ensure_ascii=False, indent=2))
         return
 
@@ -271,6 +376,38 @@ def main() -> None:
         print(
             json.dumps(
                 {"status": "ok", "workspace_id": workspace_id, "imported_sessions": stored},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
+
+    if args.command == "import-claude-code":
+        sessions = parse_claude_code_storage(args.storage_path, args.session_id, args.limit)
+        imported: list[dict[str, str]] = []
+        with connect(get_settings()) as conn:
+            for session in sessions:
+                workspace_uri = args.workspace_uri or workspace_uri_from_cwd(
+                    session.metadata.get("cwd")
+                )
+                workspace_name = args.workspace_name or workspace_name_from_uri(workspace_uri)
+                workspace_id = upsert_workspace(
+                    conn,
+                    root_uri=workspace_uri,
+                    name=workspace_name,
+                    metadata={"source": "cli", "import_source": "claude-code"},
+                )
+                session_row_id = store_claude_code_session(conn, workspace_id, session)
+                imported.append(
+                    {
+                        "workspace_id": workspace_id,
+                        "session_id": session_row_id,
+                        "external_id": session.session_id,
+                    }
+                )
+        print(
+            json.dumps(
+                {"status": "ok", "imported_sessions": imported},
                 ensure_ascii=False,
                 indent=2,
             )
@@ -356,6 +493,26 @@ def main() -> None:
     if args.command == "index-ts-js":
         root_path = args.root or args.path
         indexed_files = index_ts_js_path(args.path, root_path=root_path)
+        with connect(get_settings()) as conn:
+            workspace_id = upsert_workspace(
+                conn,
+                root_uri=args.workspace_uri,
+                name=args.workspace_name,
+                metadata={"source": "cli"},
+            )
+            stats = store_code_index(conn, workspace_id, indexed_files)
+        print(
+            json.dumps(
+                {"status": "ok", "workspace_id": workspace_id, **stats},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
+
+    if args.command == "index-tree-sitter":
+        root_path = args.root or args.path
+        indexed_files = index_tree_sitter_path(args.path, root_path=root_path)
         with connect(get_settings()) as conn:
             workspace_id = upsert_workspace(
                 conn,

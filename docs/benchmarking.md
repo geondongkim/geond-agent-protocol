@@ -1,6 +1,9 @@
 # Benchmarking
 
-Geond includes a small retrieval benchmark command for local smoke tests and provider comparisons. It is intentionally simple: it measures end-to-end query latency from the CLI process through database retrieval, and includes embedding time for vector and hybrid modes.
+Geond includes a retrieval benchmark command for local smoke tests and provider
+comparisons. It measures end-to-end query latency from the CLI process through
+database retrieval, includes embedding time for vector and hybrid modes, and can
+score retrieval quality when a small judgments file is provided.
 
 ## Prepare Data
 
@@ -47,6 +50,39 @@ uv run geond benchmark-search app_context build_answer --mode hybrid --repeat 3
 
 Use [provider_extensions.md](provider_extensions.md) to switch between OpenAI, Azure OpenAI, gateway, and local OpenAI-compatible providers.
 
+## Quality Judgments
+
+Pass a judgments file to calculate `recall_at_k`, `mrr`, and `ndcg_at_k` for
+each query:
+
+```bash
+uv run geond benchmark-search app_context build_answer \
+    --mode keyword \
+    --workspace-uri file:///sample/geond \
+    --judgments examples/benchmarks/search_judgments.json \
+    --include-results
+```
+
+Judgments can match exact message/session/source/workspace fields or snippets:
+
+```json
+{
+  "queries": [
+    {
+      "query": "app_context",
+      "expected": [
+        {
+          "source": "seed",
+          "snippet_contains": "app_context"
+        }
+      ]
+    }
+  ]
+}
+```
+
+Use `--format markdown` when collecting results for a report or README snippet.
+
 ## Saved Runs
 
 Persist a run:
@@ -63,7 +99,7 @@ uv run geond benchmark-search app_context \
 Compare saved runs:
 
 ```bash
-uv run geond benchmark-report --workspace-uri file:///sample/geond
+uv run geond benchmark-report --workspace-uri file:///sample/geond --format markdown
 ```
 
 ## Cleanup
@@ -75,4 +111,6 @@ uv run geond purge-workspace file:///sample/geond --yes
 ## Current Limitations
 
 - The command is a development benchmark, not a statistically rigorous performance suite.
-- It does not yet collect token counts, provider billing dimensions, or concurrent throughput.
+- It does not yet collect provider billing dimensions or concurrent throughput.
+- Token counts are available when the provider/gateway exposes them, but Geond
+  does not yet normalize them across providers.

@@ -1,0 +1,17 @@
+{
+  "queries": [
+    {
+      "query": "app_context",
+      "expected": [
+        {
+          "source": "seed",
+          "snippet_contains": "app_context"
+        }
+      ]
+    },
+    {
+      "query": "build_answer",
+      "expected_substrings": ["build_answer"]
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+defaultEnvironment: dev
+environments:
+  dev:
+    projectEndpoint: https://<account>.services.ai.azure.com/api/projects/<project>
+    agentName: geond-memory-agent-dev
+    azureContainerRegistry: <registry>.azurecr.io
+    observability:
+      applicationInsightsResourceId: /subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.Insights/components/<app-insights-name>
+    evaluationSuites:
+      - id: retrieval-smoke
+        tags:
+          tier: smoke
+          purpose: retrieval-quality
+          stage: seed
+        dataset: geond-memory-agent-dev-retrieval-seed
+        datasetVersion: v1
+        datasetFile: .foundry/datasets/geond-memory-agent-dev-retrieval-seed-v1.jsonl
+        datasetUri: <foundry-dataset-uri>
+        evaluators:
+          - name: intent_resolution
+            threshold: 4
+          - name: groundedness
+            threshold: 4
+          - name: citation_quality
+            threshold: 0.9

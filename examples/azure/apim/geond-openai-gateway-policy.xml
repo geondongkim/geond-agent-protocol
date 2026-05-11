@@ -1,0 +1,79 @@
+<policies>
+  <inbound>
+    <base />
+
+    <!-- Authenticate APIM to Azure OpenAI / Foundry Models with the APIM managed identity. -->
+    <authentication-managed-identity resource="https://cognitiveservices.azure.com" />
+
+    <!-- Reuse semantically similar completions before spending model TPM. -->
+    <azure-openai-semantic-cache-lookup
+      score-threshold="0.78"
+      embeddings-backend-id="geond-embeddings"
+      embeddings-backend-auth="system-assigned" />
+
+    <!-- Cap runaway agents per APIM subscription. Tune this to the backend deployment quota. -->
+    <azure-openai-token-limit
+      counter-key="@(context.Subscription.Id)"
+      tokens-per-minute="60000"
+      estimate-prompt-tokens="true"
+      tokens-consumed-header-name="x-geond-tokens-consumed"
+      remaining-tokens-header-name="x-geond-tokens-remaining" />
+
+    <!-- Keep request bursts from overrunning MCP clients or provider retry budgets. -->
+    <rate-limit-by-key
+      calls="120"
+      renewal-period="60"
+      counter-key="@(context.Subscription.Id)" />
+
+    <!-- Optional but recommended for public or multi-team demos. -->
+    <llm-content-safety backend-id="geond-content-safety">
+      <category name="Hate" threshold="4" />
+      <category name="Sexual" threshold="4" />
+      <category name="SelfHarm" threshold="4" />
+      <category name="Violence" threshold="4" />
+    </llm-content-safety>
+
+    <set-header name="x-geond-source" exists-action="skip">
+      <value>apim-ai-gateway</value>
+    </set-header>
+
+    <set-backend-service backend-id="geond-foundry-openai" />
+
+    <azure-openai-emit-token-metric namespace="geond-ai-gateway">
+      <dimension name="Subscription" value="@(context.Subscription.Id)" />
+      <dimension name="API" value="@(context.Api.Name)" />
+      <dimension name="Operation" value="@(context.Operation.Id)" />
+      <dimension name="GeondSource" value="@(context.Request.Headers.GetValueOrDefault(&quot;x-geond-source&quot;, &quot;unknown&quot;))" />
+    </azure-openai-emit-token-metric>
+  </inbound>
+
+  <backend>
+    <forward-request timeout="120" />
+  </backend>
+
+  <outbound>
+    <base />
+    <azure-openai-semantic-cache-store duration="3600" />
+  </outbound>
+
+  <on-error>
+    <base />
+    <choose>
+      <when condition="@(context.LastError.Source == &quot;azure-openai-token-limit&quot;)">
+        <return-response>
+          <set-status code="429" reason="Token Limit Exceeded" />
+          <set-header name="Retry-After" exists-action="override">
+            <value>60</value>
+          </set-header>
+          <set-body>{"error":"Token rate limit exceeded. Try again later."}</set-body>
+        </return-response>
+      </when>
+      <when condition="@(context.LastError.Source == &quot;llm-content-safety&quot;)">
+        <return-response>
+          <set-status code="400" reason="Content Filtered" />
+          <set-body>{"error":"Request blocked by content safety policy."}</set-body>
+        </return-response>
+      </when>
+    </choose>
+  </on-error>
+</policies>
