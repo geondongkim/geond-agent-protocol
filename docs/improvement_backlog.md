@@ -45,9 +45,11 @@ organized by product risk rather than by implementation convenience.
 | Improvement | Why | Candidate implementation |
 | --- | --- | --- |
 | Lease renewal | Long-running agents need to extend reservations safely. | Implemented `renew_reservation`, `renew_symbol_reservation`, matching CLI commands, and reservation audit events for create/renew/release/expire transitions. |
+| File reservation CLI parity | Context review recommendations should be executable from the CLI. | Implemented `reserve-files` and `release-reservation` commands matching MCP file reservation tools. |
 | Conflict policy levels | Some conflicts are warnings; others should block. | Implemented workspace policy for advisory, strict, and override-with-reason modes across file and symbol reservations. |
 | Handoff templates | Handoffs become better when they are structured. | Implemented standard metadata templates for summary, tested commands, remaining risks, and next action. |
 | Session lineage | Multi-agent workflows need provenance. | Implemented workspace lineage graphs linking sessions, handoffs, actions, changesets, and benchmark runs. |
+| Context review loop | Agents should compare the next task with current intent, reservations, and handoffs before editing. | Implemented `review_workspace_context` and `geond review-context` to assess requested work against active reservations, open handoffs, and lineage matches. |
 
 ## Priority 5: Packaging And Adoption
 
@@ -85,8 +87,9 @@ reports resolve aliases as well.
 Keyword, vector, and hybrid search now support optional deterministic local
 reranking over expanded candidate pools, and `rerank=api` can call a configured
 HTTP reranker with local-only privacy guards. Structured handoff templates now preserve
-tested commands, remaining risks, and next action metadata, and workspace lineage
-graphs link sessions, actions, handoffs, changesets, and benchmark runs. The next slice should
-add **LSP-backed references** where available, add richer reranker evaluation metrics, and continue the
+tested commands, remaining risks, and next action metadata, workspace lineage
+graphs link sessions, actions, handoffs, changesets, and benchmark runs, and
+`review_workspace_context` compares upcoming work with loaded coordination context.
+The next slice should add **LSP-backed references** where available, add richer reranker evaluation metrics, and continue the
 **agent-collaboration ergonomics** work described in
 [`docs/agent_collaboration.md`](agent_collaboration.md).

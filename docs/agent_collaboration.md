@@ -45,6 +45,10 @@ What geond gives two agents that git does not:
   `geond://workspaces/{workspace_id}/lineage`). Agents can inspect a compact
   node/edge view of sessions, actions, handoffs, changesets, and benchmark
   runs without reconstructing provenance from separate tables.
+- **Context review** (`review_workspace_context`, `geond review-context`). Before
+  a new prompt-driven task starts, an agent can compare the requested intent,
+  files, and symbols with active reservations, handoffs, and lineage matches,
+  then decide whether to proceed, coordinate, or record more context.
 - **Evidence-cited narratives** (`explain_change(include_narrative=True)`,
   `get_changeset_detail(include_narrative=True)`). Every claim in the
   narrative carries a `geond.evidence.v1` pointer like

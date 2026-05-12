@@ -516,6 +516,12 @@ canonical `target_id`, `locator`, and `metadata` fields.
 - Returns a node/edge graph linking sessions, agent actions, handoffs,
   changesets, and benchmark runs for a workspace.
 
+`review_workspace_context`
+
+- Compares requested work intent, files, and symbols with active reservations,
+  handoffs, and lineage, then returns an assessment and recommended next
+  actions.
+
 `summarize_project_state`
 
 - Creates a compact current-state brief for another agent.

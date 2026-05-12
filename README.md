@@ -325,6 +325,11 @@ Coordinate symbol-level work from CLI or MCP:
 uv run geond workspace-policy <workspace-id> \
     --reservation-conflict-policy override-with-reason
 
+uv run geond reserve-files <workspace-id> \
+    --agent-name copilot \
+    --file src/geond/storage/context_review.py \
+    --purpose "context review loop"
+
 uv run geond reserve-symbols <workspace-id> \
     --agent-name copilot \
     --symbol build_answer \
@@ -338,14 +343,27 @@ uv run geond renew-symbol <workspace-id> \
     --agent-name copilot \
     --ttl-minutes 120
 
+uv run geond release-reservation <workspace-id> \
+    --file src/geond/storage/context_review.py \
+    --agent-name copilot
+
 uv run geond reservation-events \
     --workspace-id-or-uri <workspace-id> \
     --kind symbol
+
+uv run geond review-context <workspace-id> \
+    --agent-name copilot \
+    --intent "rename build_answer after checking service.py" \
+    --file service.py \
+    --symbol build_answer
 ```
 
 Reservation conflict policy defaults to `advisory`. Use `strict` to block new
 reservations when active conflicts exist, or `override-with-reason` to require
 an explicit reason before allowing a conflicting reservation.
+`review-context` compares requested work with active reservations, open
+handoffs, and lineage matches, then returns an assessment and recommended next
+actions before the agent edits.
 
 Reservation creation, renewal, explicit release, and expiry are recorded as
 append-only audit events and appear in workspace timeline/reservation resources.

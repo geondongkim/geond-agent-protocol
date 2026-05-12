@@ -11,6 +11,7 @@ from geond.config import get_settings
 from geond.db import connect, run_schema_file
 from geond.storage.benchmark import save_benchmark_run
 from geond.storage.code_graph import store_code_index
+from geond.storage.context_review import review_workspace_context
 from geond.storage.repository import (
     cleanup_expired_reservations_for_workspace,
     close_handoff_summary,
@@ -177,6 +178,14 @@ def build_answer(prompt):
             handoff_resource = get_workspace_handoffs(conn, workspace_id)
             timeline = get_workspace_timeline(conn, workspace_id)
             lineage = get_workspace_lineage(conn, workspace_id)
+            context_review = review_workspace_context(
+                conn,
+                workspace_id,
+                intent="rename build_answer after checking service.py context",
+                file_paths=["service.py"],
+                symbols=["build_answer"],
+                agent_name="agent-b",
+            )
             released = release_reservation(
                 conn,
                 workspace_id,
@@ -226,6 +235,12 @@ def build_answer(prompt):
             assert any(node["raw_id"] == benchmark_id for node in lineage["nodes"])
             assert any(edge["kind"] == "handoff_from" for edge in lineage["edges"])
             assert any(edge["kind"] == "precedes" for edge in lineage["edges"])
+            assert context_review["assessment"]["status"] == "advisory_conflicts"
+            assert context_review["assessment"]["external_conflict_count"] >= 1
+            assert context_review["matches"]
+            assert any(
+                "coordination decision" in item for item in context_review["recommendations"]
+            )
             assert reservation_resource["symbol_reservations"]
             assert handoff_resource["handoffs"][0]["summary"].startswith("build_answer")
             assert any(event["kind"] == "agent_action" for event in timeline["events"])

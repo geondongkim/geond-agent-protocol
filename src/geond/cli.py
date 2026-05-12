@@ -33,6 +33,7 @@ from geond.storage.benchmark import (
     save_benchmark_run,
 )
 from geond.storage.code_graph import store_code_index
+from geond.storage.context_review import review_workspace_context
 from geond.storage.embeddings import embed_pending_messages, embedding_stats
 from geond.storage.maintenance import purge_workspace, seed_sample_workspace
 from geond.storage.repository import (
@@ -47,9 +48,11 @@ from geond.storage.repository import (
     record_handoff_summary,
     record_workspace_fingerprints,
     register_workspace_alias,
+    release_reservation,
     release_symbol_reservation,
     renew_reservation,
     renew_symbol_reservation,
+    reserve_files,
     reserve_symbols,
     resolve_workspace_id,
     set_workspace_coordination_policy,
@@ -309,6 +312,32 @@ def main() -> None:
     conflicts.add_argument("workspace_id")
     conflicts.add_argument("--file", dest="files", action="append")
     conflicts.add_argument("--symbol", dest="symbols", action="append")
+
+    review_context = subparsers.add_parser(
+        "review-context",
+        help="Compare requested work with reservations, handoffs, and lineage",
+    )
+    review_context.add_argument("workspace_id_or_uri")
+    review_context.add_argument("--intent", default="")
+    review_context.add_argument("--file", dest="files", action="append")
+    review_context.add_argument("--symbol", dest="symbols", action="append")
+    review_context.add_argument("--agent-name")
+    review_context.add_argument("--limit", type=int, default=5)
+
+    reserve_files_cmd = subparsers.add_parser("reserve-files", help="Reserve files for agent work")
+    reserve_files_cmd.add_argument("workspace_id")
+    reserve_files_cmd.add_argument("--agent-name", required=True)
+    reserve_files_cmd.add_argument("--file", dest="files", action="append", required=True)
+    reserve_files_cmd.add_argument("--purpose", default="")
+    reserve_files_cmd.add_argument("--ttl-minutes", type=int, default=120)
+    reserve_files_cmd.add_argument("--override-reason")
+
+    release_file = subparsers.add_parser("release-reservation", help="Release a file reservation")
+    release_file.add_argument("workspace_id")
+    release_file_target = release_file.add_mutually_exclusive_group(required=True)
+    release_file_target.add_argument("--reservation-id")
+    release_file_target.add_argument("--file", dest="file_path")
+    release_file.add_argument("--agent-name")
 
     cleanup_reservations = subparsers.add_parser(
         "cleanup-reservations", help="Mark expired file and symbol reservations as released"
@@ -872,6 +901,48 @@ def main() -> None:
                 ),
             }
         print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "review-context":
+        with connect(get_settings()) as conn:
+            result = review_workspace_context(
+                conn,
+                workspace_id_or_uri=args.workspace_id_or_uri,
+                intent=args.intent,
+                file_paths=args.files,
+                symbols=args.symbols,
+                agent_name=args.agent_name,
+                limit=args.limit,
+            )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "reserve-files":
+        with connect(get_settings()) as conn:
+            workspace_id = require_workspace_id(conn, args.workspace_id)
+            result = reserve_files(
+                conn,
+                workspace_id=workspace_id,
+                agent_name=args.agent_name,
+                file_paths=args.files,
+                purpose=args.purpose,
+                ttl_minutes=args.ttl_minutes,
+                override_reason=args.override_reason,
+            )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "release-reservation":
+        with connect(get_settings()) as conn:
+            workspace_id = require_workspace_id(conn, args.workspace_id)
+            released = release_reservation(
+                conn,
+                workspace_id=workspace_id,
+                reservation_id=args.reservation_id,
+                file_path=args.file_path,
+                agent_name=args.agent_name,
+            )
+        print(json.dumps({"released": released}, ensure_ascii=False, indent=2))
         return
 
     if args.command == "cleanup-reservations":

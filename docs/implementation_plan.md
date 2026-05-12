@@ -245,7 +245,7 @@ Acceptance criteria:
 
 Tasks:
 
-- [x] Add `reserve_files` and `release_reservation`.
+- [x] Add `reserve_files`, `release_reservation`, and matching CLI commands.
 - [x] Track active agent tasks through `agent_actions` and workspace timeline resources.
 - [x] Add stale reservation expiry cleanup.
 - [x] Add reservation renewal for active file and symbol work.
@@ -253,6 +253,7 @@ Tasks:
 - [x] Add handoff summaries.
 - [x] Add structured handoff templates for tested commands, remaining risks, and next action.
 - [x] Add workspace lineage graph resource for sessions, actions, handoffs, changesets, and benchmark runs.
+- [x] Add context review for comparing requested work with reservations, handoffs, and lineage.
 - [x] Add conflict warnings when two agents target the same files.
 - [x] Add conflict warnings when two agents target the same symbols.
 - [x] Add workspace reservation conflict policies: advisory, strict, and override-with-reason.

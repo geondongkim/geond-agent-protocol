@@ -52,6 +52,8 @@ Use [examples/mcp_clients/continue_config.yaml](../examples/mcp_clients/continue
 - `list_handoff_summaries`: read open or closed handoffs.
 - `get_workspace_lineage_graph`: return a node/edge graph linking sessions,
   agent actions, handoffs, changesets, and benchmark runs.
+- `review_workspace_context`: compare requested intent/files/symbols with active
+    reservations, open handoffs, and lineage before starting an agent task.
 
 ## Useful Resources
 
