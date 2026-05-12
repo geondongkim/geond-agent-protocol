@@ -70,7 +70,7 @@ def search_dev_memory(
     rerank: str = "none",
     candidate_limit: int | None = None,
 ) -> list[dict[str, Any]]:
-    """Search shared development memory; set rerank="local" for deterministic local reranking."""
+    """Search shared development memory; set rerank to local or api to rerank candidates."""
     settings = get_settings()
     with connect(settings) as conn:
         if mode == "keyword":

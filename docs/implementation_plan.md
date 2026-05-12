@@ -211,6 +211,7 @@ Tasks:
 - [x] Add canonical `geond.evidence.v1` evidence references with stable `locator` and `metadata` fields.
 - [x] Add caller/callee call-impact context to symbol, file-change, and changeset retrieval.
 - [x] Generate deterministic narratives that cite changeset, symbol, file, message, and `code_edge` evidence.
+- [x] Add optional local and HTTP API reranking over expanded keyword/vector/hybrid candidate pools.
 
 Acceptance criteria:
 
@@ -376,7 +377,7 @@ Completed locally:
 - `benchmark-search` measures keyword/vector/hybrid retrieval latency for fixture or imported data.
 - `benchmark-search --save` persists runs and `benchmark-report` compares saved runs.
 - `benchmark-search --judgments` reports `recall_at_k`, `mrr`, and `ndcg_at_k`; `benchmark-report --format markdown` renders comparison tables.
-- `benchmark-search --rerank local` and `search --rerank local` rerank expanded candidate pools with deterministic lexical phrase/token scoring.
+- `benchmark-search --rerank local|api` and `search --rerank local|api` rerank expanded candidate pools with deterministic lexical phrase/token scoring or a configured HTTP reranker.
 - TypeScript/JavaScript indexing stores modules, imports, classes, functions, methods, and same-file call edges.
 - TypeScript/JavaScript cross-file call edges resolve direct imports, default imports, and re-export barrel imports when the target symbol is indexed.
 - `index-tree-sitter` indexes mixed Python/TypeScript/JavaScript paths and merges syntax-derived structure with AST/regex call-edge fallback.

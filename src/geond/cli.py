@@ -218,7 +218,7 @@ def main() -> None:
     search.add_argument("--limit", type=int, default=10)
     search.add_argument("--workspace-uri")
     search.add_argument("--source")
-    search.add_argument("--rerank", choices=["none", "local"], default="none")
+    search.add_argument("--rerank", choices=["none", "local", "api"], default="none")
     search.add_argument("--candidate-limit", type=int)
 
     index_python = subparsers.add_parser(
@@ -393,7 +393,7 @@ def main() -> None:
     benchmark.add_argument("--judgments", type=Path)
     benchmark.add_argument("--include-results", action="store_true")
     benchmark.add_argument("--format", choices=["json", "markdown"], default="json")
-    benchmark.add_argument("--rerank", choices=["none", "local"], default="none")
+    benchmark.add_argument("--rerank", choices=["none", "local", "api"], default="none")
     benchmark.add_argument("--candidate-limit", type=int)
 
     benchmark_report = subparsers.add_parser(

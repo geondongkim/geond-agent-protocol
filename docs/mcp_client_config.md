@@ -27,7 +27,9 @@ Use [examples/mcp_clients/continue_config.yaml](../examples/mcp_clients/continue
 
 ## Useful Tools
 
-- `search_dev_memory`: retrieve prior session evidence. Pass `rerank="local"` and optional `candidate_limit` to rerank keyword/vector/hybrid candidates locally.
+- `search_dev_memory`: retrieve prior session evidence. Pass `rerank="local"` or
+    `rerank="api"` and optional `candidate_limit` to rerank keyword/vector/hybrid
+    candidates locally or through `GEOND_RERANK_URL`.
 - `get_symbol_context`: inspect indexed code graph entities, related changesets, and caller/callee `calls` edges.
 - `register_workspace_alias`: attach a moved or renamed folder URI to an existing workspace.
 - `list_workspace_aliases`: inspect registered workspace aliases.

@@ -204,8 +204,10 @@ Retrieval combines four signals.
 | Intent | Prioritize bugfix, refactor, feature, test, or docs context |
 
 Keyword, vector, and hybrid retrieval can optionally rerank an expanded
-candidate pool with a deterministic local phrase/token scorer. This gives local
-quality tuning without requiring an external reranking API.
+candidate pool with a deterministic local phrase/token scorer or a pluggable
+HTTP API reranker. API rerankers receive `{query, candidates}` and return scores
+keyed by candidate id; `GEOND_PRIVACY_MODE=local-only` only permits local rerank
+URLs.
 
 Retrieval should return structured context, not only text chunks.
 Symbol context includes related changesets plus caller/callee relationships from

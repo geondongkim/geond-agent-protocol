@@ -39,6 +39,9 @@ class Settings:
     }
     privacy_mode: str = os.getenv("GEOND_PRIVACY_MODE", "redacted-cloud").lower()
     max_import_bytes: int = int(os.getenv("GEOND_MAX_IMPORT_BYTES", "104857600"))
+    rerank_url: str = os.getenv("GEOND_RERANK_URL", "")
+    rerank_api_key: str = os.getenv("GEOND_RERANK_API_KEY", "")
+    rerank_timeout_seconds: float = float(os.getenv("GEOND_RERANK_TIMEOUT_SECONDS", "10"))
 
 
 def get_settings() -> Settings:

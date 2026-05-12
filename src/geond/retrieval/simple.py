@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
+from urllib import request
+from urllib.parse import urlparse
 
 from psycopg import Connection
 
-from geond.config import Settings
+from geond.config import Settings, get_settings
 from geond.redaction import sanitize_text
 from geond.retrieval.evidence import evidence_ref
 from geond.retrieval.narrative import (
@@ -245,8 +248,8 @@ def normalize_rerank_mode(rerank: str | None) -> str | None:
     mode = (rerank or "none").strip().lower()
     if mode in {"", "none"}:
         return None
-    if mode != "local":
-        raise ValueError("rerank must be one of: none, local")
+    if mode not in {"local", "api"}:
+        raise ValueError("rerank must be one of: none, local, api")
     return mode
 
 
@@ -267,9 +270,12 @@ def maybe_rerank_results(
     results: list[dict[str, Any]],
     limit: int,
     rerank_mode: str | None,
+    settings: Settings | None = None,
 ) -> list[dict[str, Any]]:
     if rerank_mode == "local":
         return local_rerank_results(query, results, limit)
+    if rerank_mode == "api":
+        return api_rerank_results(query, results, limit, settings or get_settings())
     return results[:limit]
 
 
@@ -301,6 +307,103 @@ def local_rerank_results(
         ),
         reverse=True,
     )[:limit]
+
+
+def api_rerank_results(
+    query: str,
+    results: list[dict[str, Any]],
+    limit: int,
+    settings: Settings,
+) -> list[dict[str, Any]]:
+    if not results:
+        return []
+    candidates = [
+        {
+            "id": item["message_id"],
+            "text": rerank_text(item),
+            "metadata": {
+                "workspace_id": item.get("workspace_id"),
+                "source": item.get("source"),
+                "session_external_id": item.get("session_external_id"),
+                "ordinal": item.get("ordinal"),
+            },
+        }
+        for item in results
+    ]
+    score_by_id = call_rerank_api(settings, query, candidates)
+    reranked = []
+    for index, item in enumerate(results):
+        base_rank = index + 1
+        api_score = numeric_score(score_by_id.get(item["message_id"]))
+        missing_score = api_score is None
+        base_score = retrieval_base_score(item, base_rank)
+        total_score = api_score if api_score is not None else base_score * 0.001
+        reranked.append(
+            {
+                **item,
+                "rerank": "api",
+                "rerank_base_rank": base_rank,
+                "rerank_base_score": round(base_score, 6),
+                "rerank_score": round(api_score or 0.0, 6),
+                "rerank_missing_score": missing_score,
+                "rerank_total_score": round(total_score, 6),
+            }
+        )
+    return sorted(
+        reranked,
+        key=lambda item: (
+            not item["rerank_missing_score"],
+            item["rerank_total_score"],
+            -item["rerank_base_rank"],
+        ),
+        reverse=True,
+    )[:limit]
+
+
+def call_rerank_api(
+    settings: Settings,
+    query: str,
+    candidates: list[dict[str, Any]],
+) -> dict[str, float]:
+    if not settings.rerank_url:
+        raise ValueError("GEOND_RERANK_URL is required when rerank=api")
+    if settings.privacy_mode == "local-only" and not is_local_rerank_url(settings.rerank_url):
+        raise ValueError("GEOND_PRIVACY_MODE=local-only blocks non-local API rerankers")
+
+    payload = json.dumps({"query": query, "candidates": candidates}).encode("utf-8")
+    headers = {"Accept": "application/json", "Content-Type": "application/json"}
+    if settings.rerank_api_key:
+        headers["Authorization"] = f"Bearer {settings.rerank_api_key}"
+    req = request.Request(settings.rerank_url, data=payload, headers=headers, method="POST")
+    with request.urlopen(req, timeout=settings.rerank_timeout_seconds) as response:
+        body = response.read().decode("utf-8")
+    return parse_rerank_api_response(json.loads(body))
+
+
+def parse_rerank_api_response(payload: dict[str, Any]) -> dict[str, float]:
+    entries = payload.get("scores") or payload.get("results") or payload.get("rankings") or []
+    score_by_id: dict[str, float] = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        candidate_id = entry.get("id") or entry.get("message_id") or entry.get("candidate_id")
+        score = numeric_score(first_present(entry, "score", "relevance", "rerank_score"))
+        if candidate_id and score is not None:
+            score_by_id[str(candidate_id)] = score
+    return score_by_id
+
+
+def first_present(values: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        if key in values:
+            return values[key]
+    return None
+
+
+def is_local_rerank_url(url: str) -> bool:
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    return host in {"localhost", "127.0.0.1", "::1"} or host.endswith(".localhost")
 
 
 def retrieval_base_score(item: dict[str, Any], base_rank: int) -> float:

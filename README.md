@@ -176,14 +176,25 @@ uv run geond search "왜 이 파일이 바뀌었어?" --mode hybrid
 ```
 
 Optionally rerank the top candidate pool with a deterministic local lexical
-reranker after keyword, vector, or hybrid retrieval:
+reranker, or with a pluggable HTTP API reranker configured through
+`GEOND_RERANK_URL`, after keyword, vector, or hybrid retrieval:
 
 ```bash
 uv run geond search "왜 service.py 파일이 바뀌었어?" \
     --mode hybrid \
     --rerank local \
     --candidate-limit 30
+
+GEOND_RERANK_URL=http://localhost:8000/rerank \
+uv run geond search "왜 service.py 파일이 바뀌었어?" \
+    --mode hybrid \
+    --rerank api \
+    --candidate-limit 30
 ```
+
+API rerankers receive `{query, candidates}` and may return `scores`, `results`,
+or `rankings` entries keyed by `id`, `message_id`, or `candidate_id`.
+`GEOND_PRIVACY_MODE=local-only` only allows local reranker URLs.
 
 Limit retrieval to one workspace or source:
 
@@ -407,7 +418,7 @@ Local protocol demo asset:
 
 ## Status
 
-Early MVP stage. The repository contains research notes, architecture, implementation plans, a local Postgres/pgvector schema, VS Code Copilot Chat, Codex, and Claude Code importers, OpenAI/Azure/gateway/local embedding provider modes, keyword/vector/hybrid retrieval with optional local reranking, workspace aliases with git and manifest fingerprint suggestions, AST/regex/tree-sitter code graph indexing, Python and TypeScript/JavaScript cross-file/default-import/re-export call edges, changeset-to-symbol evidence links, call-impact narratives, reservation renewal, conflict policies, audit events, structured handoff templates, workspace lineage graphs, benchmark quality metrics, coordination tools, demo assets, Azure samples, and an MCP server.
+Early MVP stage. The repository contains research notes, architecture, implementation plans, a local Postgres/pgvector schema, VS Code Copilot Chat, Codex, and Claude Code importers, OpenAI/Azure/gateway/local embedding provider modes, keyword/vector/hybrid retrieval with optional local or API reranking, workspace aliases with git and manifest fingerprint suggestions, AST/regex/tree-sitter code graph indexing, Python and TypeScript/JavaScript cross-file/default-import/re-export call edges, changeset-to-symbol evidence links, call-impact narratives, reservation renewal, conflict policies, audit events, structured handoff templates, workspace lineage graphs, benchmark quality metrics, coordination tools, demo assets, Azure samples, and an MCP server.
 
 ## Design Principles
 

@@ -36,7 +36,7 @@ organized by product risk rather than by implementation convenience.
 | Improvement | Why | Candidate implementation |
 | --- | --- | --- |
 | Provider comparison matrix | Retrieval quality differs across OpenAI, Azure OpenAI, gateway, and local embeddings. | Run saved benchmark comparisons with the same judgment file and publish markdown reports. |
-| Reranking | Hybrid reciprocal rank is simple but not always precise. | Implemented optional deterministic local reranking for keyword/vector/hybrid candidates. Next: pluggable API rerankers. |
+| Reranking | Hybrid reciprocal rank is simple but not always precise. | Implemented optional deterministic local and pluggable HTTP API reranking for keyword/vector/hybrid candidates. |
 | Multilingual corpus | Korean and English queries are core to the project story. | Seed-level multilingual judgments are added. Next: expand fixtures with Korean/English mixed symbols and longer conversation evidence. |
 | Token and request accounting | Cost estimates need provider usage dimensions. | Capture token/request usage when providers or gateways expose it. |
 
@@ -83,9 +83,10 @@ merge. Git and manifest fingerprints can now suggest a likely alias before a
 moved folder is registered, explain ambiguous or partial matches, and benchmark
 reports resolve aliases as well.
 Keyword, vector, and hybrid search now support optional deterministic local
-reranking over expanded candidate pools. Structured handoff templates now preserve
+reranking over expanded candidate pools, and `rerank=api` can call a configured
+HTTP reranker with local-only privacy guards. Structured handoff templates now preserve
 tested commands, remaining risks, and next action metadata, and workspace lineage
 graphs link sessions, actions, handoffs, changesets, and benchmark runs. The next slice should
-add **LSP-backed references** where available, add pluggable API rerankers, and continue the
+add **LSP-backed references** where available, add richer reranker evaluation metrics, and continue the
 **agent-collaboration ergonomics** work described in
 [`docs/agent_collaboration.md`](agent_collaboration.md).
