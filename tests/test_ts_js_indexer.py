@@ -50,6 +50,11 @@ export class Reporter {
     assert "service.Reporter" in entities
     assert "service.Reporter.report" in entities
     assert entities["service.buildAnswer"].metadata["language"] == "typescript"
+    assert entities["service"].end_line == 13
+    assert entities["service.buildAnswer"].end_line == 5
+    assert entities["service.normalize"].end_line == 7
+    assert entities["service.Reporter"].end_line == 13
+    assert entities["service.Reporter.report"].end_line == 12
     assert ("service.Reporter", "service.Reporter.report", "contains") in edge_types
     assert ("service.Reporter.report", "service.buildAnswer", "calls") in edge_types
 

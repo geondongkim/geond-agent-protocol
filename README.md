@@ -222,8 +222,14 @@ uv run geond record-changeset \
 ```
 
 When a unified diff patch is provided, Geond links the changeset to symbols whose
-`start_line`/`end_line` overlap the changed hunk range. Without a patch, it falls
-back to file-path links.
+`start_line`/`end_line` overlap the changed hunk range. Deletion-only hunks keep
+old-file deleted line metadata and anchor to the new-file line position where the
+deletion occurred. Without a patch, Geond falls back to file-path links.
+
+Retrieval outputs include canonical `geond.evidence.v1` evidence references with
+stable `target_id`, `locator`, and `metadata` fields. Existing alias fields such
+as `message_id`, `changeset_id`, `entity_id`, and `file_path` remain available
+for compatibility with early MCP clients.
 
 Run the MCP server:
 
@@ -240,6 +246,11 @@ Useful MCP resources:
 - `geond://workspaces/{workspace_id}/timeline`
 - `geond://workspaces/{workspace_id}/reservations`
 - `geond://workspaces/{workspace_id}/handoffs`
+
+MCP clients can also call `record_changeset` with `workspace_id` or
+`workspace_uri` plus a `files` array. Each file entry supports `file_path`,
+`status`, `additions`, `deletions`, `patch`, and `metadata`, matching the CLI
+changeset model.
 
 Coordinate symbol-level work from CLI or MCP:
 

@@ -5,6 +5,7 @@ from typing import Any
 from psycopg import Connection
 
 from geond.redaction import sanitize_text
+from geond.retrieval.evidence import evidence_ref
 from geond.storage.embeddings import vector_to_sql
 
 SNIPPET_CHARS = 1200
@@ -208,17 +209,20 @@ def message_result(
     snippet: str,
     **scores: Any,
 ) -> dict[str, Any]:
-    evidence = {
-        "kind": "message",
-        "workspace_id": workspace_id,
-        "workspace_uri": workspace_uri,
-        "workspace_name": workspace_name,
-        "source": source,
-        "session_external_id": session_external_id,
-        "session_title": session_title,
-        "message_id": message_id,
-        "ordinal": ordinal,
-    }
+    evidence = evidence_ref(
+        "message",
+        target_id=message_id,
+        workspace_id=workspace_id,
+        workspace_uri=workspace_uri,
+        source=source,
+        locator={"session_external_id": session_external_id, "ordinal": ordinal},
+        metadata={"workspace_name": workspace_name, "session_title": session_title},
+        workspace_name=workspace_name,
+        session_external_id=session_external_id,
+        session_title=session_title,
+        message_id=message_id,
+        ordinal=ordinal,
+    )
     return {
         "mode": mode,
         "workspace_id": workspace_id,
@@ -357,13 +361,15 @@ def explain_change(conn: Connection, file_path: str, limit: int = 10) -> dict[st
                 "session_external_id": row[5],
                 "session_title": row[6],
                 "metadata": row[7],
-                "evidence": {
-                    "kind": "file_snapshot",
-                    "snapshot_id": row[0],
-                    "workspace_id": row[1],
-                    "file_uri": row[2],
-                    "file_path": row[3],
-                },
+                "evidence": evidence_ref(
+                    "file_snapshot",
+                    target_id=row[0],
+                    workspace_id=row[1],
+                    locator={"file_uri": row[2], "file_path": row[3]},
+                    snapshot_id=row[0],
+                    file_uri=row[2],
+                    file_path=row[3],
+                ),
             }
             for row in snapshots
         ],
@@ -377,15 +383,17 @@ def explain_change(conn: Connection, file_path: str, limit: int = 10) -> dict[st
                 "message_id": row[5],
                 "ordinal": row[6],
                 "snippet": make_snippet(row[7]),
-                "evidence": {
-                    "kind": "message",
-                    "workspace_id": row[0],
-                    "workspace_uri": row[1],
-                    "source": row[2],
-                    "session_external_id": row[3],
-                    "message_id": row[5],
-                    "ordinal": row[6],
-                },
+                "evidence": evidence_ref(
+                    "message",
+                    target_id=row[5],
+                    workspace_id=row[0],
+                    workspace_uri=row[1],
+                    source=row[2],
+                    locator={"session_external_id": row[3], "ordinal": row[6]},
+                    session_external_id=row[3],
+                    message_id=row[5],
+                    ordinal=row[6],
+                ),
             }
             for row in messages
         ],
@@ -406,13 +414,21 @@ def explain_change(conn: Connection, file_path: str, limit: int = 10) -> dict[st
                 "deletions": row[12],
                 "metadata": row[13],
                 "linked_entity_count": row[14],
-                "evidence": {
-                    "kind": "changeset",
-                    "changeset_id": row[0],
-                    "change_file_id": row[8],
-                    "workspace_id": row[1],
-                    "file_path": row[9],
-                },
+                "evidence": evidence_ref(
+                    "changeset",
+                    target_id=row[0],
+                    workspace_id=row[1],
+                    workspace_uri=row[2],
+                    locator={
+                        "change_file_id": row[8],
+                        "file_path": row[9],
+                        "git_commit": row[3],
+                    },
+                    metadata={"status": row[10], "file_metadata": row[13]},
+                    changeset_id=row[0],
+                    change_file_id=row[8],
+                    file_path=row[9],
+                ),
             }
             for row in changesets
         ],
@@ -434,14 +450,28 @@ def explain_change(conn: Connection, file_path: str, limit: int = 10) -> dict[st
                 "match_type": row[13],
                 "confidence": row[14],
                 "metadata": row[15],
-                "evidence": {
-                    "kind": "code_entity",
-                    "entity_id": row[0],
-                    "workspace_id": row[1],
-                    "qualified_name": row[4],
-                    "file_path": row[5],
-                    "changeset_id": row[9],
-                },
+                "evidence": evidence_ref(
+                    "code_entity",
+                    target_id=row[0],
+                    workspace_id=row[1],
+                    locator={
+                        "qualified_name": row[4],
+                        "file_path": row[5],
+                        "start_line": row[6],
+                        "end_line": row[7],
+                        "changeset_id": row[9],
+                    },
+                    metadata={
+                        "change_file_path": row[11],
+                        "match_type": row[13],
+                        "confidence": row[14],
+                        "link_metadata": row[15],
+                    },
+                    entity_id=row[0],
+                    qualified_name=row[4],
+                    file_path=row[5],
+                    changeset_id=row[9],
+                ),
             }
             for row in touched_entities
         ],
@@ -521,13 +551,26 @@ def get_symbol_context(conn: Connection, symbol: str, limit: int = 10) -> list[d
                         "match_type": row[12],
                         "confidence": row[13],
                         "metadata": row[14],
-                        "evidence": {
-                            "kind": "changeset",
-                            "changeset_id": row[1],
-                            "change_file_id": row[9],
-                            "workspace_id": row[2],
-                            "file_path": row[10],
-                        },
+                        "evidence": evidence_ref(
+                            "changeset",
+                            target_id=row[1],
+                            workspace_id=row[2],
+                            workspace_uri=row[3],
+                            locator={
+                                "change_file_id": row[9],
+                                "file_path": row[10],
+                                "git_commit": row[4],
+                            },
+                            metadata={
+                                "status": row[11],
+                                "match_type": row[12],
+                                "confidence": row[13],
+                                "link_metadata": row[14],
+                            },
+                            changeset_id=row[1],
+                            change_file_id=row[9],
+                            file_path=row[10],
+                        ),
                     }
                 )
 
@@ -544,13 +587,20 @@ def get_symbol_context(conn: Connection, symbol: str, limit: int = 10) -> list[d
             "signature": row[8],
             "metadata": row[9],
             "related_changesets": changesets_by_entity.get(row[0], []),
-            "evidence": {
-                "kind": "code_entity",
-                "entity_id": row[0],
-                "workspace_id": row[1],
-                "qualified_name": row[4],
-                "file_path": row[5],
-            },
+            "evidence": evidence_ref(
+                "code_entity",
+                target_id=row[0],
+                workspace_id=row[1],
+                locator={
+                    "qualified_name": row[4],
+                    "file_path": row[5],
+                    "start_line": row[6],
+                    "end_line": row[7],
+                },
+                entity_id=row[0],
+                qualified_name=row[4],
+                file_path=row[5],
+            ),
         }
         for row in rows
     ]

@@ -21,7 +21,7 @@
 - Git diff/file snapshot ingester
 - tree-sitter 기반 Python/TypeScript symbol indexer
 - MCP server skeleton
-- MCP tools: `search_dev_memory`, `get_symbol_context`, `explain_change`, `record_agent_action`
+- MCP tools: `search_dev_memory`, `get_symbol_context`, `explain_change`, `record_changeset`, `record_agent_action`
 - Secret redaction baseline
 - README와 데모 시나리오
 
@@ -182,9 +182,10 @@ Tasks:
 - [x] Support TypeScript/JavaScript second with a minimal regex-based indexer.
 - [x] Add a tree-sitter-backed mixed Python/TypeScript/JavaScript index path with AST/regex fallback.
 - [x] Extract files, modules, classes, functions, methods, imports, and same-file basic calls.
+- [x] Infer TypeScript/JavaScript fallback line spans for function, class, method, and module entities.
 - [x] Store entities in `code_entities`.
 - [x] Store relationships in `code_edges`.
-- [x] Link changesets to touched entities.
+- [x] Link changesets to touched entities, including unified diff hunk ranges and deletion-only hunks.
 
 Acceptance criteria:
 
@@ -202,6 +203,7 @@ Tasks:
 - [x] Implement first-pass hybrid scoring: keyword reciprocal rank + vector reciprocal rank.
 - [x] Return evidence objects for `search_dev_memory` results.
 - [x] Expand evidence objects to `explain_change` and symbol retrieval.
+- [x] Add canonical `geond.evidence.v1` evidence references with stable `locator` and `metadata` fields.
 
 Acceptance criteria:
 
@@ -216,6 +218,7 @@ Tasks:
 - [x] Implement `search_dev_memory`.
 - [x] Implement `get_symbol_context`.
 - [x] Implement `explain_change`.
+- [x] Implement `record_changeset` with optional patch hunk linking.
 - [x] Implement `record_agent_action`.
 - [x] Expose resources for sessions, symbols, changesets, and workspace timeline.
 - [x] Add examples for Claude Desktop, Continue, and VS Code MCP client config if applicable.

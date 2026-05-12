@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -88,6 +88,7 @@ def index_ts_js_file(file_path: Path, root_path: Path) -> IndexedPythonFile:
 
     visitor = TsJsIndexVisitor(relative_path, module_name, language)
     visitor.index(source)
+    visitor.finalize_spans(source.splitlines())
     visitor.add_resolved_call_edges()
     return IndexedPythonFile(relative_path, visitor.entities, visitor.edges)
 
@@ -295,6 +296,21 @@ class TsJsIndexVisitor:
                     metadata={"call": call_name, "resolution": "same_file_name_match"},
                 )
 
+    def finalize_spans(self, lines: list[str]) -> None:
+        line_count = len(lines) or 1
+        finalized: list[CodeEntityDraft] = []
+        for entity in self.entities:
+            if entity.kind == "module":
+                finalized.append(replace(entity, end_line=line_count))
+                continue
+            if entity.end_line is not None or entity.start_line is None:
+                finalized.append(entity)
+                continue
+            finalized.append(
+                replace(entity, end_line=infer_block_end_line(lines, entity.start_line))
+            )
+        self.entities = finalized
+
 
 def strip_line_comment(line: str) -> str:
     return line.split("//", 1)[0]
@@ -302,6 +318,24 @@ def strip_line_comment(line: str) -> str:
 
 def brace_balance(line: str) -> int:
     return line.count("{") - line.count("}")
+
+
+def infer_block_end_line(lines: list[str], start_line: int) -> int:
+    if start_line < 1 or start_line > len(lines):
+        return start_line
+
+    balance = 0
+    seen_open = False
+    for index in range(start_line - 1, len(lines)):
+        line = strip_line_comment(lines[index])
+        if "{" in line:
+            seen_open = True
+        balance += brace_balance(line)
+        if seen_open and balance <= 0:
+            return index + 1
+        if not seen_open and index == start_line - 1:
+            return start_line
+    return len(lines)
 
 
 def normalize_import_name(body: str) -> str:

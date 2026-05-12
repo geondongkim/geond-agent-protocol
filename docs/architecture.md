@@ -151,7 +151,10 @@ MVP parsing strategy:
 
 - Use lightweight language-specific extractors first: Python via stdlib `ast`, and
   TypeScript/JavaScript via a conservative declaration scanner.
-- Add tree-sitter later for syntax-level precision across more languages.
+- Use tree-sitter where available and keep language fallbacks for unsupported
+  syntax. The TypeScript/JavaScript fallback infers function, class, method,
+  and module line spans so diff hunks can link to body changes, not only
+  declaration lines.
 - Later add LSP-based references when available.
 
 Entity examples:
@@ -317,6 +320,45 @@ This table links changed files to indexed symbols so `explain_change` and
 `get_symbol_context` can return concrete evidence about which functions,
 classes, or modules were touched by a changeset.
 
+When a unified diff is available, `line_range` links preserve hunk metadata in
+`metadata`: `hunk_index`, old/new range bounds, `change_kind`, and changed line
+anchors. Deletion-only hunks are represented as `change_kind = deletion_only`,
+anchor to the new-file line position where the deletion occurred, and retain
+`deleted_start_line`/`deleted_end_line` from the old file.
+
+### 5.2 Evidence References
+
+MCP and Python retrieval APIs return canonical evidence references with schema
+`geond.evidence.v1`. Every evidence reference has a stable top-level shape:
+
+```json
+{
+  "schema": "geond.evidence.v1",
+  "kind": "changeset",
+  "target_id": "...",
+  "workspace_id": "...",
+  "workspace_uri": "file:///project",
+  "source": "vscode-copilot",
+  "locator": {
+    "file_path": "src/service.py",
+    "change_file_id": "...",
+    "git_commit": "..."
+  },
+  "metadata": {
+    "match_type": "line_range",
+    "link_metadata": {
+      "change_kind": "deletion_only",
+      "changed_start_line": 42,
+      "deleted_start_line": 41
+    }
+  }
+}
+```
+
+Older alias fields such as `message_id`, `changeset_id`, `entity_id`, and
+`file_path` remain present for compatibility, but MCP clients should prefer the
+canonical `target_id`, `locator`, and `metadata` fields.
+
 `agent_actions`
 
 - `id`
@@ -366,6 +408,11 @@ classes, or modules were touched by a changeset.
 `record_agent_action`
 
 - Writes what an agent is doing, why, and which files/symbols are involved.
+
+`record_changeset`
+
+- Records changed files and optional unified diff patches directly from an MCP
+  client, then links patch hunks to indexed code entities.
 
 `reserve_files`
 

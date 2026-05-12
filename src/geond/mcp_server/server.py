@@ -13,9 +13,14 @@ from geond.retrieval.simple import hybrid_search_dev_memory as hybrid_search_dev
 from geond.retrieval.simple import search_dev_memory as search_dev_memory_query
 from geond.retrieval.simple import vector_search_dev_memory as vector_search_dev_memory_query
 from geond.storage.repository import close_handoff_summary as close_handoff_summary_row
-from geond.storage.repository import list_active_file_reservations, list_active_symbol_reservations
+from geond.storage.repository import (
+    list_active_file_reservations,
+    list_active_symbol_reservations,
+    upsert_workspace,
+)
 from geond.storage.repository import list_handoff_summaries as list_handoff_summaries_row
 from geond.storage.repository import record_agent_action as record_agent_action_row
+from geond.storage.repository import record_changeset as record_changeset_row
 from geond.storage.repository import record_handoff_summary as record_handoff_summary_row
 from geond.storage.repository import release_reservation as release_reservation_row
 from geond.storage.repository import release_symbol_reservation as release_symbol_reservation_row
@@ -90,6 +95,42 @@ def get_symbol_context(symbol: str, limit: int = 10) -> list[dict[str, Any]]:
     """Return known code entities matching a symbol name."""
     with connect(get_settings()) as conn:
         return get_symbol_context_query(conn, symbol, limit)
+
+
+@mcp.tool()
+def record_changeset(
+    files: list[dict[str, Any]],
+    workspace_id: str | None = None,
+    workspace_uri: str | None = None,
+    workspace_name: str | None = None,
+    git_commit: str | None = None,
+    branch: str | None = None,
+    intent: str | None = None,
+    summary: str = "",
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Record a changeset with changed files and optional unified diff patches."""
+    if not workspace_id and not workspace_uri:
+        raise ValueError("workspace_id or workspace_uri is required")
+    with connect(get_settings()) as conn:
+        resolved_workspace_id = workspace_id
+        if resolved_workspace_id is None:
+            resolved_workspace_id = upsert_workspace(
+                conn,
+                root_uri=str(workspace_uri),
+                name=workspace_name or str(workspace_uri),
+                metadata={"source": "mcp"},
+            )
+        return record_changeset_row(
+            conn=conn,
+            workspace_id=resolved_workspace_id,
+            files=files,
+            git_commit=git_commit,
+            branch=branch,
+            intent=intent,
+            summary=summary,
+            metadata=metadata,
+        )
 
 
 @mcp.tool()

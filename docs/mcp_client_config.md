@@ -29,6 +29,8 @@ Use [examples/mcp_clients/continue_config.yaml](../examples/mcp_clients/continue
 
 - `search_dev_memory`: retrieve prior session evidence.
 - `get_symbol_context`: inspect indexed code graph entities.
+- `explain_change`: inspect file snapshots, related messages, changesets, and touched symbols.
+- `record_changeset`: record changed files and optional unified diff patches from an MCP client.
 - `reserve_files`: warn other agents about file-level work.
 - `reserve_symbols`: warn other agents about symbol-level work.
 - `get_symbol_conflicts`: check active symbol reservations before editing.

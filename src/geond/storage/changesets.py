@@ -23,9 +23,12 @@ class PatchLineRange:
     new_end_line: int
     changed_start_line: int
     changed_end_line: int
+    change_kind: str
+    deleted_start_line: int | None = None
+    deleted_end_line: int | None = None
 
-    def to_metadata(self) -> dict[str, int]:
-        return {
+    def to_metadata(self) -> dict[str, int | str]:
+        metadata: dict[str, int | str] = {
             "hunk_index": self.hunk_index,
             "old_start_line": self.old_start_line,
             "old_end_line": self.old_end_line,
@@ -33,7 +36,13 @@ class PatchLineRange:
             "new_end_line": self.new_end_line,
             "changed_start_line": self.changed_start_line,
             "changed_end_line": self.changed_end_line,
+            "change_kind": self.change_kind,
         }
+        if self.deleted_start_line is not None:
+            metadata["deleted_start_line"] = self.deleted_start_line
+        if self.deleted_end_line is not None:
+            metadata["deleted_end_line"] = self.deleted_end_line
+        return metadata
 
 
 def link_changesets_to_code_entities(
@@ -275,6 +284,8 @@ def parse_unified_diff_line_ranges(patch: str) -> list[PatchLineRange]:
                 "old_line": old_start,
                 "new_line": new_start,
                 "changed_new_lines": [],
+                "deleted_old_lines": [],
+                "deleted_new_anchor_lines": [],
             }
             continue
 
@@ -287,6 +298,8 @@ def parse_unified_diff_line_ranges(patch: str) -> list[PatchLineRange]:
             current["new_line"] += 1
             continue
         if raw_line.startswith("-") and not raw_line.startswith("---"):
+            current["deleted_old_lines"].append(current["old_line"])
+            current["deleted_new_anchor_lines"].append(current["new_line"])
             current["old_line"] += 1
             continue
         current["old_line"] += 1
@@ -299,12 +312,16 @@ def parse_unified_diff_line_ranges(patch: str) -> list[PatchLineRange]:
 
 def make_line_range(hunk: dict[str, Any]) -> PatchLineRange:
     changed_lines = hunk["changed_new_lines"]
+    deleted_lines = hunk["deleted_old_lines"]
+    deleted_anchor_lines = hunk["deleted_new_anchor_lines"]
     if changed_lines:
         changed_start = min(changed_lines)
         changed_end = max(changed_lines)
+        change_kind = "modified" if deleted_lines else "added"
     else:
-        changed_start = hunk["new_start"]
-        changed_end = hunk["new_end"]
+        changed_start = min(deleted_anchor_lines) if deleted_anchor_lines else hunk["new_start"]
+        changed_end = max(deleted_anchor_lines) if deleted_anchor_lines else hunk["new_start"]
+        change_kind = "deletion_only" if deleted_lines else "context_only"
     return PatchLineRange(
         hunk_index=hunk["hunk_index"],
         old_start_line=hunk["old_start"],
@@ -313,4 +330,7 @@ def make_line_range(hunk: dict[str, Any]) -> PatchLineRange:
         new_end_line=hunk["new_end"],
         changed_start_line=changed_start,
         changed_end_line=changed_end,
+        change_kind=change_kind,
+        deleted_start_line=min(deleted_lines) if deleted_lines else None,
+        deleted_end_line=max(deleted_lines) if deleted_lines else None,
     )

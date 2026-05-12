@@ -230,11 +230,107 @@ def helper(value):
             touched_names = {item["qualified_name"] for item in change_context["touched_entities"]}
 
             assert changeset["linked_change_entities"] == 1
+            assert answer_context["evidence"]["schema"] == "geond.evidence.v1"
             assert answer_context["related_changesets"][0]["match_type"] == "line_range"
             assert answer_context["related_changesets"][0]["metadata"]["changed_start_line"] == 2
+            assert answer_context["related_changesets"][0]["metadata"]["change_kind"] == "modified"
+            assert (
+                answer_context["related_changesets"][0]["evidence"]["metadata"]["link_metadata"][
+                    "change_kind"
+                ]
+                == "modified"
+            )
             assert helper_context["related_changesets"] == []
             assert "package.service.build_answer" in touched_names
             assert "package.service.helper" not in touched_names
+        finally:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM workspaces WHERE id = %s", (workspace_id,))
+            conn.commit()
+
+
+def test_deletion_only_patch_hunk_links_to_enclosing_symbol(tmp_path: Path) -> None:
+    settings = get_settings()
+    workspace_uri = f"file:///tmp/geond-deletion-hunk-test-{uuid4()}"
+    source = tmp_path / "package" / "service.py"
+    source.parent.mkdir()
+    source.write_text(
+        """
+def build_answer(prompt):
+    return prompt.strip()
+
+def helper(value):
+    return value.strip()
+""".strip(),
+        encoding="utf-8",
+    )
+    patch = """
+diff --git a/package/service.py b/package/service.py
+--- a/package/service.py
++++ b/package/service.py
+@@ -1,4 +1,3 @@
+ def build_answer(prompt):
+-    print(prompt)
+     return prompt.strip()
+
+ def helper(value):
+""".strip()
+
+    try:
+        conn = connect(settings)
+    except psycopg.OperationalError as exc:
+        pytest.skip(f"Postgres integration database is not available: {exc}")
+
+    with conn:
+        try:
+            run_schema_file(conn, SCHEMA)
+        except psycopg.Error as exc:
+            pytest.skip(f"Postgres integration schema is not available: {exc}")
+
+        workspace_id = upsert_workspace(
+            conn,
+            root_uri=workspace_uri,
+            name="deletion-hunk-fixture",
+            metadata={"source": "pytest"},
+        )
+        try:
+            store_code_index(conn, workspace_id, [index_python_file(source, tmp_path)])
+            record_changeset(
+                conn,
+                workspace_id=workspace_id,
+                files=[
+                    {
+                        "file_path": "package/service.py",
+                        "status": "modified",
+                        "patch": patch,
+                    }
+                ],
+                intent="test deletion hunk evidence",
+                summary="Removed a debug print from build_answer.",
+            )
+
+            answer_context = next(
+                item
+                for item in get_symbol_context(conn, "build_answer", limit=5)
+                if item["qualified_name"] == "package.service.build_answer"
+            )
+            helper_context = next(
+                item
+                for item in get_symbol_context(conn, "helper", limit=5)
+                if item["qualified_name"] == "package.service.helper"
+            )
+
+            related = answer_context["related_changesets"][0]
+            assert related["match_type"] == "line_range"
+            assert related["metadata"]["change_kind"] == "deletion_only"
+            assert related["metadata"]["deleted_start_line"] == 2
+            assert related["metadata"]["deleted_end_line"] == 2
+            assert related["metadata"]["changed_start_line"] == 2
+            assert related["evidence"]["schema"] == "geond.evidence.v1"
+            assert (
+                related["evidence"]["metadata"]["link_metadata"]["change_kind"] == "deletion_only"
+            )
+            assert helper_context["related_changesets"] == []
         finally:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM workspaces WHERE id = %s", (workspace_id,))
@@ -257,3 +353,22 @@ def test_parse_unified_diff_line_ranges_uses_changed_new_lines() -> None:
     assert ranges[0].new_end_line == 14
     assert ranges[0].changed_start_line == 11
     assert ranges[0].changed_end_line == 12
+    assert ranges[0].change_kind == "modified"
+
+
+def test_parse_unified_diff_line_ranges_handles_deletion_only_hunks() -> None:
+    patch = """
+@@ -10,3 +10,2 @@
+ def run():
+-    print("debug")
+     return value
+""".strip()
+
+    ranges = parse_unified_diff_line_ranges(patch)
+
+    assert len(ranges) == 1
+    assert ranges[0].change_kind == "deletion_only"
+    assert ranges[0].changed_start_line == 11
+    assert ranges[0].changed_end_line == 11
+    assert ranges[0].deleted_start_line == 11
+    assert ranges[0].deleted_end_line == 11

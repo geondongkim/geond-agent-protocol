@@ -16,8 +16,8 @@ organized by product risk rather than by implementation convenience.
 
 | Improvement | Why | Candidate implementation |
 | --- | --- | --- |
-| Patch hunk to symbol linking | File-level links are useful but coarse. | Implemented for unified diff new-line ranges; next tune deletion-only and cross-language edge cases. |
-| Canonical evidence schema | MCP clients should not reverse-engineer each response shape. | Define a shared `EvidenceRef` shape for messages, snapshots, changesets, symbols, and benchmark runs. |
+| Patch hunk to symbol linking | File-level links are useful but coarse. | Implemented for unified diff new-line ranges, deletion-only hunks, and TypeScript/JavaScript body-span matching. |
+| Canonical evidence schema | MCP clients should not reverse-engineer each response shape. | Implemented `geond.evidence.v1` with `target_id`, `locator`, `metadata`, and compatibility aliases for messages, snapshots, changesets, and symbols. |
 | Explain-change synthesis | The current tool returns evidence, not a narrative. | Add optional summary generation that cites evidence objects while respecting privacy mode. |
 | Cross-file call edges | Current call edges are strongest inside a single file. | Resolve imports and exported symbols across Python and TypeScript packages. |
 
@@ -59,7 +59,7 @@ organized by product risk rather than by implementation convenience.
 
 ## Current Recommendation
 
-The next engineering slice should be a canonical evidence schema plus larger
-line-range validation across Python and TypeScript repositories. Patch-hunk
-linking now exists, so the next quality gain is making every MCP response expose
-the same evidence reference contract.
+The next engineering slice should focus on MCP contract testing: add a small
+client-level test that asserts every MCP response includes `geond.evidence.v1`
+evidence refs where evidence is returned. The next retrieval quality gain is
+optional narrative synthesis over those evidence refs.

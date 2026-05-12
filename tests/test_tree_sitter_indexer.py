@@ -67,6 +67,7 @@ export class Reporter {
     assert entities["service.buildAnswer"].metadata["indexer"] == "tree-sitter"
     assert "service.normalize" in entities
     assert entities["service.normalize"].metadata["tree_sitter_fallback"] is True
+    assert entities["service.normalize"].end_line == 7
     assert "service.Reporter.report" in entities
     assert ("service.Reporter.report", "service.buildAnswer", "calls") in edge_types
 
