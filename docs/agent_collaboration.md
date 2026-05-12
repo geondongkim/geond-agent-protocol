@@ -24,6 +24,9 @@ What geond gives two agents that git does not:
   can advertise the claim. The next agent can either back off, pick a
   different slice, or pair on it deliberately. Without this both agents
   rebase onto each other and re-do work.
+- **Reservation audit events** (`list_reservation_events`). Claim creation,
+  renewal, release, and expiry are append-only events, so a later agent can
+  distinguish an active conflict from an expired or deliberately released claim.
 - **Handoff summaries** (`record_handoff_summary`, `list_handoff_summaries`,
   `close_handoff_summary`). A structured, one-paragraph briefing with
   `next_steps` and `blocked_on` so the next agent starts oriented instead
@@ -62,7 +65,7 @@ tissue, not a complete coordinator.
 | "Why was this file changed?" | Commit message, if it is good. | `geond explain-change path/file.py --narrative` — pulls all changesets, related chat snippets (privacy-permitting), and snapshots. |
 | "What other symbols moved when `build_answer` was modified?" | `git log -S build_answer` — slow, false positives. | `geond symbol-context build_answer` — exact, with evidence refs. |
 | "Was there a chat conversation that produced this change?" | Not represented in git. | Returned as `related_messages` under `geond.evidence.v1`. |
-| "Is anyone else editing this file right now?" | Not represented in git. | `get_active_reservations` / `get_symbol_conflicts`. |
+| "Is anyone else editing this file right now?" | Not represented in git. | `get_active_reservations` / `get_symbol_conflicts`, plus `list_reservation_events` for recent lease history. |
 
 Where git wins:
 
@@ -115,8 +118,9 @@ The two flows reinforce each other.
 
 ## Open follow-ups
 
-- **Cross-file call edges** so narratives can name upstream callers of a
-  changed symbol, not just the symbol itself.
+- **Re-export barrel support** so TypeScript/JavaScript call edges can follow
+  `export { x } from "..."` aggregator modules, not just direct imports and
+  default imports.
 - **Reservation arbitration policy** (advisory / strict / override) so
   geond can do more than report conflicts.
 - **Agent-side conventions** documented per testbed (Copilot Chat,

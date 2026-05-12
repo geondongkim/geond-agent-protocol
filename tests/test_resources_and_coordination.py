@@ -16,6 +16,7 @@ from geond.storage.repository import (
     list_active_file_reservations,
     list_active_symbol_reservations,
     list_handoff_summaries,
+    list_reservation_events,
     record_agent_action,
     record_handoff_summary,
     release_reservation,
@@ -163,6 +164,7 @@ def build_answer(prompt):
                 workspace_id,
                 reservation_id=symbol_first["reservation_ids"][0],
             )
+            reservation_events = list_reservation_events(conn, workspace_id)
             closed_handoff = close_handoff_summary(conn, handoff_id)
 
             assert any(
@@ -187,9 +189,17 @@ def build_answer(prompt):
             assert any(event["kind"] == "agent_action" for event in timeline["events"])
             assert any(event["kind"] == "file_reservation" for event in timeline["events"])
             assert any(event["kind"] == "symbol_reservation" for event in timeline["events"])
+            assert any(event["kind"] == "reservation_event" for event in timeline["events"])
             assert any(event["kind"] == "handoff_summary" for event in timeline["events"])
             assert released == 1
             assert released_symbol == 1
+            assert reservation_resource["recent_events"]
+            assert {event["action"] for event in reservation_events} >= {
+                "created",
+                "renewed",
+                "released",
+                "expired",
+            }
             assert closed_handoff == 1
         finally:
             with conn.cursor() as cur:

@@ -155,6 +155,7 @@ def count_workspace_rows(cur: Any, workspace_id: str) -> dict[str, int]:
         "agent_actions",
         "file_reservations",
         "symbol_reservations",
+        "reservation_events",
         "handoff_summaries",
         "benchmark_runs",
         "redaction_findings",

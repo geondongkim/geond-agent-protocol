@@ -9,6 +9,7 @@ from geond.storage.repository import (
     list_active_file_reservations,
     list_active_symbol_reservations,
     list_handoff_summaries,
+    list_reservation_events,
     resolve_workspace_id,
 )
 
@@ -175,6 +176,7 @@ def get_workspace_reservations(conn: Connection, workspace_id: str) -> dict[str,
         "workspace_id": resolved_workspace_id,
         "file_reservations": list_active_file_reservations(conn, resolved_workspace_id),
         "symbol_reservations": list_active_symbol_reservations(conn, resolved_workspace_id),
+        "recent_events": list_reservation_events(conn, resolved_workspace_id, limit=25),
     }
 
 
@@ -262,6 +264,16 @@ def get_workspace_timeline(
                 WHERE sr.workspace_id = %s
                 UNION ALL
                 SELECT
+                    'reservation_event' AS item_kind,
+                    re.id::text AS item_id,
+                    a.name AS source,
+                    re.reservation_kind || ':' || re.action || ' ' || re.subject AS title,
+                    re.created_at AS occurred_at
+                FROM reservation_events re
+                LEFT JOIN agents a ON a.id = re.agent_id
+                WHERE re.workspace_id = %s
+                UNION ALL
+                SELECT
                     'handoff_summary' AS item_kind,
                     hs.id::text AS item_id,
                     a.name AS source,
@@ -274,7 +286,15 @@ def get_workspace_timeline(
             ORDER BY occurred_at DESC
             LIMIT %s
             """,
-            (workspace[0], workspace[0], workspace[0], workspace[0], workspace[0], limit),
+            (
+                workspace[0],
+                workspace[0],
+                workspace[0],
+                workspace[0],
+                workspace[0],
+                workspace[0],
+                limit,
+            ),
         )
         rows = cur.fetchall()
 

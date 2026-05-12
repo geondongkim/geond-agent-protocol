@@ -225,6 +225,18 @@ CREATE TABLE IF NOT EXISTS symbol_reservations (
     created_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS reservation_events (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    reservation_kind text NOT NULL,
+    reservation_id uuid,
+    agent_id uuid REFERENCES agents(id) ON DELETE SET NULL,
+    action text NOT NULL,
+    subject text NOT NULL DEFAULT '',
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS handoff_summaries (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
@@ -284,6 +296,7 @@ CREATE INDEX IF NOT EXISTS idx_embeddings_vector_hnsw ON embeddings USING hnsw (
 CREATE INDEX IF NOT EXISTS idx_agent_actions_workspace ON agent_actions(workspace_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_file_reservations_active ON file_reservations(workspace_id, file_path) WHERE released_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_symbol_reservations_active ON symbol_reservations(workspace_id, symbol) WHERE released_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_reservation_events_workspace ON reservation_events(workspace_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_handoff_summaries_workspace ON handoff_summaries(workspace_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_benchmark_runs_workspace ON benchmark_runs(workspace_id, created_at DESC);
 

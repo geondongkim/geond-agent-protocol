@@ -142,6 +142,7 @@ Important projections:
 - agent actions and handoffs
 - embeddings and summaries
 - active reservations
+- reservation audit events
 - workspace aliases and fingerprints for renamed or moved local folders
 
 ### 4.5 Code Graph Builder
@@ -156,6 +157,8 @@ MVP parsing strategy:
   cross-file calls when a function or method calls a symbol imported with
   absolute imports, package-relative imports, named imports, or namespace
   imports.
+- The TypeScript/JavaScript fallback maps default import aliases to named
+  default-export functions/classes when the target module is indexed.
 - Use tree-sitter where available and keep language fallbacks for unsupported
   syntax. The TypeScript/JavaScript fallback infers function, class, method,
   and module line spans so diff hunks can link to body changes, not only
@@ -247,6 +250,7 @@ summaries
 agent_actions
 file_reservations
 symbol_reservations
+reservation_events
 handoff_summaries
 benchmark_runs
 retrieval_events
@@ -280,6 +284,17 @@ workspace_fingerprints
 - `fingerprint_value`
 - `metadata`
 - `last_seen_at`
+
+`reservation_events`
+
+- `workspace_id`
+- `reservation_kind` (`file` or `symbol`)
+- `reservation_id`
+- `agent_id`
+- `action` (`created`, `renewed`, `released`, `expired`)
+- `subject`
+- `metadata`
+- `created_at`
 
 `sessions`
 

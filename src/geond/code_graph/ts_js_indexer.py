@@ -202,7 +202,10 @@ class TsJsIndexVisitor:
                 file_path=self.file_path,
                 start_line=line_number,
                 end_line=None,
-                metadata={"language": self.language},
+                metadata={
+                    "language": self.language,
+                    "default_export": is_default_export(line),
+                },
             )
         )
         self.add_edge(self.module_name, qualified_name, "contains")
@@ -226,7 +229,10 @@ class TsJsIndexVisitor:
                 start_line=line_number,
                 end_line=None,
                 signature=line.strip(),
-                metadata={"language": self.language},
+                metadata={
+                    "language": self.language,
+                    "default_export": is_default_export(line),
+                },
             )
         )
         self.add_edge(parent, qualified_name, "contains")
@@ -370,6 +376,10 @@ def strip_line_comment(line: str) -> str:
     return line.split("//", 1)[0]
 
 
+def is_default_export(line: str) -> bool:
+    return bool(re.match(r"^\s*export\s+default\b", line))
+
+
 def brace_balance(line: str) -> int:
     return line.count("{") - line.count("}")
 
@@ -448,7 +458,7 @@ def parse_import_bindings(body: str, imported_module: str, module_name: str) -> 
 
     default_part = body.split(",", 1)[0].strip()
     if default_part and not default_part.startswith(("{", "*")):
-        bindings.setdefault(default_part, f"{module_target}.{default_part}")
+        bindings.setdefault(default_part, f"{module_target}.default")
     return bindings
 
 

@@ -197,3 +197,78 @@ export function buildTitle(prompt: string): string {
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM workspaces WHERE id = %s", (workspace_id,))
             conn.commit()
+
+
+def test_store_ts_js_index_resolves_default_import_calls(tmp_path: Path) -> None:
+    settings = get_settings()
+    workspace_uri = f"file:///tmp/geond-ts-default-import-test-{uuid4()}"
+    text = tmp_path / "text.ts"
+    service = tmp_path / "service.ts"
+    text.write_text(
+        """
+export default function trim(value: string): string {
+  return value.trim();
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    service.write_text(
+        """
+import clean from "./text";
+
+export function buildAnswer(prompt: string): string {
+  return clean(prompt);
+}
+""".strip(),
+        encoding="utf-8",
+    )
+
+    try:
+        conn = connect(settings)
+    except psycopg.OperationalError as exc:
+        pytest.skip(f"Postgres integration database is not available: {exc}")
+
+    with conn:
+        try:
+            run_schema_file(conn, SCHEMA)
+        except psycopg.Error as exc:
+            pytest.skip(f"Postgres integration schema is not available: {exc}")
+
+        workspace_id = upsert_workspace(
+            conn,
+            root_uri=workspace_uri,
+            name="ts-default-import-fixture",
+            metadata={"source": "pytest"},
+        )
+        try:
+            stats = store_code_index(
+                conn,
+                workspace_id,
+                [index_ts_js_file(text, tmp_path), index_ts_js_file(service, tmp_path)],
+            )
+            trim_context = next(
+                item
+                for item in get_symbol_context(conn, "trim", limit=10)
+                if item["qualified_name"] == "text.trim"
+            )
+            answer_context = next(
+                item
+                for item in get_symbol_context(conn, "buildAnswer", limit=10)
+                if item["qualified_name"] == "service.buildAnswer"
+            )
+
+            assert stats["edges"] >= 1
+            default_call = next(
+                caller
+                for caller in trim_context["callers"]
+                if caller["qualified_name"] == "service.buildAnswer"
+            )
+            assert default_call["edge"]["metadata"] == {
+                "call": "clean",
+                "resolution": "import_qualified_name_match",
+            }
+            assert answer_context["callees"][0]["qualified_name"] == "text.trim"
+        finally:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM workspaces WHERE id = %s", (workspace_id,))
+            conn.commit()

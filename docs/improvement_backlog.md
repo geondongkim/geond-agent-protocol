@@ -20,7 +20,7 @@ organized by product risk rather than by implementation convenience.
 | Patch hunk to symbol linking | File-level links are useful but coarse. | Implemented for unified diff new-line ranges, deletion-only hunks, and TypeScript/JavaScript body-span matching. |
 | Canonical evidence schema | MCP clients should not reverse-engineer each response shape. | Implemented `geond.evidence.v1` with `target_id`, `locator`, `metadata`, and compatibility aliases for messages, snapshots, changesets, and symbols. |
 | Explain-change synthesis | The current tool returns evidence, not a narrative. | Implemented as a deterministic, template-driven summary that cites `geond.evidence.v1` refs, available via `explain_change(include_narrative=True)`, the new `get_changeset_detail` MCP tool, and the `geond summarize-changeset` / `geond explain-change --narrative` CLI commands. |
-| Cross-file call edges | Current call edges are strongest inside a single file. | Initial Python and TypeScript/JavaScript import-qualified call resolution, `get_symbol_context` caller/callee retrieval, and call-impact narratives are implemented. Next: re-export/default-export edge cases and LSP-backed references. |
+| Cross-file call edges | Current call edges are strongest inside a single file. | Python and TypeScript/JavaScript import-qualified call resolution, default-import resolution, `get_symbol_context` caller/callee retrieval, and call-impact narratives are implemented. Next: re-export barrels and LSP-backed references. |
 
 ## Priority 2: Deployment And Operations
 
@@ -44,7 +44,7 @@ organized by product risk rather than by implementation convenience.
 
 | Improvement | Why | Candidate implementation |
 | --- | --- | --- |
-| Lease renewal | Long-running agents need to extend reservations safely. | Implemented `renew_reservation`, `renew_symbol_reservation`, and matching CLI commands. Next: richer audit timeline entries. |
+| Lease renewal | Long-running agents need to extend reservations safely. | Implemented `renew_reservation`, `renew_symbol_reservation`, matching CLI commands, and reservation audit events for create/renew/release/expire transitions. |
 | Conflict policy levels | Some conflicts are warnings; others should block. | Add workspace policy for advisory, strict, and override-with-reason modes. |
 | Handoff templates | Handoffs become better when they are structured. | Support templates for summary, tested commands, remaining risks, and next action. |
 | Session lineage | Multi-agent workflows need provenance. | Link sessions, handoffs, actions, changesets, and benchmark runs into a navigable graph. |
@@ -68,16 +68,18 @@ tool that returns evidence) and `src/geond/retrieval/narrative.py`
 `get_changeset_detail`). Python and TypeScript/JavaScript indexing now resolves
 calls through relative, named, namespace, and absolute imports, storing `calls`
 edges with `resolution=import_qualified_name_match`; `get_symbol_context`
-returns those edges as `callers` and `callees`, and change narratives cite
-`code_edge` evidence when touched symbols have call impact. Changeset detail
-lookup rejects ambiguous git commit prefixes with explicit candidate matches.
-Reservation renewal is available for file and symbol leases through MCP and CLI.
+returns those edges as `callers` and `callees`, and default imports now resolve
+to named default-export functions/classes when the target module is indexed.
+Change narratives cite `code_edge` evidence when touched symbols have call
+impact. Changeset detail lookup rejects ambiguous git commit prefixes with
+explicit candidate matches. Reservation renewal is available for file and symbol
+leases through MCP and CLI, and reservation audit events now record create,
+renew, release, and expiry transitions.
 Workspace aliases now preserve memory across folder moves, and keyword search
 uses Postgres full-text plus `pg_trgm` substring matching before hybrid vector
 merge. Git fingerprints can now suggest a likely alias before a moved folder is
 registered, and benchmark reports resolve aliases as well. The next slice should
-handle **re-export/default-export edge cases**, add **LSP-backed references**
-where available, add richer reservation audit events, add optional reranking over
-lexical/vector candidates, and continue the
+handle **re-export barrel edge cases**, add **LSP-backed references** where
+available, add optional reranking over lexical/vector candidates, and continue the
 **agent-collaboration ergonomics** work described in
 [`docs/agent_collaboration.md`](agent_collaboration.md).

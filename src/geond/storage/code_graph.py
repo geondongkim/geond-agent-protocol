@@ -16,6 +16,7 @@ def store_code_index(
 ) -> dict[str, Any]:
     file_paths = [item.file_path for item in indexed_files]
     entity_id_by_qualified_name: dict[str, str] = {}
+    default_export_id_by_alias: dict[str, str] = {}
     entity_count = 0
     edge_count = 0
 
@@ -74,7 +75,11 @@ def store_code_index(
                         Jsonb(entity.metadata),
                     ),
                 )
-                entity_id_by_qualified_name[entity.qualified_name] = cur.fetchone()[0]
+                entity_id = cur.fetchone()[0]
+                entity_id_by_qualified_name[entity.qualified_name] = entity_id
+                if entity.metadata.get("default_export") and entity.qualified_name:
+                    module_name = entity.qualified_name.rsplit(".", 1)[0]
+                    default_export_id_by_alias[f"{module_name}.default"] = entity_id
                 entity_count += 1
 
         required_qualified_names = {
@@ -99,10 +104,36 @@ def store_code_index(
             for qualified_name, entity_id in cur.fetchall():
                 entity_id_by_qualified_name.setdefault(qualified_name, entity_id)
 
+            default_aliases = [
+                qualified_name
+                for qualified_name in missing_qualified_names
+                if qualified_name.endswith(".default")
+                and qualified_name not in default_export_id_by_alias
+            ]
+            if default_aliases:
+                cur.execute(
+                    """
+                    SELECT qualified_name, id::text
+                    FROM code_entities
+                    WHERE workspace_id = %s
+                      AND metadata->>'default_export' = 'true'
+                    """,
+                    (workspace_id,),
+                )
+                default_modules = {
+                    qualified_name.removesuffix(".default") for qualified_name in default_aliases
+                }
+                for qualified_name, entity_id in cur.fetchall():
+                    module_name = qualified_name.rsplit(".", 1)[0]
+                    if module_name in default_modules:
+                        default_export_id_by_alias.setdefault(f"{module_name}.default", entity_id)
+
         for indexed_file in indexed_files:
             for edge in indexed_file.edges:
                 source_id = entity_id_by_qualified_name.get(edge.source_qualified_name)
-                target_id = entity_id_by_qualified_name.get(edge.target_qualified_name)
+                target_id = entity_id_by_qualified_name.get(
+                    edge.target_qualified_name
+                ) or default_export_id_by_alias.get(edge.target_qualified_name)
                 if not source_id or not target_id:
                     continue
                 cur.execute(

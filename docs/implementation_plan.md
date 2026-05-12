@@ -229,6 +229,7 @@ Tasks:
 - [x] Implement workspace fingerprint recording and alias suggestion CLI/MCP tools.
 - [x] Implement `record_changeset` with optional patch hunk linking.
 - [x] Implement `record_agent_action`.
+- [x] Implement reservation audit event listing.
 - [x] Expose resources for sessions, symbols, changesets, and workspace timeline.
 - [x] Add examples for Claude Desktop, Continue, and VS Code MCP client config if applicable.
 
@@ -245,6 +246,7 @@ Tasks:
 - [x] Track active agent tasks through `agent_actions` and workspace timeline resources.
 - [x] Add stale reservation expiry cleanup.
 - [x] Add reservation renewal for active file and symbol work.
+- [x] Add reservation audit events for create, renew, release, and expiry transitions.
 - [x] Add handoff summaries.
 - [x] Add conflict warnings when two agents target the same files.
 - [x] Add conflict warnings when two agents target the same symbols.

@@ -20,6 +20,7 @@ from geond.storage.repository import (
     upsert_workspace,
 )
 from geond.storage.repository import list_handoff_summaries as list_handoff_summaries_row
+from geond.storage.repository import list_reservation_events as list_reservation_events_row
 from geond.storage.repository import (
     list_workspace_aliases as list_workspace_aliases_row,
 )
@@ -425,6 +426,24 @@ def list_handoff_summaries(
     """List recorded handoff summaries."""
     with connect(get_settings()) as conn:
         return list_handoff_summaries_row(conn, workspace_id_or_uri, status, limit)
+
+
+@mcp.tool()
+def list_reservation_events(
+    workspace_id_or_uri: str | None = None,
+    reservation_kind: str | None = None,
+    action: str | None = None,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    """List reservation audit events for created, renewed, released, and expired leases."""
+    with connect(get_settings()) as conn:
+        return list_reservation_events_row(
+            conn,
+            workspace_id_or_uri=workspace_id_or_uri,
+            reservation_kind=reservation_kind,
+            action=action,
+            limit=limit,
+        )
 
 
 @mcp.tool()

@@ -1021,7 +1021,22 @@ def reserve_files(
                 """,
                 (workspace_id, agent_id, file_path, purpose, ttl_minutes, ttl_minutes),
             )
-            reservation_ids.append(cur.fetchone()[0])
+            reservation_id = cur.fetchone()[0]
+            reservation_ids.append(reservation_id)
+            record_reservation_event_cursor(
+                cur,
+                workspace_id=workspace_id,
+                reservation_kind="file",
+                reservation_id=reservation_id,
+                agent_id=agent_id,
+                action="created",
+                subject=file_path,
+                metadata={
+                    "purpose": purpose,
+                    "ttl_minutes": ttl_minutes,
+                    "conflict_count": len(conflicts),
+                },
+            )
     conn.commit()
     return {
         "reservation_ids": reservation_ids,
@@ -1065,10 +1080,23 @@ def release_reservation(
               AND released_at IS NULL
               AND {target_filter}
               {agent_filter}
+            RETURNING id::text, agent_id::text, file_path, purpose
             """,
             params,
         )
-        released = cur.rowcount
+        rows = cur.fetchall()
+        for row in rows:
+            record_reservation_event_cursor(
+                cur,
+                workspace_id=workspace_id,
+                reservation_kind="file",
+                reservation_id=row[0],
+                agent_id=row[1],
+                action="released",
+                subject=row[2],
+                metadata={"purpose": row[3], "released_by": agent_name},
+            )
+        released = len(rows)
     conn.commit()
     return released
 
@@ -1119,10 +1147,28 @@ def renew_reservation(
               AND released_at IS NULL
               AND {target_filter}
               {agent_filter}
+            RETURNING id::text, agent_id::text, file_path, purpose, expires_at
             """,
             query_params,
         )
-        renewed = cur.rowcount
+        rows = cur.fetchall()
+        for row in rows:
+            record_reservation_event_cursor(
+                cur,
+                workspace_id=workspace_id,
+                reservation_kind="file",
+                reservation_id=row[0],
+                agent_id=row[1],
+                action="renewed",
+                subject=row[2],
+                metadata={
+                    "purpose": row[3],
+                    "renewed_by": agent_name,
+                    "ttl_minutes": ttl_minutes,
+                    "expires_at": row[4].isoformat() if row[4] else None,
+                },
+            )
+        renewed = len(rows)
     conn.commit()
     return renewed
 
@@ -1236,7 +1282,25 @@ def reserve_symbols(
                     Jsonb({"requested_symbol": symbol}),
                 ),
             )
-            reservation_ids.append(cur.fetchone()[0])
+            reservation_id = cur.fetchone()[0]
+            reservation_ids.append(reservation_id)
+            record_reservation_event_cursor(
+                cur,
+                workspace_id=workspace_id,
+                reservation_kind="symbol",
+                reservation_id=reservation_id,
+                agent_id=agent_id,
+                action="created",
+                subject=target.get("qualified_name") or symbol,
+                metadata={
+                    "purpose": purpose,
+                    "ttl_minutes": ttl_minutes,
+                    "requested_symbol": symbol,
+                    "qualified_name": target.get("qualified_name"),
+                    "file_path": target.get("file_path"),
+                    "conflict_count": len(conflicts),
+                },
+            )
     conn.commit()
     return {
         "reservation_ids": reservation_ids,
@@ -1310,10 +1374,29 @@ def release_symbol_reservation(
               AND released_at IS NULL
               AND {target_filter}
               {agent_filter}
+            RETURNING id::text, agent_id::text, symbol, qualified_name, file_path, purpose
             """,
             params,
         )
-        released = cur.rowcount
+        rows = cur.fetchall()
+        for row in rows:
+            record_reservation_event_cursor(
+                cur,
+                workspace_id=workspace_id,
+                reservation_kind="symbol",
+                reservation_id=row[0],
+                agent_id=row[1],
+                action="released",
+                subject=row[3] or row[2],
+                metadata={
+                    "symbol": row[2],
+                    "qualified_name": row[3],
+                    "file_path": row[4],
+                    "purpose": row[5],
+                    "released_by": agent_name,
+                },
+            )
+        released = len(rows)
     conn.commit()
     return released
 
@@ -1364,10 +1447,38 @@ def renew_symbol_reservation(
               AND released_at IS NULL
               AND {target_filter}
               {agent_filter}
+            RETURNING
+                id::text,
+                agent_id::text,
+                symbol,
+                qualified_name,
+                file_path,
+                purpose,
+                expires_at
             """,
             query_params,
         )
-        renewed = cur.rowcount
+        rows = cur.fetchall()
+        for row in rows:
+            record_reservation_event_cursor(
+                cur,
+                workspace_id=workspace_id,
+                reservation_kind="symbol",
+                reservation_id=row[0],
+                agent_id=row[1],
+                action="renewed",
+                subject=row[3] or row[2],
+                metadata={
+                    "symbol": row[2],
+                    "qualified_name": row[3],
+                    "file_path": row[4],
+                    "purpose": row[5],
+                    "renewed_by": agent_name,
+                    "ttl_minutes": ttl_minutes,
+                    "expires_at": row[6].isoformat() if row[6] else None,
+                },
+            )
+        renewed = len(rows)
     conn.commit()
     return renewed
 
@@ -1428,6 +1539,108 @@ def list_active_symbol_reservations(
 ) -> list[dict[str, Any]]:
     with conn.cursor() as cur:
         return active_symbol_reservations(cur, workspace_id, symbols)
+
+
+def record_reservation_event_cursor(
+    cur: Cursor,
+    workspace_id: str,
+    reservation_kind: str,
+    reservation_id: str | None,
+    agent_id: str | None,
+    action: str,
+    subject: str,
+    metadata: dict[str, Any] | None = None,
+) -> None:
+    cur.execute(
+        """
+        INSERT INTO reservation_events (
+            workspace_id,
+            reservation_kind,
+            reservation_id,
+            agent_id,
+            action,
+            subject,
+            metadata
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """,
+        (
+            workspace_id,
+            reservation_kind,
+            reservation_id,
+            agent_id,
+            action,
+            subject,
+            Jsonb(metadata or {}),
+        ),
+    )
+
+
+def list_reservation_events(
+    conn: Connection,
+    workspace_id_or_uri: str | None = None,
+    reservation_kind: str | None = None,
+    action: str | None = None,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    with conn.cursor() as cur:
+        workspace_id = (
+            resolve_workspace_id_cursor(cur, workspace_id_or_uri) if workspace_id_or_uri else None
+        )
+        if workspace_id_or_uri and not workspace_id:
+            return []
+        filters: list[str] = []
+        params: list[Any] = []
+        if workspace_id:
+            filters.append("re.workspace_id = %s::uuid")
+            params.append(workspace_id)
+        if reservation_kind:
+            filters.append("re.reservation_kind = %s")
+            params.append(reservation_kind)
+        if action:
+            filters.append("re.action = %s")
+            params.append(action)
+        where_clause = "WHERE " + " AND ".join(filters) if filters else ""
+        params.append(limit)
+        cur.execute(
+            f"""
+            SELECT
+                re.id::text,
+                re.workspace_id::text,
+                w.root_uri,
+                re.reservation_kind,
+                re.reservation_id::text,
+                a.name,
+                re.action,
+                re.subject,
+                re.metadata,
+                re.created_at
+            FROM reservation_events re
+            JOIN workspaces w ON w.id = re.workspace_id
+            LEFT JOIN agents a ON a.id = re.agent_id
+            {where_clause}
+            ORDER BY re.created_at DESC
+            LIMIT %s
+            """,
+            params,
+        )
+        rows = cur.fetchall()
+    return [reservation_event_result(row) for row in rows]
+
+
+def reservation_event_result(row: tuple[Any, ...]) -> dict[str, Any]:
+    return {
+        "event_id": row[0],
+        "workspace_id": row[1],
+        "workspace_uri": row[2],
+        "reservation_kind": row[3],
+        "reservation_id": row[4],
+        "agent_name": row[5],
+        "action": row[6],
+        "subject": row[7],
+        "metadata": row[8],
+        "created_at": row[9].isoformat() if row[9] else None,
+    }
 
 
 def record_handoff_summary(
@@ -1583,10 +1796,22 @@ def cleanup_expired_reservations(cur: Cursor, workspace_id: str | None = None) -
           AND expires_at IS NOT NULL
           AND expires_at <= now()
           {workspace_filter}
+        RETURNING workspace_id::text, id::text, agent_id::text, file_path, purpose
         """,
         params,
     )
-    file_count = cur.rowcount
+    file_rows = cur.fetchall()
+    for row in file_rows:
+        record_reservation_event_cursor(
+            cur,
+            workspace_id=row[0],
+            reservation_kind="file",
+            reservation_id=row[1],
+            agent_id=row[2],
+            action="expired",
+            subject=row[3],
+            metadata={"purpose": row[4]},
+        )
     cur.execute(
         f"""
         UPDATE symbol_reservations
@@ -1596,11 +1821,35 @@ def cleanup_expired_reservations(cur: Cursor, workspace_id: str | None = None) -
           AND expires_at IS NOT NULL
           AND expires_at <= now()
           {workspace_filter}
+        RETURNING
+            workspace_id::text,
+            id::text,
+            agent_id::text,
+            symbol,
+            qualified_name,
+            file_path,
+            purpose
         """,
         params,
     )
-    symbol_count = cur.rowcount
-    return {"file_reservations": file_count, "symbol_reservations": symbol_count}
+    symbol_rows = cur.fetchall()
+    for row in symbol_rows:
+        record_reservation_event_cursor(
+            cur,
+            workspace_id=row[0],
+            reservation_kind="symbol",
+            reservation_id=row[1],
+            agent_id=row[2],
+            action="expired",
+            subject=row[4] or row[3],
+            metadata={
+                "symbol": row[3],
+                "qualified_name": row[4],
+                "file_path": row[5],
+                "purpose": row[6],
+            },
+        )
+    return {"file_reservations": len(file_rows), "symbol_reservations": len(symbol_rows)}
 
 
 def cleanup_expired_reservations_for_workspace(

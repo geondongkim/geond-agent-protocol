@@ -40,6 +40,7 @@ Use [examples/mcp_clients/continue_config.yaml](../examples/mcp_clients/continue
 - `reserve_symbols`: warn other agents about symbol-level work.
 - `renew_reservation`: extend an active file reservation by id or file path.
 - `renew_symbol_reservation`: extend an active symbol reservation by id or symbol.
+- `list_reservation_events`: inspect created, renewed, released, and expired reservation audit events.
 - `get_symbol_conflicts`: check active symbol reservations before editing.
 - `record_handoff_summary`: leave concise next-step context for another agent.
 - `list_handoff_summaries`: read open or closed handoffs.

@@ -241,7 +241,8 @@ uv run geond index-tree-sitter "C:/path/to/project" \
 Use the MCP tool `get_symbol_context` or the Python API to retrieve functions, classes, methods, modules, imports, related changesets, and caller/callee relationships stored in the code graph.
 Python and TypeScript/JavaScript indexing record same-file calls and
 import-qualified cross-file calls as `calls` edges when the target symbol is
-indexed in the same workspace.
+indexed in the same workspace. TypeScript/JavaScript default imports also
+resolve to named default-export functions/classes when Geond can identify them.
 
 Record a changeset and link it to indexed code entities:
 
@@ -305,7 +306,14 @@ uv run geond renew-symbol <workspace-id> \
     --symbol build_answer \
     --agent-name copilot \
     --ttl-minutes 120
+
+uv run geond reservation-events \
+    --workspace-id-or-uri <workspace-id> \
+    --kind symbol
 ```
+
+Reservation creation, renewal, explicit release, and expiry are recorded as
+append-only audit events and appear in workspace timeline/reservation resources.
 
 Leave a handoff summary for the next agent:
 
@@ -368,7 +376,7 @@ Local protocol demo asset:
 
 ## Status
 
-Early MVP stage. The repository contains research notes, architecture, implementation plans, a local Postgres/pgvector schema, VS Code Copilot Chat, Codex, and Claude Code importers, OpenAI/Azure/gateway/local embedding provider modes, keyword/vector/hybrid retrieval, workspace aliases with git fingerprint suggestions, AST/regex/tree-sitter code graph indexing, Python and TypeScript/JavaScript cross-file call edges, changeset-to-symbol evidence links, call-impact narratives, reservation renewal, benchmark quality metrics, coordination tools, demo assets, Azure samples, and an MCP server.
+Early MVP stage. The repository contains research notes, architecture, implementation plans, a local Postgres/pgvector schema, VS Code Copilot Chat, Codex, and Claude Code importers, OpenAI/Azure/gateway/local embedding provider modes, keyword/vector/hybrid retrieval, workspace aliases with git fingerprint suggestions, AST/regex/tree-sitter code graph indexing, Python and TypeScript/JavaScript cross-file/default-import call edges, changeset-to-symbol evidence links, call-impact narratives, reservation renewal and audit events, benchmark quality metrics, coordination tools, demo assets, Azure samples, and an MCP server.
 
 ## Design Principles
 

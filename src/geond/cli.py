@@ -40,6 +40,7 @@ from geond.storage.repository import (
     list_active_file_reservations,
     list_active_symbol_reservations,
     list_handoff_summaries,
+    list_reservation_events,
     list_workspace_aliases,
     record_changeset,
     record_handoff_summary,
@@ -347,6 +348,17 @@ def main() -> None:
     list_handoffs.add_argument("--workspace-id-or-uri")
     list_handoffs.add_argument("--status")
     list_handoffs.add_argument("--limit", type=int, default=50)
+
+    reservation_events = subparsers.add_parser(
+        "reservation-events", help="List reservation audit events"
+    )
+    reservation_events.add_argument("--workspace-id-or-uri")
+    reservation_events.add_argument("--kind", choices=["file", "symbol"])
+    reservation_events.add_argument(
+        "--action",
+        choices=["created", "renewed", "released", "expired"],
+    )
+    reservation_events.add_argument("--limit", type=int, default=50)
 
     benchmark = subparsers.add_parser(
         "benchmark-search", help="Measure retrieval latency for one or more queries"
@@ -905,6 +917,18 @@ def main() -> None:
                 conn,
                 workspace_id_or_uri=args.workspace_id_or_uri,
                 status=args.status,
+                limit=args.limit,
+            )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "reservation-events":
+        with connect(get_settings()) as conn:
+            result = list_reservation_events(
+                conn,
+                workspace_id_or_uri=args.workspace_id_or_uri,
+                reservation_kind=args.kind,
+                action=args.action,
                 limit=args.limit,
             )
         print(json.dumps(result, ensure_ascii=False, indent=2))
