@@ -57,7 +57,7 @@ organized by product risk rather than by implementation convenience.
 | --- | --- | --- |
 | SQLite prototype | Postgres is powerful but heavy for first contact. | Provide a limited local SQLite mode for keyword search, imports, and MCP basics. |
 | TypeScript SDK | Many MCP and editor integrations are TypeScript-first. | Add a thin client package for writing memories and querying evidence refs. |
-| Release automation | Public OSS needs predictable artifacts. | GitHub Actions now runs lint, compile, and tests; next add package build, docs link checks, and release notes. |
+| Release automation | Public OSS needs predictable artifacts. | GitHub Actions now runs lint, compile, tests, and package build; next add docs link checks and release notes. |
 | Example integrations | Users learn faster from concrete adapters. | Add examples for Continue, Claude Desktop, VS Code MCP, and a simple CI benchmark job. |
 | Apple Silicon onboarding | Contributors may clone on M-series MacBooks. | Native arm64 setup notes are documented; next validate on real hardware and add macOS CI if needed. |
 

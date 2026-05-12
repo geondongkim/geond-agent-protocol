@@ -95,8 +95,9 @@ uv run pre-commit install
 uv run pre-commit run --all-files
 ```
 
-GitHub Actions runs the same pre-commit, compile, and pytest checks on pushes
-and pull requests using a `pgvector/pgvector:pg16` Postgres service.
+GitHub Actions runs the same pre-commit, compile, pytest, and package build
+checks on pushes and pull requests using a `pgvector/pgvector:pg16` Postgres
+service.
 
 Start Postgres with pgvector:
 
