@@ -9,7 +9,7 @@ import pytest
 from geond.code_graph.python_indexer import index_python_file
 from geond.config import get_settings
 from geond.db import connect, run_schema_file
-from geond.retrieval.simple import explain_change, get_symbol_context
+from geond.retrieval.simple import explain_change, get_changeset_detail, get_symbol_context
 from geond.storage.changesets import parse_unified_diff_line_ranges
 from geond.storage.code_graph import store_code_index
 from geond.storage.repository import record_changeset, upsert_workspace
@@ -165,6 +165,18 @@ def build_answer(prompt):
                 for item in get_symbol_context(conn, "build_answer", limit=5)
                 if item["qualified_name"] == "package.service.build_answer"
             )
+            changeset = record_changeset(
+                conn,
+                workspace_id=workspace_id,
+                files=[{"file_path": "package/utils.py", "status": "modified"}],
+                intent="test call impact narrative",
+                summary="Updated clean helper behavior.",
+            )
+            detail = get_changeset_detail(
+                conn,
+                changeset["changeset_id"],
+                include_narrative=True,
+            )
 
             assert stats["edges"] >= 1
             assert edge is not None
@@ -174,6 +186,15 @@ def build_answer(prompt):
             assert clean_context["callers"][0]["qualified_name"] == "package.service.build_answer"
             assert clean_context["callers"][0]["edge"]["evidence"]["schema"] == "geond.evidence.v1"
             assert answer_context["callees"][0]["qualified_name"] == "package.utils.clean"
+            assert any(
+                caller["qualified_name"] == "package.service.build_answer"
+                for caller in detail["call_impact"]["callers"]
+            )
+            assert any(line.startswith("Call impact:") for line in detail["narrative"]["lines"])
+            assert any(
+                citation["evidence"]["kind"] == "code_edge"
+                for citation in detail["narrative"]["citations"]
+            )
         finally:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM workspaces WHERE id = %s", (workspace_id,))

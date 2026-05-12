@@ -183,6 +183,7 @@ Tasks:
 - [x] Add a tree-sitter-backed mixed Python/TypeScript/JavaScript index path with AST/regex fallback.
 - [x] Extract files, modules, classes, functions, methods, imports, and same-file basic calls.
 - [x] Infer TypeScript/JavaScript fallback line spans for function, class, method, and module entities.
+- [x] Resolve import-qualified cross-file `calls` edges for Python and TypeScript/JavaScript.
 - [x] Store entities in `code_entities`.
 - [x] Store relationships in `code_edges`.
 - [x] Link changesets to touched entities, including unified diff hunk ranges and deletion-only hunks.
@@ -204,11 +205,13 @@ Tasks:
 - [x] Return evidence objects for `search_dev_memory` results.
 - [x] Expand evidence objects to `explain_change` and symbol retrieval.
 - [x] Add canonical `geond.evidence.v1` evidence references with stable `locator` and `metadata` fields.
+- [x] Add caller/callee call-impact context to symbol, file-change, and changeset retrieval.
+- [x] Generate deterministic narratives that cite changeset, symbol, file, message, and `code_edge` evidence.
 
 Acceptance criteria:
 
 - `search_dev_memory("Flask application context")` returns relevant session, messages, changed files, and symbols.
-- `explain_change(file_path)` returns a short explanation with evidence links.
+- `explain_change(file_path)` returns a short explanation with evidence links and call-impact context when available.
 
 ## 9. Phase 6: MCP Server
 
@@ -218,6 +221,7 @@ Tasks:
 - [x] Implement `search_dev_memory`.
 - [x] Implement `get_symbol_context`.
 - [x] Implement `explain_change`.
+- [x] Implement `get_changeset_detail` with optional narrative synthesis.
 - [x] Implement `record_changeset` with optional patch hunk linking.
 - [x] Implement `record_agent_action`.
 - [x] Expose resources for sessions, symbols, changesets, and workspace timeline.
@@ -235,6 +239,7 @@ Tasks:
 - [x] Add `reserve_files` and `release_reservation`.
 - [x] Track active agent tasks through `agent_actions` and workspace timeline resources.
 - [x] Add stale reservation expiry cleanup.
+- [x] Add reservation renewal for active file and symbol work.
 - [x] Add handoff summaries.
 - [x] Add conflict warnings when two agents target the same files.
 - [x] Add conflict warnings when two agents target the same symbols.

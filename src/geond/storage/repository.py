@@ -741,6 +741,60 @@ def release_reservation(
     return released
 
 
+def renew_reservation(
+    conn: Connection,
+    workspace_id: str,
+    reservation_id: str | None = None,
+    file_path: str | None = None,
+    agent_name: str | None = None,
+    ttl_minutes: int | None = 120,
+) -> int:
+    if not reservation_id and not file_path:
+        raise ValueError("reservation_id or file_path is required")
+
+    with conn.cursor() as cur:
+        cleanup_expired_reservations(cur, workspace_id)
+        agent_filter = ""
+        target_params: list[Any] = [workspace_id]
+        if reservation_id:
+            target_filter = "id::text = %s"
+            target_params.append(reservation_id)
+        else:
+            target_filter = "file_path = %s"
+            target_params.append(file_path)
+
+        if agent_name:
+            agent_filter = """
+              AND agent_id IN (
+                  SELECT id FROM agents WHERE name = %s AND kind = 'coding-agent'
+              )
+            """
+            target_params.append(agent_name)
+
+        query_params = [ttl_minutes, ttl_minutes, ttl_minutes, *target_params]
+        cur.execute(
+            f"""
+            UPDATE file_reservations
+            SET expires_at = CASE
+                    WHEN %s::integer IS NULL THEN NULL
+                    ELSE now() + make_interval(mins => %s::integer)
+                END,
+                metadata = metadata || jsonb_build_object(
+                    'renewed_at', now(),
+                    'renewal_ttl_minutes', %s::integer
+                )
+            WHERE workspace_id = %s
+              AND released_at IS NULL
+              AND {target_filter}
+              {agent_filter}
+            """,
+            query_params,
+        )
+        renewed = cur.rowcount
+    conn.commit()
+    return renewed
+
+
 def active_file_reservations(
     cur: Cursor,
     workspace_id: str,
@@ -930,6 +984,60 @@ def release_symbol_reservation(
         released = cur.rowcount
     conn.commit()
     return released
+
+
+def renew_symbol_reservation(
+    conn: Connection,
+    workspace_id: str,
+    reservation_id: str | None = None,
+    symbol: str | None = None,
+    agent_name: str | None = None,
+    ttl_minutes: int | None = 120,
+) -> int:
+    if not reservation_id and not symbol:
+        raise ValueError("reservation_id or symbol is required")
+
+    with conn.cursor() as cur:
+        cleanup_expired_reservations(cur, workspace_id)
+        agent_filter = ""
+        target_params: list[Any] = [workspace_id]
+        if reservation_id:
+            target_filter = "id::text = %s"
+            target_params.append(reservation_id)
+        else:
+            target_filter = "(symbol = %s OR qualified_name = %s)"
+            target_params.extend([symbol, symbol])
+
+        if agent_name:
+            agent_filter = """
+              AND agent_id IN (
+                  SELECT id FROM agents WHERE name = %s AND kind = 'coding-agent'
+              )
+            """
+            target_params.append(agent_name)
+
+        query_params = [ttl_minutes, ttl_minutes, ttl_minutes, *target_params]
+        cur.execute(
+            f"""
+            UPDATE symbol_reservations
+            SET expires_at = CASE
+                    WHEN %s::integer IS NULL THEN NULL
+                    ELSE now() + make_interval(mins => %s::integer)
+                END,
+                metadata = metadata || jsonb_build_object(
+                    'renewed_at', now(),
+                    'renewal_ttl_minutes', %s::integer
+                )
+            WHERE workspace_id = %s
+              AND released_at IS NULL
+              AND {target_filter}
+              {agent_filter}
+            """,
+            query_params,
+        )
+        renewed = cur.rowcount
+    conn.commit()
+    return renewed
 
 
 def active_symbol_reservations(

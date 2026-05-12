@@ -25,6 +25,8 @@ from geond.storage.repository import record_changeset as record_changeset_row
 from geond.storage.repository import record_handoff_summary as record_handoff_summary_row
 from geond.storage.repository import release_reservation as release_reservation_row
 from geond.storage.repository import release_symbol_reservation as release_symbol_reservation_row
+from geond.storage.repository import renew_reservation as renew_reservation_row
+from geond.storage.repository import renew_symbol_reservation as renew_symbol_reservation_row
 from geond.storage.repository import reserve_files as reserve_files_row
 from geond.storage.repository import reserve_symbols as reserve_symbols_row
 from geond.storage.resources import (
@@ -234,6 +236,27 @@ def release_reservation(
 
 
 @mcp.tool()
+def renew_reservation(
+    workspace_id: str,
+    reservation_id: str | None = None,
+    file_path: str | None = None,
+    agent_name: str | None = None,
+    ttl_minutes: int | None = 120,
+) -> dict[str, int]:
+    """Renew an active file reservation by id or file path."""
+    with connect(get_settings()) as conn:
+        renewed = renew_reservation_row(
+            conn=conn,
+            workspace_id=workspace_id,
+            reservation_id=reservation_id,
+            file_path=file_path,
+            agent_name=agent_name,
+            ttl_minutes=ttl_minutes,
+        )
+    return {"renewed": renewed}
+
+
+@mcp.tool()
 def get_active_reservations(
     workspace_id: str,
     file_paths: list[str] | None = None,
@@ -280,6 +303,27 @@ def release_symbol_reservation(
             agent_name=agent_name,
         )
     return {"released": released}
+
+
+@mcp.tool()
+def renew_symbol_reservation(
+    workspace_id: str,
+    reservation_id: str | None = None,
+    symbol: str | None = None,
+    agent_name: str | None = None,
+    ttl_minutes: int | None = 120,
+) -> dict[str, int]:
+    """Renew an active symbol reservation by id or symbol name."""
+    with connect(get_settings()) as conn:
+        renewed = renew_symbol_reservation_row(
+            conn=conn,
+            workspace_id=workspace_id,
+            reservation_id=reservation_id,
+            symbol=symbol,
+            agent_name=agent_name,
+            ttl_minutes=ttl_minutes,
+        )
+    return {"renewed": renewed}
 
 
 @mcp.tool()

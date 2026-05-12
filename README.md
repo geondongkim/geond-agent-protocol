@@ -208,8 +208,9 @@ uv run geond index-tree-sitter "C:/path/to/project" \
 ```
 
 Use the MCP tool `get_symbol_context` or the Python API to retrieve functions, classes, methods, modules, imports, related changesets, and caller/callee relationships stored in the code graph.
-Python indexing records same-file calls and import-qualified cross-file calls as
-`calls` edges when the target symbol is indexed in the same workspace.
+Python and TypeScript/JavaScript indexing record same-file calls and
+import-qualified cross-file calls as `calls` edges when the target symbol is
+indexed in the same workspace.
 
 Record a changeset and link it to indexed code entities:
 
@@ -234,6 +235,9 @@ as `message_id`, `changeset_id`, `entity_id`, and `file_path` remain available
 for compatibility with early MCP clients.
 Changeset detail lookup accepts UUIDs and git commit prefixes; ambiguous
 prefixes return candidate matches instead of silently selecting one.
+`explain_change(..., include_narrative=True)` and `get_changeset_detail(...,
+include_narrative=True)` include call-impact lines when touched symbols have
+resolved callers or callees.
 
 Run the MCP server:
 
@@ -265,6 +269,11 @@ uv run geond reserve-symbols <workspace-id> \
     --purpose "rename check"
 
 uv run geond conflicts <workspace-id> --symbol build_answer
+
+uv run geond renew-symbol <workspace-id> \
+    --symbol build_answer \
+    --agent-name copilot \
+    --ttl-minutes 120
 ```
 
 Leave a handoff summary for the next agent:
@@ -326,7 +335,7 @@ Local protocol demo asset:
 
 ## Status
 
-Early MVP stage. The repository contains research notes, architecture, implementation plans, a local Postgres/pgvector schema, VS Code Copilot Chat, Codex, and Claude Code importers, OpenAI/Azure/gateway/local embedding provider modes, keyword/vector/hybrid retrieval, AST/regex/tree-sitter code graph indexing, Python cross-file call edges, changeset-to-symbol evidence links, benchmark quality metrics, coordination tools, demo assets, Azure samples, and an MCP server.
+Early MVP stage. The repository contains research notes, architecture, implementation plans, a local Postgres/pgvector schema, VS Code Copilot Chat, Codex, and Claude Code importers, OpenAI/Azure/gateway/local embedding provider modes, keyword/vector/hybrid retrieval, AST/regex/tree-sitter code graph indexing, Python and TypeScript/JavaScript cross-file call edges, changeset-to-symbol evidence links, call-impact narratives, reservation renewal, benchmark quality metrics, coordination tools, demo assets, Azure samples, and an MCP server.
 
 ## Design Principles
 

@@ -20,6 +20,8 @@ from geond.storage.repository import (
     record_handoff_summary,
     release_reservation,
     release_symbol_reservation,
+    renew_reservation,
+    renew_symbol_reservation,
     reserve_files,
     reserve_symbols,
     upsert_workspace,
@@ -117,6 +119,20 @@ def build_answer(prompt):
             cleaned = cleanup_expired_reservations_for_workspace(conn, workspace_id)
             active = list_active_file_reservations(conn, workspace_id)
             active_symbols = list_active_symbol_reservations(conn, workspace_id)
+            renewed = renew_reservation(
+                conn,
+                workspace_id,
+                reservation_id=first["reservation_ids"][0],
+                agent_name="agent-a",
+                ttl_minutes=45,
+            )
+            renewed_symbol = renew_symbol_reservation(
+                conn,
+                workspace_id,
+                reservation_id=symbol_first["reservation_ids"][0],
+                agent_name="agent-a",
+                ttl_minutes=45,
+            )
             record_agent_action(
                 conn,
                 workspace_id=workspace_id,
@@ -163,6 +179,8 @@ def build_answer(prompt):
             assert len(active) == 2
             assert all(item["file_path"] != "old.py" for item in active)
             assert len(active_symbols) == 2
+            assert renewed == 1
+            assert renewed_symbol == 1
             assert handoffs[0]["handoff_id"] == handoff_id
             assert reservation_resource["symbol_reservations"]
             assert handoff_resource["handoffs"][0]["summary"].startswith("build_answer")

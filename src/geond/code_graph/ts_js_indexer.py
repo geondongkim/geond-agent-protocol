@@ -36,7 +36,9 @@ METHOD_RE = re.compile(
     r"^\s*(?:public\s+|private\s+|protected\s+|static\s+|async\s+)*"
     r"(?P<name>[A-Za-z_$][\w$]*)\s*\([^)]*\)\s*[:A-Za-z0-9_<>,\s|&[\]?]*\{?\s*$"
 )
-CALL_RE = re.compile(r"\b(?P<name>[A-Za-z_$][\w$]*)\s*\(")
+MEMBER_CALL_RE = re.compile(
+    r"(?<![A-Za-z0-9_$])(?P<name>[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)?)\s*\("
+)
 DECLARATION_KEYWORDS = {"if", "for", "while", "switch", "catch", "function"}
 
 
@@ -122,6 +124,7 @@ class TsJsIndexVisitor:
         ]
         self.edges: list[CodeEdgeDraft] = []
         self.name_to_qualified_names: dict[str, list[str]] = {}
+        self.imported_name_by_alias: dict[str, str] = {}
         self.calls_by_source: dict[str, list[str]] = {}
         self.class_stack: list[tuple[str, int]] = []
         self.callable_stack: list[tuple[str, int]] = []
@@ -163,6 +166,8 @@ class TsJsIndexVisitor:
         module = match.group("module") or match.group("side_effect") or ""
         body = match.group("body") or module.rsplit("/", 1)[-1] or module
         display_name = normalize_import_name(body)
+        imported_bindings = parse_import_bindings(body, module, self.module_name)
+        self.imported_name_by_alias.update(imported_bindings)
         qualified_name = f"{self.module_name}:import:{line_number}:{display_name}"
         self.add_entity(
             CodeEntityDraft(
@@ -173,7 +178,11 @@ class TsJsIndexVisitor:
                 start_line=line_number,
                 end_line=line_number,
                 signature=module,
-                metadata={"language": self.language, "imported_name": module},
+                metadata={
+                    "language": self.language,
+                    "imported_name": module,
+                    "imported_bindings": imported_bindings,
+                },
             )
         )
         self.add_edge(self.module_name, qualified_name, "imports")
@@ -265,7 +274,8 @@ class TsJsIndexVisitor:
 
     def add_entity(self, entity: CodeEntityDraft) -> None:
         self.entities.append(entity)
-        self.name_to_qualified_names.setdefault(entity.name, []).append(entity.qualified_name)
+        if entity.kind in {"class", "function", "method"}:
+            self.name_to_qualified_names.setdefault(entity.name, []).append(entity.qualified_name)
 
     def add_edge(
         self,
@@ -284,17 +294,61 @@ class TsJsIndexVisitor:
         )
 
     def add_resolved_call_edges(self) -> None:
+        added_edges: set[tuple[str, str, str]] = set()
         for source_qualified_name, calls in self.calls_by_source.items():
             for call_name in calls:
-                targets = self.name_to_qualified_names.get(call_name, [])
-                if not targets:
+                name = call_name.rsplit(".", 1)[-1]
+                targets = self.name_to_qualified_names.get(name, [])
+                if targets:
+                    self.add_call_edge(
+                        source_qualified_name,
+                        targets[0],
+                        call_name,
+                        "same_file_name_match",
+                        added_edges,
+                    )
                     continue
-                self.add_edge(
-                    source_qualified_name,
-                    targets[0],
-                    "calls",
-                    metadata={"call": call_name, "resolution": "same_file_name_match"},
-                )
+
+                imported_target = self.resolve_imported_call(call_name)
+                if imported_target:
+                    self.add_call_edge(
+                        source_qualified_name,
+                        imported_target,
+                        call_name,
+                        "import_qualified_name_match",
+                        added_edges,
+                    )
+
+    def add_call_edge(
+        self,
+        source_qualified_name: str,
+        target_qualified_name: str,
+        call_name: str,
+        resolution: str,
+        added_edges: set[tuple[str, str, str]],
+    ) -> None:
+        edge_key = (source_qualified_name, target_qualified_name, "calls")
+        if edge_key in added_edges:
+            return
+        added_edges.add(edge_key)
+        self.add_edge(
+            source_qualified_name,
+            target_qualified_name,
+            "calls",
+            metadata={"call": call_name, "resolution": resolution},
+        )
+
+    def resolve_imported_call(self, call_name: str) -> str | None:
+        if call_name in self.imported_name_by_alias:
+            return self.imported_name_by_alias[call_name]
+
+        alias, _, member_path = call_name.partition(".")
+        if not member_path:
+            return None
+        imported_base = self.imported_name_by_alias.get(alias)
+        if not imported_base:
+            return None
+        return f"{imported_base}.{member_path}"
 
     def finalize_spans(self, lines: list[str]) -> None:
         line_count = len(lines) or 1
@@ -348,11 +402,62 @@ def normalize_import_name(body: str) -> str:
     return body.replace("* as ", "").strip() or "side_effect"
 
 
+def resolve_imported_module_name(imported_module: str, module_name: str) -> str:
+    if not imported_module.startswith("."):
+        return imported_module.replace("/", ".")
+
+    parts = module_name.split(".")[:-1]
+    for part in imported_module.split("/"):
+        if part in {"", "."}:
+            continue
+        if part == "..":
+            if parts:
+                parts.pop()
+            continue
+        parts.extend(segment for segment in part.split(".") if segment)
+    if parts and parts[-1] == "index":
+        parts.pop()
+    return ".".join(parts)
+
+
+def parse_import_bindings(body: str, imported_module: str, module_name: str) -> dict[str, str]:
+    module_target = resolve_imported_module_name(imported_module, module_name)
+    bindings: dict[str, str] = {}
+    body = body.strip()
+    if body.startswith("type "):
+        body = body.removeprefix("type ").strip()
+
+    namespace_match = re.search(r"\*\s+as\s+(?P<alias>[A-Za-z_$][\w$]*)", body)
+    if namespace_match:
+        bindings[namespace_match.group("alias")] = module_target
+
+    named_match = re.search(r"\{(?P<named>[^}]*)\}", body)
+    if named_match:
+        for raw_part in named_match.group("named").split(","):
+            part = raw_part.strip()
+            if not part:
+                continue
+            if part.startswith("type "):
+                part = part.removeprefix("type ").strip()
+            if " as " in part:
+                imported, alias = [item.strip() for item in part.split(" as ", 1)]
+            else:
+                imported = alias = part
+            if alias:
+                bindings[alias] = f"{module_target}.{imported}"
+
+    default_part = body.split(",", 1)[0].strip()
+    if default_part and not default_part.startswith(("{", "*")):
+        bindings.setdefault(default_part, f"{module_target}.{default_part}")
+    return bindings
+
+
 def find_calls(line: str, excluded: set[str] | None = None) -> list[str]:
     excluded = excluded or set()
     calls = []
-    for match in CALL_RE.finditer(line):
+    for match in MEMBER_CALL_RE.finditer(line):
         name = match.group("name")
-        if name not in DECLARATION_KEYWORDS and name not in excluded:
+        base_name = name.rsplit(".", 1)[-1]
+        if base_name not in DECLARATION_KEYWORDS and base_name not in excluded:
             calls.append(name)
     return sorted(set(calls))

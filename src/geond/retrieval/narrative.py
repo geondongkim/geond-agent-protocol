@@ -50,6 +50,32 @@ def _format_pointers(pointers: Iterable[str | None]) -> str:
     return " [" + ", ".join(cleaned) + "]"
 
 
+def _append_citation(
+    citations: list[dict[str, Any]],
+    seen_pointers: set[str],
+    evidence: dict[str, Any] | None,
+) -> str | None:
+    pointer = _evidence_pointer(evidence)
+    if pointer and pointer not in seen_pointers:
+        citations.append({"pointer": pointer, "evidence": evidence})
+        seen_pointers.add(pointer)
+    return pointer
+
+
+def _unique_names(items: Iterable[dict[str, Any]], limit: int) -> list[str]:
+    names: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        name = item.get("qualified_name") or item.get("name")
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        names.append(name)
+        if len(names) >= limit:
+            break
+    return names
+
+
 def summarize_explain_change(
     result: dict[str, Any],
     *,
@@ -77,6 +103,7 @@ def summarize_explain_change(
 
     lines: list[str] = []
     citations: list[dict[str, Any]] = []
+    seen_pointers: set[str] = set()
 
     if not changesets and not entities and not messages and not snapshots:
         return {
@@ -111,9 +138,7 @@ def summarize_explain_change(
         git_commit = (changeset.get("git_commit") or "").strip()
         status = changeset.get("status")
         evidence = changeset.get("evidence")
-        pointer = _evidence_pointer(evidence)
-        if pointer:
-            citations.append({"pointer": pointer, "evidence": evidence})
+        pointer = _append_citation(citations, seen_pointers, evidence)
 
         descriptor = git_commit[:8] if git_commit else changeset_id[:8]
         body = summary or intent or "(no summary recorded)"
@@ -130,9 +155,8 @@ def summarize_explain_change(
                 kind_counts.get(entity.get("kind") or "symbol", 0) + 1
             )
             evidence = entity.get("evidence")
-            pointer = _evidence_pointer(evidence)
+            pointer = _append_citation(citations, seen_pointers, evidence)
             if pointer:
-                citations.append({"pointer": pointer, "evidence": evidence})
                 entity_pointers.append(pointer)
         kind_part = ", ".join(f"{count} {kind}" for kind, count in kind_counts.items())
         names = [
@@ -145,14 +169,32 @@ def summarize_explain_change(
             + _format_pointers(entity_pointers)
         )
 
+    call_impact = result.get("call_impact") or {}
+    callers = call_impact.get("callers") or []
+    callees = call_impact.get("callees") or []
+    if callers or callees:
+        impact_parts: list[str] = []
+        impact_pointers: list[str | None] = []
+        caller_names = _unique_names(callers, max_entities)
+        callee_names = _unique_names(callees, max_entities)
+        if caller_names:
+            impact_parts.append("called by " + ", ".join(caller_names))
+        if callee_names:
+            impact_parts.append("calls " + ", ".join(callee_names))
+        for edge_row in [*callers[:max_entities], *callees[:max_entities]]:
+            edge_evidence = (edge_row.get("edge") or {}).get("evidence")
+            edge_pointer = _append_citation(citations, seen_pointers, edge_evidence)
+            if edge_pointer:
+                impact_pointers.append(edge_pointer)
+        lines.append("Call impact: " + "; ".join(impact_parts) + _format_pointers(impact_pointers))
+
     if include_message_snippets and messages:
         message_pointers: list[str | None] = []
         first = messages[0]
         snippet = first.get("snippet") or ""
         evidence = first.get("evidence")
-        pointer = _evidence_pointer(evidence)
+        pointer = _append_citation(citations, seen_pointers, evidence)
         if pointer:
-            citations.append({"pointer": pointer, "evidence": evidence})
             message_pointers.append(pointer)
         if snippet:
             lines.append(
@@ -163,9 +205,8 @@ def summarize_explain_change(
         snapshot_pointers: list[str | None] = []
         for snapshot in snapshots[:1]:
             evidence = snapshot.get("evidence")
-            pointer = _evidence_pointer(evidence)
+            pointer = _append_citation(citations, seen_pointers, evidence)
             if pointer:
-                citations.append({"pointer": pointer, "evidence": evidence})
                 snapshot_pointers.append(pointer)
         if snapshot_pointers:
             lines.append(f"File snapshot recorded {_format_pointers(snapshot_pointers).lstrip()}")
@@ -203,12 +244,11 @@ def summarize_changeset(
     descriptor = git_commit[:8] if git_commit else (changeset.get("changeset_id") or "?")[:8]
 
     citations: list[dict[str, Any]] = []
+    seen_pointers: set[str] = set()
     lines: list[str] = []
 
     evidence = changeset.get("evidence")
-    pointer = _evidence_pointer(evidence)
-    if pointer:
-        citations.append({"pointer": pointer, "evidence": evidence})
+    _append_citation(citations, seen_pointers, evidence)
 
     headline = f"Changeset {descriptor}: " + _truncate(summary or intent or "(no summary)")
 
@@ -216,9 +256,8 @@ def summarize_changeset(
         file_pointers = []
         for file_row in files[:5]:
             file_evidence = file_row.get("evidence")
-            file_pointer = _evidence_pointer(file_evidence)
+            file_pointer = _append_citation(citations, seen_pointers, file_evidence)
             if file_pointer:
-                citations.append({"pointer": file_pointer, "evidence": file_evidence})
                 file_pointers.append(file_pointer)
         file_names = [row.get("file_path") for row in files[:5] if row.get("file_path")]
         if file_names:
@@ -228,14 +267,32 @@ def summarize_changeset(
         entity_pointers: list[str | None] = []
         for entity in entities[:5]:
             entity_evidence = entity.get("evidence")
-            entity_pointer = _evidence_pointer(entity_evidence)
+            entity_pointer = _append_citation(citations, seen_pointers, entity_evidence)
             if entity_pointer:
-                citations.append({"pointer": entity_pointer, "evidence": entity_evidence})
                 entity_pointers.append(entity_pointer)
         names = [
             entity.get("qualified_name") or entity.get("name") or "?" for entity in entities[:5]
         ]
         lines.append("Touched symbols: " + ", ".join(names) + _format_pointers(entity_pointers))
+
+    call_impact = changeset.get("call_impact") or {}
+    callers = call_impact.get("callers") or []
+    callees = call_impact.get("callees") or []
+    if callers or callees:
+        impact_parts: list[str] = []
+        impact_pointers: list[str | None] = []
+        caller_names = _unique_names(callers, 5)
+        callee_names = _unique_names(callees, 5)
+        if caller_names:
+            impact_parts.append("called by " + ", ".join(caller_names))
+        if callee_names:
+            impact_parts.append("calls " + ", ".join(callee_names))
+        for edge_row in [*callers[:5], *callees[:5]]:
+            edge_evidence = (edge_row.get("edge") or {}).get("evidence")
+            edge_pointer = _append_citation(citations, seen_pointers, edge_evidence)
+            if edge_pointer:
+                impact_pointers.append(edge_pointer)
+        lines.append("Call impact: " + "; ".join(impact_parts) + _format_pointers(impact_pointers))
 
     return {
         "schema": EVIDENCE_SCHEMA + ".narrative",

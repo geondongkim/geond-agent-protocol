@@ -43,6 +43,8 @@ from geond.storage.repository import (
     record_changeset,
     record_handoff_summary,
     release_symbol_reservation,
+    renew_reservation,
+    renew_symbol_reservation,
     reserve_symbols,
     store_claude_code_session,
     store_codex_session,
@@ -246,6 +248,22 @@ def main() -> None:
     release_symbol_target.add_argument("--reservation-id")
     release_symbol_target.add_argument("--symbol")
     release_symbol.add_argument("--agent-name")
+
+    renew_file = subparsers.add_parser("renew-reservation", help="Renew an active file reservation")
+    renew_file.add_argument("workspace_id")
+    renew_file_target = renew_file.add_mutually_exclusive_group(required=True)
+    renew_file_target.add_argument("--reservation-id")
+    renew_file_target.add_argument("--file", dest="file_path")
+    renew_file.add_argument("--agent-name")
+    renew_file.add_argument("--ttl-minutes", type=int, default=120)
+
+    renew_symbol = subparsers.add_parser("renew-symbol", help="Renew an active symbol reservation")
+    renew_symbol.add_argument("workspace_id")
+    renew_symbol_target = renew_symbol.add_mutually_exclusive_group(required=True)
+    renew_symbol_target.add_argument("--reservation-id")
+    renew_symbol_target.add_argument("--symbol")
+    renew_symbol.add_argument("--agent-name")
+    renew_symbol.add_argument("--ttl-minutes", type=int, default=120)
 
     record_handoff = subparsers.add_parser(
         "record-handoff", help="Record a handoff summary for future agents"
@@ -692,6 +710,32 @@ def main() -> None:
                 agent_name=args.agent_name,
             )
         print(json.dumps({"released": released}, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "renew-reservation":
+        with connect(get_settings()) as conn:
+            renewed = renew_reservation(
+                conn,
+                workspace_id=args.workspace_id,
+                reservation_id=args.reservation_id,
+                file_path=args.file_path,
+                agent_name=args.agent_name,
+                ttl_minutes=args.ttl_minutes,
+            )
+        print(json.dumps({"renewed": renewed}, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "renew-symbol":
+        with connect(get_settings()) as conn:
+            renewed = renew_symbol_reservation(
+                conn,
+                workspace_id=args.workspace_id,
+                reservation_id=args.reservation_id,
+                symbol=args.symbol,
+                agent_name=args.agent_name,
+                ttl_minutes=args.ttl_minutes,
+            )
+        print(json.dumps({"renewed": renewed}, ensure_ascii=False, indent=2))
         return
 
     if args.command == "record-handoff":

@@ -363,6 +363,12 @@ def explain_change(
         )
         touched_entities = cur.fetchall()
 
+    call_impact = get_call_impact_for_entities(
+        conn,
+        [row[0] for row in touched_entities],
+        limit=max(limit * 3, 10),
+    )
+
     result: dict[str, Any] = {
         "file_path": file_path,
         "snapshots": [
@@ -489,6 +495,7 @@ def explain_change(
             }
             for row in touched_entities
         ],
+        "call_impact": call_impact,
     }
 
     if include_narrative:
@@ -648,6 +655,8 @@ def get_changeset_detail(
         )
         entity_rows = cur.fetchall()
 
+    call_impact = get_call_impact_for_entities(conn, [row[0] for row in entity_rows])
+
     record = {
         "changeset_ref": ref,
         "found": True,
@@ -725,11 +734,109 @@ def get_changeset_detail(
             }
             for entity_row in entity_rows
         ],
+        "call_impact": call_impact,
     }
 
     if include_narrative:
         record["narrative"] = summarize_changeset_narrative(record, settings=settings)
     return record
+
+
+def get_call_impact_for_entities(
+    conn: Connection,
+    entity_ids: list[str],
+    *,
+    limit: int = 20,
+) -> dict[str, list[dict[str, Any]]]:
+    if not entity_ids:
+        return {"callers": [], "callees": []}
+
+    entity_id_set = set(entity_ids)
+    callers: list[dict[str, Any]] = []
+    callees: list[dict[str, Any]] = []
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                e.id::text,
+                e.workspace_id::text,
+                e.source_entity_id::text,
+                source.kind,
+                source.name,
+                source.qualified_name,
+                source.file_path,
+                source.start_line,
+                source.end_line,
+                e.target_entity_id::text,
+                target.kind,
+                target.name,
+                target.qualified_name,
+                target.file_path,
+                target.start_line,
+                target.end_line,
+                e.edge_type,
+                e.confidence,
+                e.metadata
+            FROM code_edges e
+            JOIN code_entities source ON source.id = e.source_entity_id
+            JOIN code_entities target ON target.id = e.target_entity_id
+            WHERE e.edge_type = 'calls'
+              AND (
+                  e.source_entity_id = ANY(%s::uuid[])
+                  OR e.target_entity_id = ANY(%s::uuid[])
+              )
+            ORDER BY e.created_at DESC
+            LIMIT %s
+            """,
+            (entity_ids, entity_ids, limit),
+        )
+        rows = cur.fetchall()
+
+    for row in rows:
+        edge = {
+            "edge_id": row[0],
+            "workspace_id": row[1],
+            "edge_type": row[16],
+            "confidence": row[17],
+            "metadata": row[18],
+            "evidence": evidence_ref(
+                "code_edge",
+                target_id=row[0],
+                workspace_id=row[1],
+                locator={
+                    "source_entity_id": row[2],
+                    "source_qualified_name": row[5],
+                    "target_entity_id": row[9],
+                    "target_qualified_name": row[12],
+                    "edge_type": row[16],
+                },
+                metadata={"confidence": row[17], "edge_metadata": row[18]},
+            ),
+        }
+        source = {
+            "entity_id": row[2],
+            "kind": row[3],
+            "name": row[4],
+            "qualified_name": row[5],
+            "file_path": row[6],
+            "start_line": row[7],
+            "end_line": row[8],
+        }
+        target = {
+            "entity_id": row[9],
+            "kind": row[10],
+            "name": row[11],
+            "qualified_name": row[12],
+            "file_path": row[13],
+            "start_line": row[14],
+            "end_line": row[15],
+        }
+        if row[9] in entity_id_set:
+            callers.append({**source, "called_entity": target, "edge": edge})
+        if row[2] in entity_id_set:
+            callees.append({**target, "source_entity": source, "edge": edge})
+
+    return {"callers": callers, "callees": callees}
 
 
 def get_symbol_context(conn: Connection, symbol: str, limit: int = 10) -> list[dict[str, Any]]:
