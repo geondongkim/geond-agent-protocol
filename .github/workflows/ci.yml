@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: geond
+          POSTGRES_PASSWORD: geond_dev_password
+          POSTGRES_USER: geond
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U geond -d geond"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      GEOND_DATABASE_URL: postgresql://geond:geond_dev_password@localhost:55432/geond
+      GEOND_PRIVACY_MODE: local-only
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Run pre-commit
+        run: uv run pre-commit run --all-files
+
+      - name: Compile Python sources
+        run: uv run python -m compileall src
+
+      - name: Run tests
+        run: uv run pytest
