@@ -66,6 +66,8 @@ def benchmark_search(
         }
         if judgments and query in judgments:
             query_result["quality"] = evaluate_results(rows, judgments[query], limit)
+        if rerank != "none":
+            query_result["rerank_diagnostics"] = evaluate_rerank_diagnostics(rows, limit)
         if include_results:
             query_result["top_results"] = [
                 {
@@ -78,7 +80,10 @@ def benchmark_search(
                     "vector_score": row.get("score"),
                     "hybrid_score": row.get("hybrid_score"),
                     "rerank": row.get("rerank"),
+                    "rerank_base_rank": row.get("rerank_base_rank"),
+                    "rerank_base_score": row.get("rerank_base_score"),
                     "rerank_score": row.get("rerank_score"),
+                    "rerank_missing_score": row.get("rerank_missing_score"),
                     "rerank_total_score": row.get("rerank_total_score"),
                     "snippet": row.get("snippet"),
                 }
@@ -86,7 +91,7 @@ def benchmark_search(
             ]
         query_results.append(query_result)
 
-    return {
+    result = {
         "mode": mode,
         "rerank": rerank,
         "candidate_limit": candidate_limit,
@@ -94,6 +99,9 @@ def benchmark_search(
         "limit": limit,
         "queries": query_results,
     }
+    if rerank != "none":
+        result["rerank_summary"] = summarize_rerank_diagnostics(query_results)
+    return result
 
 
 def save_benchmark_run(
@@ -209,7 +217,14 @@ def compare_benchmark_runs(
         recall_values = metric_values(query_rows, "recall_at_k")
         mrr_values = metric_values(query_rows, "mrr")
         ndcg_values = metric_values(query_rows, "ndcg_at_k")
+        rerank_score_values = diagnostic_values(query_rows, "mean_rerank_score")
+        rank_delta_values = diagnostic_values(query_rows, "mean_abs_rank_delta")
         total_results = sum(item.get("result_count", 0) for item in query_rows)
+        top_changed = sum(
+            1
+            for item in query_rows
+            if (item.get("rerank_diagnostics") or {}).get("top_result_changed") is True
+        )
         rows.append(
             {
                 "benchmark_run_id": run["benchmark_run_id"],
@@ -226,6 +241,9 @@ def compare_benchmark_runs(
                 "mean_recall_at_k": rounded_mean(recall_values),
                 "mean_mrr": rounded_mean(mrr_values),
                 "mean_ndcg_at_k": rounded_mean(ndcg_values),
+                "rerank_top_changed_queries": top_changed,
+                "mean_rerank_score": rounded_mean(rerank_score_values),
+                "mean_abs_rank_delta": rounded_mean(rank_delta_values),
                 "created_at": run["created_at"],
             }
         )
@@ -343,10 +361,93 @@ def metric_values(query_rows: list[dict[str, Any]], metric: str) -> list[float]:
     return values
 
 
+def diagnostic_values(query_rows: list[dict[str, Any]], metric: str) -> list[float]:
+    values: list[float] = []
+    for item in query_rows:
+        diagnostics = item.get("rerank_diagnostics")
+        if not isinstance(diagnostics, dict):
+            continue
+        value = diagnostics.get(metric)
+        if isinstance(value, int | float):
+            values.append(float(value))
+    return values
+
+
 def rounded_mean(values: list[float]) -> float | None:
     if not values:
         return None
     return round(sum(values) / len(values), 4)
+
+
+def evaluate_rerank_diagnostics(results: list[dict[str, Any]], limit: int) -> dict[str, Any]:
+    rows = results[:limit]
+    reranked = [row for row in rows if row.get("rerank")]
+    if not reranked:
+        return {
+            "enabled": False,
+            "reranked_results": 0,
+            "top_result_changed": False,
+            "promoted_results": 0,
+            "demoted_results": 0,
+            "mean_abs_rank_delta": None,
+            "mean_rerank_score": None,
+            "missing_score_count": 0,
+        }
+
+    deltas: list[int] = []
+    scores: list[float] = []
+    missing_score_count = 0
+    for current_rank, row in enumerate(reranked, start=1):
+        base_rank = int(row.get("rerank_base_rank") or current_rank)
+        deltas.append(base_rank - current_rank)
+        score = row.get("rerank_score")
+        if isinstance(score, int | float):
+            scores.append(float(score))
+        if row.get("rerank_missing_score") is True:
+            missing_score_count += 1
+    return {
+        "enabled": True,
+        "reranked_results": len(reranked),
+        "top_result_changed": bool(reranked and reranked[0].get("rerank_base_rank") != 1),
+        "promoted_results": sum(1 for delta in deltas if delta > 0),
+        "demoted_results": sum(1 for delta in deltas if delta < 0),
+        "mean_abs_rank_delta": round(sum(abs(delta) for delta in deltas) / len(deltas), 4),
+        "mean_rerank_score": rounded_mean(scores),
+        "missing_score_count": missing_score_count,
+    }
+
+
+def summarize_rerank_diagnostics(query_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    diagnostics = [
+        item["rerank_diagnostics"]
+        for item in query_rows
+        if isinstance(item.get("rerank_diagnostics"), dict)
+    ]
+    if not diagnostics:
+        return {"query_count": 0}
+    changed = sum(1 for item in diagnostics if item.get("top_result_changed") is True)
+    return {
+        "query_count": len(diagnostics),
+        "top_result_changed_queries": changed,
+        "mean_reranked_results": rounded_mean(
+            [float(item["reranked_results"]) for item in diagnostics if item.get("enabled")]
+        ),
+        "mean_abs_rank_delta": rounded_mean(
+            diagnostic_number_values(diagnostics, "mean_abs_rank_delta")
+        ),
+        "mean_rerank_score": rounded_mean(
+            diagnostic_number_values(diagnostics, "mean_rerank_score")
+        ),
+        "missing_score_count": sum(
+            int(item.get("missing_score_count") or 0) for item in diagnostics
+        ),
+    }
+
+
+def diagnostic_number_values(diagnostics: list[dict[str, Any]], metric: str) -> list[float]:
+    return [
+        float(item[metric]) for item in diagnostics if isinstance(item.get(metric), int | float)
+    ]
 
 
 def format_benchmark_report_markdown(report: dict[str, Any]) -> str:
@@ -355,13 +456,16 @@ def format_benchmark_report_markdown(report: dict[str, Any]) -> str:
         "# Benchmark Report",
         "",
         "| Label | Mode | Provider | Model | Queries | Results | Mean avg ms | "
-        "Recall@k | MRR | nDCG@k | Created |",
-        "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+        "Recall@k | MRR | nDCG@k | Rerank top changed | Mean rerank score | "
+        "Mean rank delta | Created |",
+        "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | "
+        "---: | ---: | ---: | --- |",
     ]
     for row in rows:
         row_template = (
             "| {label} | {mode} | {provider} | {model} | {query_count} | {total_results} | "
             "{mean_avg_ms} | {mean_recall_at_k} | {mean_mrr} | {mean_ndcg_at_k} | "
+            "{rerank_top_changed_queries} | {mean_rerank_score} | {mean_abs_rank_delta} | "
             "{created_at} |"
         )
         lines.append(
@@ -376,6 +480,9 @@ def format_benchmark_report_markdown(report: dict[str, Any]) -> str:
                 mean_recall_at_k=markdown_value(row.get("mean_recall_at_k")),
                 mean_mrr=markdown_value(row.get("mean_mrr")),
                 mean_ndcg_at_k=markdown_value(row.get("mean_ndcg_at_k")),
+                rerank_top_changed_queries=markdown_value(row.get("rerank_top_changed_queries")),
+                mean_rerank_score=markdown_value(row.get("mean_rerank_score")),
+                mean_abs_rank_delta=markdown_value(row.get("mean_abs_rank_delta")),
                 created_at=row.get("created_at") or "",
             )
         )

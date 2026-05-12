@@ -4,6 +4,7 @@ import json
 
 from geond.storage.benchmark import (
     benchmark_search,
+    evaluate_rerank_diagnostics,
     evaluate_results,
     format_benchmark_report_markdown,
     load_judgments,
@@ -89,6 +90,9 @@ def test_format_benchmark_report_markdown_includes_quality_columns() -> None:
                     "mean_recall_at_k": 1.0,
                     "mean_mrr": 0.75,
                     "mean_ndcg_at_k": 0.92,
+                    "rerank_top_changed_queries": 1,
+                    "mean_rerank_score": 1.2,
+                    "mean_abs_rank_delta": 1.0,
                     "created_at": "2026-05-12T00:00:00",
                 }
             ]
@@ -97,6 +101,7 @@ def test_format_benchmark_report_markdown_includes_quality_columns() -> None:
 
     assert "| baseline | keyword | none | none |" in markdown
     assert "nDCG@k" in markdown
+    assert "Rerank top changed" in markdown
 
 
 def test_benchmark_includes_score_diagnostics(monkeypatch) -> None:
@@ -110,7 +115,10 @@ def test_benchmark_includes_score_diagnostics(monkeypatch) -> None:
             "score": 0.75,
             "hybrid_score": 1.0,
             "rerank": "local",
+            "rerank_base_rank": 2,
+            "rerank_base_score": 0.5,
             "rerank_score": 1.25,
+            "rerank_missing_score": False,
             "rerank_total_score": 2.25,
             "snippet": "app_context",
         }
@@ -135,14 +143,45 @@ def test_benchmark_includes_score_diagnostics(monkeypatch) -> None:
     )
 
     top_result = result["queries"][0]["top_results"][0]
+    diagnostics = result["queries"][0]["rerank_diagnostics"]
 
     assert result["rerank"] == "local"
     assert result["candidate_limit"] == 25
+    assert result["rerank_summary"]["top_result_changed_queries"] == 1
     assert seen_kwargs["rerank"] == "local"
     assert seen_kwargs["candidate_limit"] == 25
     assert top_result["fts_rank"] == 0.25
     assert top_result["trigram_score"] == 0.5
     assert top_result["vector_score"] == 0.75
     assert top_result["hybrid_score"] == 1.0
+    assert top_result["rerank_base_rank"] == 2
+    assert top_result["rerank_base_score"] == 0.5
     assert top_result["rerank_score"] == 1.25
+    assert top_result["rerank_missing_score"] is False
     assert top_result["rerank_total_score"] == 2.25
+    assert diagnostics["top_result_changed"] is True
+    assert diagnostics["promoted_results"] == 1
+    assert diagnostics["mean_abs_rank_delta"] == 1.0
+
+
+def test_evaluate_rerank_diagnostics_counts_rank_movements() -> None:
+    diagnostics = evaluate_rerank_diagnostics(
+        [
+            {"message_id": "msg-2", "rerank": "api", "rerank_base_rank": 2, "rerank_score": 0.9},
+            {
+                "message_id": "msg-1",
+                "rerank": "api",
+                "rerank_base_rank": 1,
+                "rerank_score": 0.1,
+                "rerank_missing_score": True,
+            },
+        ],
+        limit=2,
+    )
+
+    assert diagnostics["enabled"] is True
+    assert diagnostics["top_result_changed"] is True
+    assert diagnostics["promoted_results"] == 1
+    assert diagnostics["demoted_results"] == 1
+    assert diagnostics["mean_rerank_score"] == 0.5
+    assert diagnostics["missing_score_count"] == 1

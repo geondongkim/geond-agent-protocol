@@ -99,8 +99,12 @@ uv run geond benchmark-search "왜 service.py 파일이 바뀌었어?" \
   --include-results
 ```
 
-Reranked top results include `rerank_score` and `rerank_total_score` diagnostics
-alongside the underlying keyword/vector/hybrid scores.
+Reranked top results include `rerank_base_rank`, `rerank_base_score`,
+`rerank_score`, `rerank_missing_score`, and `rerank_total_score` diagnostics
+alongside the underlying keyword/vector/hybrid scores. Each query also includes
+`rerank_diagnostics` with top-result changes, promoted/demoted counts, mean
+absolute rank movement, mean rerank score, and missing-score count. Saved
+benchmark reports aggregate these fields into reranker comparison columns.
 
 For Korean/English mixed retrieval checks, use the multilingual fixture:
 

@@ -88,8 +88,9 @@ Keyword, vector, and hybrid search now support optional deterministic local
 reranking over expanded candidate pools, and `rerank=api` can call a configured
 HTTP reranker with local-only privacy guards. Structured handoff templates now preserve
 tested commands, remaining risks, and next action metadata, workspace lineage
-graphs link sessions, actions, handoffs, changesets, and benchmark runs, and
-`review_workspace_context` compares upcoming work with loaded coordination context.
-The next slice should add **LSP-backed references** where available, add richer reranker evaluation metrics, and continue the
+graphs link sessions, actions, handoffs, changesets, and benchmark runs,
+`review_workspace_context` compares upcoming work with loaded coordination context,
+and reranked benchmarks now report top-result changes, rank movement, rerank
+scores, and missing API scores. The next slice should add **LSP-backed references** where available and continue the
 **agent-collaboration ergonomics** work described in
 [`docs/agent_collaboration.md`](agent_collaboration.md).

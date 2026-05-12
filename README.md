@@ -391,6 +391,9 @@ Benchmark retrieval:
 uv run geond benchmark-search app_context build_answer --mode keyword --repeat 5
 ```
 
+Reranked benchmark runs report top-result changes, rank movement, rerank scores,
+and missing API scores in per-query diagnostics and saved-run reports.
+
 Run a temporary Azure validation smoke test:
 
 ```powershell
