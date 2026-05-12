@@ -10,6 +10,7 @@ from geond.adapters.claude_code import to_summary as claude_code_to_summary
 from geond.adapters.codex import parse_storage as parse_codex_storage
 from geond.adapters.codex import to_summary as codex_to_summary
 from geond.adapters.vscode_copilot import parse_storage, to_summary
+from geond.code_graph.lsp_references import normalize_lsp_references
 from geond.code_graph.python_indexer import index_python_path
 from geond.code_graph.tree_sitter_indexer import index_tree_sitter_path
 from geond.code_graph.ts_js_indexer import index_ts_js_path
@@ -257,6 +258,9 @@ def main() -> None:
     import_lsp.add_argument("workspace_id")
     import_lsp.add_argument("path", type=Path)
     import_lsp.add_argument("--append", action="store_true")
+    import_lsp.add_argument("--workspace-root")
+    import_lsp.add_argument("--target-qualified-name")
+    import_lsp.add_argument("--provider")
 
     seed_sample = subparsers.add_parser(
         "seed-sample", help="Insert a small sample workspace and session"
@@ -802,7 +806,12 @@ def main() -> None:
 
     if args.command == "import-lsp-references":
         data = json.loads(args.path.read_text(encoding="utf-8"))
-        references = data.get("references") if isinstance(data, dict) else data
+        references = normalize_lsp_references(
+            data,
+            workspace_root=args.workspace_root,
+            target_qualified_name=args.target_qualified_name,
+            provider=args.provider,
+        )
         if not isinstance(references, list):
             raise SystemExit("LSP reference JSON must be a list or an object with references")
         with connect(get_settings()) as conn:

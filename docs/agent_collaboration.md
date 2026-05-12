@@ -132,11 +132,10 @@ The two flows reinforce each other.
 
 ## Open follow-ups
 
-- **LSP-backed collectors** for specific editors and languages. Geond now has a
-  storage/API boundary for imported LSP reference edges; follow-up work should
-  add concrete VS Code, Continue, or CI collectors that feed that boundary.
-- **Concrete LSP collector fixtures** that exercise imported reference edges
-  from realistic editor or language-server output.
+- **Live LSP-backed collectors** for specific editors and languages. Geond now
+  has a storage/API boundary plus a VS Code/LSP `Location[]` fixture normalizer;
+  follow-up work should add concrete VS Code, Continue, or CI collectors that
+  feed that boundary.
 - **Agent-side conventions** documented per testbed (Copilot Chat,
   Codex, Claude Code) so each agent records changesets and handoffs
   consistently. See [`docs/agent_testbeds.md`](agent_testbeds.md).

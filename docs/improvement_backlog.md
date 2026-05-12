@@ -73,9 +73,11 @@ edges with `resolution=import_qualified_name_match`; `get_symbol_context`
 returns those edges as `callers` and `callees`, and default imports plus
 re-export barrel modules now resolve to source functions/classes when the target
 module is indexed. Geond also accepts editor-provided LSP reference imports via
-the CLI/MCP surface and exposes those `references` edges in symbol context. A
-good next slice is adding concrete collectors for VS Code or another MCP client
-and covering that contract with fixtures.
+the CLI/MCP surface and exposes those `references` edges in symbol context. The
+CLI now normalizes VS Code/LSP `Location[]` payloads into that import schema,
+with `examples/lsp_references/vscode_locations.json` covering the fixture
+contract. A good next slice is wiring a live VS Code or CI collector that calls
+the editor/language-server reference provider and writes this payload.
 Change narratives cite `code_edge` evidence when touched symbols have call
 impact. Changeset detail lookup rejects ambiguous git commit prefixes with
 explicit candidate matches. Reservation renewal is available for file and symbol

@@ -383,7 +383,7 @@ Completed locally:
 - TypeScript/JavaScript indexing stores modules, imports, classes, functions, methods, and same-file call edges.
 - TypeScript/JavaScript cross-file call edges resolve direct imports, default imports, and re-export barrel imports when the target symbol is indexed.
 - `index-tree-sitter` indexes mixed Python/TypeScript/JavaScript paths and merges syntax-derived structure with AST/regex call-edge fallback.
-- Editor-provided LSP references can be imported through CLI/MCP and are exposed as `references` in symbol context.
+- Editor-provided LSP references can be imported through CLI/MCP, normalized from VS Code/LSP `Location[]` fixture payloads, and exposed as `references` in symbol context.
 - Changesets can be recorded from the CLI and linked to indexed code entities by touched file path.
 - `explain_change` and `get_symbol_context` now return evidence objects and related changeset links for touched symbols.
 - Changesets with unified diff patches now prefer `line_range` symbol links over broad file-path links.

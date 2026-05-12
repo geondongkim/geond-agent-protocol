@@ -280,6 +280,10 @@ The JSON input can be a list or `{ "references": [...] }`. Each reference may
 identify a `target_qualified_name` and either a `source_qualified_name` or a
 `reference.file_path` plus `reference.start_line`; imported edges are stored as
 `references` with `metadata.source="lsp"` and surface in `get_symbol_context`.
+The same command also accepts VS Code/LSP `Location[]`-style payloads with
+`uri` and `range` fields. Pass `--target-qualified-name`, `--workspace-root`,
+and `--provider` when those values are not embedded in the payload; see
+`examples/lsp_references/vscode_locations.json` for the fixture shape.
 
 Record a changeset and link it to indexed code entities:
 

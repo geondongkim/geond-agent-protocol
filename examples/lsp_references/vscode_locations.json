@@ -1,0 +1,14 @@
+{
+  "provider": "vscode.executeReferenceProvider",
+  "workspace_root": "file:///C:/workspace/python_service",
+  "target_qualified_name": "service.build_answer",
+  "locations": [
+    {
+      "uri": "file:///C:/workspace/python_service/service.py",
+      "range": {
+        "start": { "line": 3, "character": 11 },
+        "end": { "line": 3, "character": 23 }
+      }
+    }
+  ]
+}
