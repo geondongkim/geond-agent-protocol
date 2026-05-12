@@ -509,6 +509,11 @@ canonical `target_id`, `locator`, and `metadata` fields.
 
 - Lists open or closed handoff summaries.
 
+`get_workspace_lineage_graph`
+
+- Returns a node/edge graph linking sessions, agent actions, handoffs,
+  changesets, and benchmark runs for a workspace.
+
 `summarize_project_state`
 
 - Creates a compact current-state brief for another agent.
@@ -517,6 +522,7 @@ canonical `target_id`, `locator`, and `metadata` fields.
 
 - `geond://workspaces`
 - `geond://workspaces/{workspace_id}/timeline`
+- `geond://workspaces/{workspace_id}/lineage`
 - `geond://workspaces/{workspace_id}/reservations`
 - `geond://workspaces/{workspace_id}/handoffs`
 - `geond://sessions/{session_id}`

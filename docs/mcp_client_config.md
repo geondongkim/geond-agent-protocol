@@ -48,6 +48,8 @@ Use [examples/mcp_clients/continue_config.yaml](../examples/mcp_clients/continue
   including optional `tested_commands`, `remaining_risks`, and `next_action`
   template fields.
 - `list_handoff_summaries`: read open or closed handoffs.
+- `get_workspace_lineage_graph`: return a node/edge graph linking sessions,
+  agent actions, handoffs, changesets, and benchmark runs.
 
 ## Useful Resources
 
@@ -56,6 +58,7 @@ Use [examples/mcp_clients/continue_config.yaml](../examples/mcp_clients/continue
 - `geond://symbols/{symbol}`
 - `geond://changesets`
 - `geond://workspaces/{workspace_id}/timeline`
+- `geond://workspaces/{workspace_id}/lineage`
 - `geond://workspaces/{workspace_id}/reservations`
 - `geond://workspaces/{workspace_id}/handoffs`
 

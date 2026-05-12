@@ -50,6 +50,7 @@ from geond.storage.resources import (
     get_session_resource,
     get_symbol_resource,
     get_workspace_handoffs,
+    get_workspace_lineage,
     get_workspace_reservations,
     get_workspace_timeline,
     list_changesets,
@@ -535,6 +536,20 @@ def workspace_timeline_resource(workspace_id: str) -> dict[str, Any]:
     """Read a workspace timeline of sessions, reservations, and agent actions."""
     with connect(get_settings()) as conn:
         return get_workspace_timeline(conn, workspace_id)
+
+
+@mcp.tool()
+def get_workspace_lineage_graph(workspace_id: str, limit: int = 100) -> dict[str, Any]:
+    """Return a node/edge lineage graph for a workspace."""
+    with connect(get_settings()) as conn:
+        return get_workspace_lineage(conn, workspace_id, limit=limit)
+
+
+@mcp.resource("geond://workspaces/{workspace_id}/lineage", mime_type="application/json")
+def workspace_lineage_resource(workspace_id: str) -> dict[str, Any]:
+    """Read a workspace lineage graph linking major collaboration artifacts."""
+    with connect(get_settings()) as conn:
+        return get_workspace_lineage(conn, workspace_id)
 
 
 @mcp.resource("geond://workspaces/{workspace_id}/reservations", mime_type="application/json")

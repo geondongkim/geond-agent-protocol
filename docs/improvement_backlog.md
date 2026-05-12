@@ -47,7 +47,7 @@ organized by product risk rather than by implementation convenience.
 | Lease renewal | Long-running agents need to extend reservations safely. | Implemented `renew_reservation`, `renew_symbol_reservation`, matching CLI commands, and reservation audit events for create/renew/release/expire transitions. |
 | Conflict policy levels | Some conflicts are warnings; others should block. | Implemented workspace policy for advisory, strict, and override-with-reason modes across file and symbol reservations. |
 | Handoff templates | Handoffs become better when they are structured. | Implemented standard metadata templates for summary, tested commands, remaining risks, and next action. |
-| Session lineage | Multi-agent workflows need provenance. | Link sessions, handoffs, actions, changesets, and benchmark runs into a navigable graph. |
+| Session lineage | Multi-agent workflows need provenance. | Implemented workspace lineage graphs linking sessions, handoffs, actions, changesets, and benchmark runs. |
 
 ## Priority 5: Packaging And Adoption
 
@@ -84,7 +84,8 @@ moved folder is registered, explain ambiguous or partial matches, and benchmark
 reports resolve aliases as well.
 Keyword, vector, and hybrid search now support optional deterministic local
 reranking over expanded candidate pools. Structured handoff templates now preserve
-tested commands, remaining risks, and next action metadata. The next slice should
-add **LSP-backed references** where available, add session lineage, and continue the
+tested commands, remaining risks, and next action metadata, and workspace lineage
+graphs link sessions, actions, handoffs, changesets, and benchmark runs. The next slice should
+add **LSP-backed references** where available, add pluggable API rerankers, and continue the
 **agent-collaboration ergonomics** work described in
 [`docs/agent_collaboration.md`](agent_collaboration.md).

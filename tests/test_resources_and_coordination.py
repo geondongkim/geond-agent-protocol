@@ -9,6 +9,7 @@ import pytest
 from geond.code_graph.python_indexer import index_python_file
 from geond.config import get_settings
 from geond.db import connect, run_schema_file
+from geond.storage.benchmark import save_benchmark_run
 from geond.storage.code_graph import store_code_index
 from geond.storage.repository import (
     cleanup_expired_reservations_for_workspace,
@@ -19,6 +20,7 @@ from geond.storage.repository import (
     list_handoff_summaries,
     list_reservation_events,
     record_agent_action,
+    record_changeset,
     record_handoff_summary,
     release_reservation,
     release_symbol_reservation,
@@ -32,6 +34,7 @@ from geond.storage.repository import (
 from geond.storage.resources import (
     get_symbol_resource,
     get_workspace_handoffs,
+    get_workspace_lineage,
     get_workspace_reservations,
     get_workspace_timeline,
 )
@@ -155,10 +158,25 @@ def build_answer(prompt):
                 tested_commands=["uv run pytest tests/test_resources_and_coordination.py"],
                 remaining_risks=["Symbol conflict may need an override reason."],
             )
+            changeset = record_changeset(
+                conn,
+                workspace_id=workspace_id,
+                files=[{"file_path": "service.py", "status": "modified"}],
+                branch="main",
+                intent="rename preparation",
+                summary="Documented symbol coordination state.",
+            )
+            benchmark_id = save_benchmark_run(
+                conn,
+                result={"mode": "keyword", "repeat": 1, "queries": []},
+                label="coordination smoke",
+                workspace_uri=workspace_id,
+            )
             handoffs = list_handoff_summaries(conn, workspace_id, status="open")
             reservation_resource = get_workspace_reservations(conn, workspace_id)
             handoff_resource = get_workspace_handoffs(conn, workspace_id)
             timeline = get_workspace_timeline(conn, workspace_id)
+            lineage = get_workspace_lineage(conn, workspace_id)
             released = release_reservation(
                 conn,
                 workspace_id,
@@ -196,6 +214,18 @@ def build_answer(prompt):
             assert handoffs[0]["metadata"]["handoff_template"]["remaining_risks"] == [
                 "Symbol conflict may need an override reason."
             ]
+            lineage_kinds = {node["kind"] for node in lineage["nodes"]}
+            assert {
+                "agent",
+                "agent_action",
+                "handoff_summary",
+                "changeset",
+                "benchmark_run",
+            } <= lineage_kinds
+            assert any(node["raw_id"] == changeset["changeset_id"] for node in lineage["nodes"])
+            assert any(node["raw_id"] == benchmark_id for node in lineage["nodes"])
+            assert any(edge["kind"] == "handoff_from" for edge in lineage["edges"])
+            assert any(edge["kind"] == "precedes" for edge in lineage["edges"])
             assert reservation_resource["symbol_reservations"]
             assert handoff_resource["handoffs"][0]["summary"].startswith("build_answer")
             assert any(event["kind"] == "agent_action" for event in timeline["events"])

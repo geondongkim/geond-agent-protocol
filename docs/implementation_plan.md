@@ -251,6 +251,7 @@ Tasks:
 - [x] Add reservation audit events for create, renew, release, and expiry transitions.
 - [x] Add handoff summaries.
 - [x] Add structured handoff templates for tested commands, remaining risks, and next action.
+- [x] Add workspace lineage graph resource for sessions, actions, handoffs, changesets, and benchmark runs.
 - [x] Add conflict warnings when two agents target the same files.
 - [x] Add conflict warnings when two agents target the same symbols.
 - [x] Add workspace reservation conflict policies: advisory, strict, and override-with-reason.
@@ -366,7 +367,7 @@ Completed locally:
 - MCP resources expose sessions, session details, symbol context, changesets, and workspace timeline.
 - Agent coordination tools reserve files, surface active reservation conflicts, and release reservations.
 - Symbol-level reservations surface conflicts through CLI and MCP.
-- Handoff summaries can be recorded, listed, closed, shown on workspace timeline resources, and structured with tested commands, risks, and next action metadata.
+- Handoff summaries can be recorded, listed, closed, shown on workspace timeline resources, structured with tested commands, risks, and next action metadata, and included in workspace lineage graphs.
 - `seed-sample` inserts a searchable sample workspace/session.
 - `purge-workspace --yes` deletes a workspace and cascaded local data.
 - `GEOND_PRIVACY_MODE=local-only` blocks cloud embedding providers while allowing local OpenAI-compatible and Ollama-style providers.

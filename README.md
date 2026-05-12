@@ -299,6 +299,7 @@ Useful MCP resources:
 - `geond://symbols/{symbol}`
 - `geond://changesets`
 - `geond://workspaces/{workspace_id}/timeline`
+- `geond://workspaces/{workspace_id}/lineage`
 - `geond://workspaces/{workspace_id}/reservations`
 - `geond://workspaces/{workspace_id}/handoffs`
 
@@ -406,7 +407,7 @@ Local protocol demo asset:
 
 ## Status
 
-Early MVP stage. The repository contains research notes, architecture, implementation plans, a local Postgres/pgvector schema, VS Code Copilot Chat, Codex, and Claude Code importers, OpenAI/Azure/gateway/local embedding provider modes, keyword/vector/hybrid retrieval with optional local reranking, workspace aliases with git and manifest fingerprint suggestions, AST/regex/tree-sitter code graph indexing, Python and TypeScript/JavaScript cross-file/default-import/re-export call edges, changeset-to-symbol evidence links, call-impact narratives, reservation renewal, conflict policies, audit events, structured handoff templates, benchmark quality metrics, coordination tools, demo assets, Azure samples, and an MCP server.
+Early MVP stage. The repository contains research notes, architecture, implementation plans, a local Postgres/pgvector schema, VS Code Copilot Chat, Codex, and Claude Code importers, OpenAI/Azure/gateway/local embedding provider modes, keyword/vector/hybrid retrieval with optional local reranking, workspace aliases with git and manifest fingerprint suggestions, AST/regex/tree-sitter code graph indexing, Python and TypeScript/JavaScript cross-file/default-import/re-export call edges, changeset-to-symbol evidence links, call-impact narratives, reservation renewal, conflict policies, audit events, structured handoff templates, workspace lineage graphs, benchmark quality metrics, coordination tools, demo assets, Azure samples, and an MCP server.
 
 ## Design Principles
 
