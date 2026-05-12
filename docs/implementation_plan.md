@@ -102,7 +102,7 @@ Tasks:
 - [x] Create initial SQL migration.
 - [x] Add tables: `workspaces`, `agents`, `sessions`, `messages`, `events`, `file_snapshots`, `changesets`, `code_entities`, `code_edges`, `embeddings`, `agent_actions`, `file_reservations`.
 - [x] Add `workspace_aliases` so moved or renamed folders can resolve to the same workspace.
-- [x] Add `workspace_fingerprints` for conservative git-based alias suggestions.
+- [x] Add `workspace_fingerprints` for conservative git and manifest-based alias suggestions.
 - [x] Add indexes for workspace, session, file path, entity name, and baseline text search.
 - [x] Add seed script with sample workspace and session.
 
@@ -186,6 +186,7 @@ Tasks:
 - [x] Extract files, modules, classes, functions, methods, imports, and same-file basic calls.
 - [x] Infer TypeScript/JavaScript fallback line spans for function, class, method, and module entities.
 - [x] Resolve import-qualified cross-file `calls` edges for Python and TypeScript/JavaScript.
+- [x] Resolve TypeScript/JavaScript re-export barrel call edges for named, default-as, and unambiguous wildcard exports.
 - [x] Store entities in `code_entities`.
 - [x] Store relationships in `code_edges`.
 - [x] Link changesets to touched entities, including unified diff hunk ranges and deletion-only hunks.
@@ -227,6 +228,7 @@ Tasks:
 - [x] Implement `get_changeset_detail` with optional narrative synthesis.
 - [x] Implement workspace alias registration/listing for moved folders.
 - [x] Implement workspace fingerprint recording and alias suggestion CLI/MCP tools.
+- [x] Discover manifest file hashes and package-name hashes as supplemental workspace fingerprints.
 - [x] Implement `record_changeset` with optional patch hunk linking.
 - [x] Implement `record_agent_action`.
 - [x] Implement reservation audit event listing.
@@ -372,6 +374,7 @@ Completed locally:
 - `benchmark-search --save` persists runs and `benchmark-report` compares saved runs.
 - `benchmark-search --judgments` reports `recall_at_k`, `mrr`, and `ndcg_at_k`; `benchmark-report --format markdown` renders comparison tables.
 - TypeScript/JavaScript indexing stores modules, imports, classes, functions, methods, and same-file call edges.
+- TypeScript/JavaScript cross-file call edges resolve direct imports, default imports, and re-export barrel imports when the target symbol is indexed.
 - `index-tree-sitter` indexes mixed Python/TypeScript/JavaScript paths and merges syntax-derived structure with AST/regex call-edge fallback.
 - Changesets can be recorded from the CLI and linked to indexed code entities by touched file path.
 - `explain_change` and `get_symbol_context` now return evidence objects and related changeset links for touched symbols.

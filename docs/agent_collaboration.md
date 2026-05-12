@@ -118,9 +118,9 @@ The two flows reinforce each other.
 
 ## Open follow-ups
 
-- **Re-export barrel support** so TypeScript/JavaScript call edges can follow
-  `export { x } from "..."` aggregator modules, not just direct imports and
-  default imports.
+- **LSP-backed references** so code graph evidence can use editor-grade
+  reference providers when available, with the current regex/tree-sitter paths
+  remaining as deterministic fallbacks.
 - **Reservation arbitration policy** (advisory / strict / override) so
   geond can do more than report conflicts.
 - **Agent-side conventions** documented per testbed (Copilot Chat,

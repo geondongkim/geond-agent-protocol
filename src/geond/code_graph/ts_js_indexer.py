@@ -23,6 +23,10 @@ IMPORT_RE = re.compile(
     r"^\s*import\s+(?P<body>.+?)\s+from\s+['\"](?P<module>[^'\"]+)['\"]|"
     r"^\s*import\s+['\"](?P<side_effect>[^'\"]+)['\"]"
 )
+EXPORT_FROM_RE = re.compile(
+    r"^\s*export\s+(?:type\s+)?(?P<body>\*|\{[^}]*\})\s+from\s+"
+    r"['\"](?P<module>[^'\"]+)['\"]"
+)
 CLASS_RE = re.compile(r"^\s*(?:export\s+)?(?:default\s+)?class\s+(?P<name>[A-Za-z_$][\w$]*)")
 FUNCTION_RE = re.compile(
     r"^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+(?P<name>[A-Za-z_$][\w$]*)"
@@ -140,6 +144,9 @@ class TsJsIndexVisitor:
             if self.add_import(stripped, line_number):
                 self.update_scope(stripped)
                 continue
+            if self.add_reexport(stripped, line_number):
+                self.update_scope(stripped)
+                continue
             if self.add_class(stripped, line_number):
                 self.update_scope(stripped)
                 continue
@@ -186,6 +193,39 @@ class TsJsIndexVisitor:
             )
         )
         self.add_edge(self.module_name, qualified_name, "imports")
+        return True
+
+    def add_reexport(self, line: str, line_number: int) -> bool:
+        match = EXPORT_FROM_RE.search(line)
+        if not match:
+            return False
+        module = match.group("module")
+        body = match.group("body")
+        reexported_bindings, reexported_modules = parse_reexport_bindings(
+            body,
+            module,
+            self.module_name,
+        )
+        display_name = normalize_reexport_name(body)
+        qualified_name = f"{self.module_name}:reexport:{line_number}:{display_name}"
+        self.add_entity(
+            CodeEntityDraft(
+                kind="reexport",
+                name=display_name,
+                qualified_name=qualified_name,
+                file_path=self.file_path,
+                start_line=line_number,
+                end_line=line_number,
+                signature=module,
+                metadata={
+                    "language": self.language,
+                    "imported_name": module,
+                    "reexported_bindings": reexported_bindings,
+                    "reexported_modules": reexported_modules,
+                },
+            )
+        )
+        self.add_edge(self.module_name, qualified_name, "reexports")
         return True
 
     def add_class(self, line: str, line_number: int) -> bool:
@@ -412,6 +452,21 @@ def normalize_import_name(body: str) -> str:
     return body.replace("* as ", "").strip() or "side_effect"
 
 
+def normalize_reexport_name(body: str) -> str:
+    body = body.strip()
+    if body == "*":
+        return "*"
+    names = []
+    for part in body.strip("{}").split(","):
+        name = part.strip()
+        if not name:
+            continue
+        if name.startswith("type "):
+            name = name.removeprefix("type ").strip()
+        names.append(name.split(" as ")[-1].strip())
+    return ",".join(name for name in names if name) or "reexport"
+
+
 def resolve_imported_module_name(imported_module: str, module_name: str) -> str:
     if not imported_module.startswith("."):
         return imported_module.replace("/", ".")
@@ -425,7 +480,7 @@ def resolve_imported_module_name(imported_module: str, module_name: str) -> str:
                 parts.pop()
             continue
         parts.extend(segment for segment in part.split(".") if segment)
-    if parts and parts[-1] == "index":
+    if len(parts) > 1 and parts[-1] == "index":
         parts.pop()
     return ".".join(parts)
 
@@ -460,6 +515,34 @@ def parse_import_bindings(body: str, imported_module: str, module_name: str) -> 
     if default_part and not default_part.startswith(("{", "*")):
         bindings.setdefault(default_part, f"{module_target}.default")
     return bindings
+
+
+def parse_reexport_bindings(
+    body: str,
+    imported_module: str,
+    module_name: str,
+) -> tuple[dict[str, str], list[str]]:
+    module_target = resolve_imported_module_name(imported_module, module_name)
+    body = body.strip()
+    if body == "*":
+        return {}, [module_target]
+
+    bindings: dict[str, str] = {}
+    for raw_part in body.strip("{}").split(","):
+        part = raw_part.strip()
+        if not part:
+            continue
+        if part.startswith("type "):
+            part = part.removeprefix("type ").strip()
+        if " as " in part:
+            imported, exported = [item.strip() for item in part.split(" as ", 1)]
+        else:
+            imported = exported = part
+        if not exported:
+            continue
+        target_name = "default" if imported == "default" else imported
+        bindings[f"{module_name}.{exported}"] = f"{module_target}.{target_name}"
+    return bindings, []
 
 
 def find_calls(line: str, excluded: set[str] | None = None) -> list[str]:

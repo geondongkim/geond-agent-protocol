@@ -355,6 +355,10 @@ def normalize_fingerprints(fingerprints: list[dict[str, Any]]) -> list[dict[str,
 def fingerprint_weight(fingerprint_type: str) -> float:
     if fingerprint_type == "git:remote:first-commit":
         return 2.0
+    if fingerprint_type.startswith("file:sha256:"):
+        return 0.75
+    if fingerprint_type.startswith("package:") and fingerprint_type.endswith(":name-sha256"):
+        return 0.5
     return 1.0
 
 

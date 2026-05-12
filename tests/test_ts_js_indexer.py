@@ -272,3 +272,181 @@ export function buildAnswer(prompt: string): string {
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM workspaces WHERE id = %s", (workspace_id,))
             conn.commit()
+
+
+def test_store_ts_js_index_resolves_reexport_barrel_calls(tmp_path: Path) -> None:
+    settings = get_settings()
+    workspace_uri = f"file:///tmp/geond-ts-reexport-test-{uuid4()}"
+    text = tmp_path / "text.ts"
+    barrel = tmp_path / "index.ts"
+    service = tmp_path / "service.ts"
+    text.write_text(
+        """
+export function trim(value: string): string {
+  return value.trim();
+}
+
+export const title = (value: string) => trim(value).toUpperCase();
+
+export default function normalize(value: string): string {
+  return trim(value).toLowerCase();
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    barrel.write_text(
+        'export { trim, title as heading, default as clean } from "./text";',
+        encoding="utf-8",
+    )
+    service.write_text(
+        """
+import { trim, heading, clean } from "./index";
+
+export function buildAnswer(prompt: string): string {
+  return trim(prompt);
+}
+
+export function buildTitle(prompt: string): string {
+  return heading(prompt);
+}
+
+export function buildClean(prompt: string): string {
+  return clean(prompt);
+}
+""".strip(),
+        encoding="utf-8",
+    )
+
+    try:
+        conn = connect(settings)
+    except psycopg.OperationalError as exc:
+        pytest.skip(f"Postgres integration database is not available: {exc}")
+
+    with conn:
+        try:
+            run_schema_file(conn, SCHEMA)
+        except psycopg.Error as exc:
+            pytest.skip(f"Postgres integration schema is not available: {exc}")
+
+        workspace_id = upsert_workspace(
+            conn,
+            root_uri=workspace_uri,
+            name="ts-reexport-fixture",
+            metadata={"source": "pytest"},
+        )
+        try:
+            stats = store_code_index(
+                conn,
+                workspace_id,
+                [
+                    index_ts_js_file(text, tmp_path),
+                    index_ts_js_file(barrel, tmp_path),
+                    index_ts_js_file(service, tmp_path),
+                ],
+            )
+            trim_context = next(
+                item
+                for item in get_symbol_context(conn, "trim", limit=10)
+                if item["qualified_name"] == "text.trim"
+            )
+            title_context = next(
+                item
+                for item in get_symbol_context(conn, "title", limit=10)
+                if item["qualified_name"] == "text.title"
+            )
+            normalize_context = next(
+                item
+                for item in get_symbol_context(conn, "normalize", limit=10)
+                if item["qualified_name"] == "text.normalize"
+            )
+
+            assert stats["edges"] >= 3
+            assert any(
+                caller["qualified_name"] == "service.buildAnswer"
+                and caller["edge"]["metadata"]["call"] == "trim"
+                for caller in trim_context["callers"]
+            )
+            assert any(
+                caller["qualified_name"] == "service.buildTitle"
+                and caller["edge"]["metadata"]["call"] == "heading"
+                for caller in title_context["callers"]
+            )
+            assert any(
+                caller["qualified_name"] == "service.buildClean"
+                and caller["edge"]["metadata"]["call"] == "clean"
+                for caller in normalize_context["callers"]
+            )
+        finally:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM workspaces WHERE id = %s", (workspace_id,))
+            conn.commit()
+
+
+def test_store_ts_js_index_resolves_wildcard_reexport_calls(tmp_path: Path) -> None:
+    settings = get_settings()
+    workspace_uri = f"file:///tmp/geond-ts-wildcard-reexport-test-{uuid4()}"
+    text = tmp_path / "text.ts"
+    barrel = tmp_path / "index.ts"
+    service = tmp_path / "service.ts"
+    text.write_text(
+        """
+export function trim(value: string): string {
+  return value.trim();
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    barrel.write_text('export * from "./text";', encoding="utf-8")
+    service.write_text(
+        """
+import { trim } from "./index";
+
+export function buildAnswer(prompt: string): string {
+  return trim(prompt);
+}
+""".strip(),
+        encoding="utf-8",
+    )
+
+    try:
+        conn = connect(settings)
+    except psycopg.OperationalError as exc:
+        pytest.skip(f"Postgres integration database is not available: {exc}")
+
+    with conn:
+        try:
+            run_schema_file(conn, SCHEMA)
+        except psycopg.Error as exc:
+            pytest.skip(f"Postgres integration schema is not available: {exc}")
+
+        workspace_id = upsert_workspace(
+            conn,
+            root_uri=workspace_uri,
+            name="ts-wildcard-reexport-fixture",
+            metadata={"source": "pytest"},
+        )
+        try:
+            store_code_index(
+                conn,
+                workspace_id,
+                [
+                    index_ts_js_file(text, tmp_path),
+                    index_ts_js_file(barrel, tmp_path),
+                    index_ts_js_file(service, tmp_path),
+                ],
+            )
+            trim_context = next(
+                item
+                for item in get_symbol_context(conn, "trim", limit=10)
+                if item["qualified_name"] == "text.trim"
+            )
+
+            assert any(
+                caller["qualified_name"] == "service.buildAnswer"
+                and caller["edge"]["metadata"]["call"] == "trim"
+                for caller in trim_context["callers"]
+            )
+        finally:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM workspaces WHERE id = %s", (workspace_id,))
+            conn.commit()

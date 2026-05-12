@@ -159,6 +159,9 @@ MVP parsing strategy:
   imports.
 - The TypeScript/JavaScript fallback maps default import aliases to named
   default-export functions/classes when the target module is indexed.
+- The TypeScript/JavaScript fallback also records re-export barrel declarations
+  and resolves named, default-as, and unambiguous wildcard re-export call edges
+  back to their source symbols.
 - Use tree-sitter where available and keep language fallbacks for unsupported
   syntax. The TypeScript/JavaScript fallback infers function, class, method,
   and module line spans so diff hunks can link to body changes, not only
@@ -208,7 +211,8 @@ deterministic narratives to cite upstream callers and downstream callees.
 Workspace-scoped retrieval resolves registered `workspace_aliases`, so a moved
 folder can keep using the original workspace memory. `workspace_fingerprints`
 stores conservative identity hints such as sanitized git remote URL and first
-commit, allowing clients to ask for alias suggestions before registering one.
+commit, plus root manifest file hashes and package-name hashes, allowing clients
+to ask for alias suggestions before registering one.
 
 Example response shape:
 

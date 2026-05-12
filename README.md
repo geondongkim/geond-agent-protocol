@@ -212,7 +212,10 @@ uv run geond suggest-workspace-aliases \
 ```
 
 The git remote fingerprint is sanitized before storage so URL credentials are
-not persisted.
+not persisted. Fingerprint discovery also records root manifest file hashes
+(`pyproject.toml`, `package.json`, lockfiles, and similar) plus hashed package
+names where available, which helps alias suggestions survive remote URL changes
+or non-git project copies without storing raw package names.
 
 Index Python code into the local code graph:
 
@@ -242,7 +245,9 @@ Use the MCP tool `get_symbol_context` or the Python API to retrieve functions, c
 Python and TypeScript/JavaScript indexing record same-file calls and
 import-qualified cross-file calls as `calls` edges when the target symbol is
 indexed in the same workspace. TypeScript/JavaScript default imports also
-resolve to named default-export functions/classes when Geond can identify them.
+resolve to named default-export functions/classes when Geond can identify them,
+and re-export barrel modules are followed for named, default-as, and unambiguous
+wildcard exports.
 
 Record a changeset and link it to indexed code entities:
 
@@ -376,7 +381,7 @@ Local protocol demo asset:
 
 ## Status
 
-Early MVP stage. The repository contains research notes, architecture, implementation plans, a local Postgres/pgvector schema, VS Code Copilot Chat, Codex, and Claude Code importers, OpenAI/Azure/gateway/local embedding provider modes, keyword/vector/hybrid retrieval, workspace aliases with git fingerprint suggestions, AST/regex/tree-sitter code graph indexing, Python and TypeScript/JavaScript cross-file/default-import call edges, changeset-to-symbol evidence links, call-impact narratives, reservation renewal and audit events, benchmark quality metrics, coordination tools, demo assets, Azure samples, and an MCP server.
+Early MVP stage. The repository contains research notes, architecture, implementation plans, a local Postgres/pgvector schema, VS Code Copilot Chat, Codex, and Claude Code importers, OpenAI/Azure/gateway/local embedding provider modes, keyword/vector/hybrid retrieval, workspace aliases with git and manifest fingerprint suggestions, AST/regex/tree-sitter code graph indexing, Python and TypeScript/JavaScript cross-file/default-import/re-export call edges, changeset-to-symbol evidence links, call-impact narratives, reservation renewal and audit events, benchmark quality metrics, coordination tools, demo assets, Azure samples, and an MCP server.
 
 ## Design Principles
 

@@ -17,6 +17,8 @@ def store_code_index(
     file_paths = [item.file_path for item in indexed_files]
     entity_id_by_qualified_name: dict[str, str] = {}
     default_export_id_by_alias: dict[str, str] = {}
+    reexport_target_by_alias: dict[str, str] = {}
+    wildcard_reexports: list[tuple[str, str]] = []
     entity_count = 0
     edge_count = 0
 
@@ -80,6 +82,13 @@ def store_code_index(
                 if entity.metadata.get("default_export") and entity.qualified_name:
                     module_name = entity.qualified_name.rsplit(".", 1)[0]
                     default_export_id_by_alias[f"{module_name}.default"] = entity_id
+                if entity.kind == "reexport":
+                    add_reexport_metadata(
+                        entity.qualified_name,
+                        entity.metadata,
+                        reexport_target_by_alias,
+                        wildcard_reexports,
+                    )
                 entity_count += 1
 
         required_qualified_names = {
@@ -104,9 +113,44 @@ def store_code_index(
             for qualified_name, entity_id in cur.fetchall():
                 entity_id_by_qualified_name.setdefault(qualified_name, entity_id)
 
+            cur.execute(
+                """
+                SELECT qualified_name, metadata
+                FROM code_entities
+                WHERE workspace_id = %s
+                  AND kind = 'reexport'
+                """,
+                (workspace_id,),
+            )
+            for qualified_name, metadata in cur.fetchall():
+                add_reexport_metadata(
+                    qualified_name,
+                    metadata,
+                    reexport_target_by_alias,
+                    wildcard_reexports,
+                )
+
+            reexport_target_names = collect_reexport_target_names(
+                missing_qualified_names,
+                reexport_target_by_alias,
+                wildcard_reexports,
+            )
+            if reexport_target_names:
+                cur.execute(
+                    """
+                    SELECT qualified_name, id::text
+                    FROM code_entities
+                    WHERE workspace_id = %s
+                      AND qualified_name = ANY(%s)
+                    """,
+                    (workspace_id, reexport_target_names),
+                )
+                for qualified_name, entity_id in cur.fetchall():
+                    entity_id_by_qualified_name.setdefault(qualified_name, entity_id)
+
             default_aliases = [
                 qualified_name
-                for qualified_name in missing_qualified_names
+                for qualified_name in [*missing_qualified_names, *reexport_target_names]
                 if qualified_name.endswith(".default")
                 and qualified_name not in default_export_id_by_alias
             ]
@@ -131,9 +175,13 @@ def store_code_index(
         for indexed_file in indexed_files:
             for edge in indexed_file.edges:
                 source_id = entity_id_by_qualified_name.get(edge.source_qualified_name)
-                target_id = entity_id_by_qualified_name.get(
-                    edge.target_qualified_name
-                ) or default_export_id_by_alias.get(edge.target_qualified_name)
+                target_id = resolve_entity_id(
+                    edge.target_qualified_name,
+                    entity_id_by_qualified_name,
+                    default_export_id_by_alias,
+                    reexport_target_by_alias,
+                    wildcard_reexports,
+                )
                 if not source_id or not target_id:
                     continue
                 cur.execute(
@@ -180,3 +228,85 @@ def store_code_index(
             if item.errors
         ],
     }
+
+
+def add_reexport_metadata(
+    reexport_qualified_name: str,
+    metadata: dict[str, Any],
+    reexport_target_by_alias: dict[str, str],
+    wildcard_reexports: list[tuple[str, str]],
+) -> None:
+    bindings = metadata.get("reexported_bindings") or {}
+    if isinstance(bindings, dict):
+        for alias, target in bindings.items():
+            if isinstance(alias, str) and isinstance(target, str):
+                reexport_target_by_alias.setdefault(alias, target)
+
+    exporter_module = reexport_qualified_name.split(":reexport:", 1)[0]
+    modules = metadata.get("reexported_modules") or []
+    if isinstance(modules, list):
+        for target_module in modules:
+            if isinstance(target_module, str):
+                wildcard_reexports.append((exporter_module, target_module))
+
+
+def collect_reexport_target_names(
+    qualified_names: list[str],
+    reexport_target_by_alias: dict[str, str],
+    wildcard_reexports: list[tuple[str, str]],
+) -> list[str]:
+    targets: set[str] = set()
+    for qualified_name in qualified_names:
+        current = qualified_name
+        seen: set[str] = set()
+        for _ in range(5):
+            next_name = reexport_target_by_alias.get(current) or resolve_wildcard_reexport_target(
+                current, wildcard_reexports
+            )
+            if not next_name or next_name in seen:
+                break
+            seen.add(next_name)
+            targets.add(next_name)
+            current = next_name
+    return sorted(targets)
+
+
+def resolve_entity_id(
+    qualified_name: str,
+    entity_id_by_qualified_name: dict[str, str],
+    default_export_id_by_alias: dict[str, str],
+    reexport_target_by_alias: dict[str, str],
+    wildcard_reexports: list[tuple[str, str]],
+) -> str | None:
+    current = qualified_name
+    seen: set[str] = set()
+    for _ in range(6):
+        entity_id = entity_id_by_qualified_name.get(current) or default_export_id_by_alias.get(
+            current
+        )
+        if entity_id:
+            return entity_id
+        if current in seen:
+            return None
+        seen.add(current)
+        next_name = reexport_target_by_alias.get(current) or resolve_wildcard_reexport_target(
+            current, wildcard_reexports
+        )
+        if not next_name:
+            return None
+        current = next_name
+    return None
+
+
+def resolve_wildcard_reexport_target(
+    qualified_name: str,
+    wildcard_reexports: list[tuple[str, str]],
+) -> str | None:
+    candidates = set()
+    for alias_module, target_module in wildcard_reexports:
+        prefix = f"{alias_module}."
+        if qualified_name.startswith(prefix):
+            candidates.add(f"{target_module}.{qualified_name.removeprefix(prefix)}")
+    if len(candidates) == 1:
+        return next(iter(candidates))
+    return None
