@@ -404,6 +404,11 @@ canonical `target_id`, `locator`, and `metadata` fields.
 `explain_change`
 
 - Given a file path, symbol, or git diff, returns the likely reason and supporting evidence.
+- With `include_narrative=true`, attaches a deterministic, evidence-citing summary (schema `geond.evidence.v1.narrative`) so consumers can read a one-paragraph briefing without paging through every row.
+
+`get_changeset_detail`
+
+- Looks up a changeset by UUID or git commit (sha or prefix) and returns files, touched code entities, and `geond.evidence.v1` evidence refs. Supports `include_narrative` for a cite-able summary.
 
 `record_agent_action`
 

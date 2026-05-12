@@ -18,7 +18,7 @@ organized by product risk rather than by implementation convenience.
 | --- | --- | --- |
 | Patch hunk to symbol linking | File-level links are useful but coarse. | Implemented for unified diff new-line ranges, deletion-only hunks, and TypeScript/JavaScript body-span matching. |
 | Canonical evidence schema | MCP clients should not reverse-engineer each response shape. | Implemented `geond.evidence.v1` with `target_id`, `locator`, `metadata`, and compatibility aliases for messages, snapshots, changesets, and symbols. |
-| Explain-change synthesis | The current tool returns evidence, not a narrative. | Add optional summary generation that cites evidence objects while respecting privacy mode. |
+| Explain-change synthesis | The current tool returns evidence, not a narrative. | Implemented as a deterministic, template-driven summary that cites `geond.evidence.v1` refs, available via `explain_change(include_narrative=True)`, the new `get_changeset_detail` MCP tool, and the `geond summarize-changeset` / `geond explain-change --narrative` CLI commands. |
 | Cross-file call edges | Current call edges are strongest inside a single file. | Resolve imports and exported symbols across Python and TypeScript packages. |
 
 ## Priority 2: Deployment And Operations
@@ -59,7 +59,11 @@ organized by product risk rather than by implementation convenience.
 
 ## Current Recommendation
 
-The next engineering slice should focus on MCP contract testing: add a small
-client-level test that asserts every MCP response includes `geond.evidence.v1`
-evidence refs where evidence is returned. The next retrieval quality gain is
-optional narrative synthesis over those evidence refs.
+MCP contract testing and narrative synthesis have landed: see
+`tests/test_mcp_evidence_contract.py` (asserts `geond.evidence.v1` on every
+tool that returns evidence) and `src/geond/retrieval/narrative.py`
+(deterministic citation-bearing summaries used by `explain_change` and
+`get_changeset_detail`). The next slice should focus on **cross-file call
+edges** so narratives can describe upstream and downstream impact, and on
+**agent-collaboration ergonomics** — see [`docs/agent_collaboration.md`](agent_collaboration.md)
+for the questions the protocol still needs to answer.

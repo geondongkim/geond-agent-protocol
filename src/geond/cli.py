@@ -17,6 +17,9 @@ from geond.config import get_settings
 from geond.db import connect, run_schema_file
 from geond.embeddings import get_embedding_provider
 from geond.retrieval.simple import (
+    explain_change,
+    get_changeset_detail,
+    get_symbol_context,
     hybrid_search_dev_memory,
     search_dev_memory,
     vector_search_dev_memory,
@@ -301,6 +304,39 @@ def main() -> None:
         action="append",
         help="Unified diff patch file for the changed file; repeat to map by --file order",
     )
+
+    explain_change_cmd = subparsers.add_parser(
+        "explain-change",
+        help="Show stored evidence (changesets, symbols, messages) for a file path",
+    )
+    explain_change_cmd.add_argument("file_path")
+    explain_change_cmd.add_argument("--limit", type=int, default=10)
+    explain_change_cmd.add_argument(
+        "--narrative",
+        action="store_true",
+        help="Attach a short narrative summary that cites geond.evidence.v1 refs",
+    )
+
+    symbol_context_cmd = subparsers.add_parser(
+        "symbol-context",
+        help="Show code entities matching a symbol name and the changesets that touched them",
+    )
+    symbol_context_cmd.add_argument("symbol")
+    symbol_context_cmd.add_argument("--limit", type=int, default=10)
+
+    summarize_changeset_cmd = subparsers.add_parser(
+        "summarize-changeset",
+        help="Show one changeset (by UUID or git commit) with narrative + evidence refs",
+    )
+    summarize_changeset_cmd.add_argument("changeset_ref")
+    summarize_changeset_cmd.add_argument(
+        "--no-narrative",
+        dest="narrative",
+        action="store_false",
+        default=True,
+        help="Skip narrative synthesis and return only structured evidence",
+    )
+
     args = parser.parse_args()
 
     if args.command == "migrate":
@@ -682,6 +718,37 @@ def main() -> None:
                 limit=args.limit,
             )
         print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "explain-change":
+        settings = get_settings()
+        with connect(settings) as conn:
+            result = explain_change(
+                conn,
+                args.file_path,
+                limit=args.limit,
+                include_narrative=args.narrative,
+                settings=settings,
+            )
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        return
+
+    if args.command == "symbol-context":
+        with connect(get_settings()) as conn:
+            result = get_symbol_context(conn, args.symbol, limit=args.limit)
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        return
+
+    if args.command == "summarize-changeset":
+        settings = get_settings()
+        with connect(settings) as conn:
+            result = get_changeset_detail(
+                conn,
+                args.changeset_ref,
+                include_narrative=args.narrative,
+                settings=settings,
+            )
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
         return
 
 

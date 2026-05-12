@@ -8,6 +8,7 @@ from geond.config import get_settings
 from geond.db import connect
 from geond.embeddings import get_embedding_provider
 from geond.retrieval.simple import explain_change as explain_change_query
+from geond.retrieval.simple import get_changeset_detail as get_changeset_detail_query
 from geond.retrieval.simple import get_symbol_context as get_symbol_context_query
 from geond.retrieval.simple import hybrid_search_dev_memory as hybrid_search_dev_memory_query
 from geond.retrieval.simple import search_dev_memory as search_dev_memory_query
@@ -84,10 +85,47 @@ def search_dev_memory(
 
 
 @mcp.tool()
-def explain_change(file_path: str, limit: int = 10) -> dict[str, Any]:
-    """Return stored evidence that may explain why a file changed."""
-    with connect(get_settings()) as conn:
-        return explain_change_query(conn, file_path, limit)
+def explain_change(
+    file_path: str,
+    limit: int = 10,
+    include_narrative: bool = False,
+) -> dict[str, Any]:
+    """Return stored evidence that may explain why a file changed.
+
+    Set `include_narrative=True` to attach a short deterministic narrative
+    summary that cites the `geond.evidence.v1` evidence refs.
+    """
+    settings = get_settings()
+    with connect(settings) as conn:
+        return explain_change_query(
+            conn,
+            file_path,
+            limit,
+            include_narrative=include_narrative,
+            settings=settings,
+        )
+
+
+@mcp.tool()
+def get_changeset_detail(
+    changeset_ref: str,
+    include_narrative: bool = False,
+) -> dict[str, Any]:
+    """Look up a changeset by UUID or git commit (sha or prefix).
+
+    Returns files, touched code entities, and `geond.evidence.v1` evidence
+    refs. Set `include_narrative=True` to attach a short narrative summary so
+    other agents can read a one-paragraph briefing without paging through the
+    raw evidence.
+    """
+    settings = get_settings()
+    with connect(settings) as conn:
+        return get_changeset_detail_query(
+            conn,
+            changeset_ref,
+            include_narrative=include_narrative,
+            settings=settings,
+        )
 
 
 @mcp.tool()
