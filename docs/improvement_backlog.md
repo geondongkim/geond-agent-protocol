@@ -11,7 +11,7 @@ organized by product risk rather than by implementation convenience.
 | Redaction review mode | Pattern redaction is useful but imperfect. | Add `geond audit-redaction` to report finding counts and sample-safe categories before import. |
 | Secret-free benchmark artifacts | Public evidence should be safe by default. | Add an artifact sanitizer that rejects subscription IDs, tenant IDs, emails, and key-looking strings before writing docs. |
 | Keyless Azure path | API keys are acceptable for smoke tests but not ideal for production. | Make Entra ID auth the documented production default and add a managed-identity smoke variant. |
-| Workspace identity guardrails | Folder moves and renames should not split agent memory. | Implemented `workspace_aliases`, alias-aware search/benchmark filters, MCP/CLI alias registration, git fingerprint suggestions, and supplemental manifest file/package-name hash fingerprints. Next: multi-fingerprint conflict explanations. |
+| Workspace identity guardrails | Folder moves and renames should not split agent memory. | Implemented `workspace_aliases`, alias-aware search/benchmark filters, MCP/CLI alias registration, git and manifest fingerprint suggestions, and suggestion explanations for ambiguous or partial matches. Next: package lock drift heuristics. |
 
 ## Priority 1: Evidence Quality
 
@@ -36,7 +36,7 @@ organized by product risk rather than by implementation convenience.
 | Improvement | Why | Candidate implementation |
 | --- | --- | --- |
 | Provider comparison matrix | Retrieval quality differs across OpenAI, Azure OpenAI, gateway, and local embeddings. | Run saved benchmark comparisons with the same judgment file and publish markdown reports. |
-| Reranking | Hybrid reciprocal rank is simple but not always precise. | Add optional local or API reranker stage after keyword/vector/trigram candidate generation. |
+| Reranking | Hybrid reciprocal rank is simple but not always precise. | Implemented optional deterministic local reranking for keyword/vector/hybrid candidates. Next: pluggable API rerankers. |
 | Multilingual corpus | Korean and English queries are core to the project story. | Seed-level multilingual judgments are added. Next: expand fixtures with Korean/English mixed symbols and longer conversation evidence. |
 | Token and request accounting | Cost estimates need provider usage dimensions. | Capture token/request usage when providers or gateways expose it. |
 
@@ -79,9 +79,10 @@ renew, release, and expiry transitions.
 Workspace aliases now preserve memory across folder moves, and keyword search
 uses Postgres full-text plus `pg_trgm` substring matching before hybrid vector
 merge. Git and manifest fingerprints can now suggest a likely alias before a
-moved folder is registered, and benchmark reports resolve aliases as well. The
-next slice should
-add **LSP-backed references** where available, add optional reranking over
-lexical/vector candidates, and continue the
+moved folder is registered, explain ambiguous or partial matches, and benchmark
+reports resolve aliases as well.
+Keyword, vector, and hybrid search now support optional deterministic local
+reranking over expanded candidate pools. The next slice should
+add **LSP-backed references** where available, add pluggable API rerankers, and continue the
 **agent-collaboration ergonomics** work described in
 [`docs/agent_collaboration.md`](agent_collaboration.md).

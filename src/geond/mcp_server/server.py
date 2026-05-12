@@ -60,8 +60,10 @@ def search_dev_memory(
     mode: str = "hybrid",
     workspace_uri: str | None = None,
     source: str | None = None,
+    rerank: str = "none",
+    candidate_limit: int | None = None,
 ) -> list[dict[str, Any]]:
-    """Search shared development memory across imported sessions and messages."""
+    """Search shared development memory; set rerank="local" for deterministic local reranking."""
     settings = get_settings()
     with connect(settings) as conn:
         if mode == "keyword":
@@ -71,6 +73,8 @@ def search_dev_memory(
                 limit,
                 workspace_uri=workspace_uri,
                 source=source,
+                rerank=rerank,
+                candidate_limit=candidate_limit,
             )
 
         provider = get_embedding_provider(settings)
@@ -83,6 +87,9 @@ def search_dev_memory(
                 limit=limit,
                 workspace_uri=workspace_uri,
                 source=source,
+                query=query,
+                rerank=rerank,
+                candidate_limit=candidate_limit,
             )
         if mode == "hybrid":
             return hybrid_search_dev_memory_query(
@@ -93,6 +100,8 @@ def search_dev_memory(
                 limit=limit,
                 workspace_uri=workspace_uri,
                 source=source,
+                rerank=rerank,
+                candidate_limit=candidate_limit,
             )
         raise ValueError("mode must be one of: keyword, vector, hybrid")
 

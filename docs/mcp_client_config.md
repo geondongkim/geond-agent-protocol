@@ -27,12 +27,12 @@ Use [examples/mcp_clients/continue_config.yaml](../examples/mcp_clients/continue
 
 ## Useful Tools
 
-- `search_dev_memory`: retrieve prior session evidence.
+- `search_dev_memory`: retrieve prior session evidence. Pass `rerank="local"` and optional `candidate_limit` to rerank keyword/vector/hybrid candidates locally.
 - `get_symbol_context`: inspect indexed code graph entities, related changesets, and caller/callee `calls` edges.
 - `register_workspace_alias`: attach a moved or renamed folder URI to an existing workspace.
 - `list_workspace_aliases`: inspect registered workspace aliases.
 - `record_workspace_fingerprints`: store durable workspace identity hints such as sanitized git remote, first commit, manifest hashes, and hashed package names.
-- `suggest_workspace_aliases`: ask Geond which existing workspace a new folder URI probably belongs to before registering an alias.
+- `suggest_workspace_aliases`: ask Geond which existing workspace a new folder URI probably belongs to before registering an alias; responses include recommendation fields for single, ambiguous, already-resolved, and partial matches.
 - `explain_change`: inspect file snapshots, related messages, changesets, touched symbols, and resolved call impact. Pass `include_narrative=true` to attach a deterministic, evidence-citing summary under `narrative` (schema `geond.evidence.v1.narrative`).
 - `get_changeset_detail`: look up a changeset by UUID or git commit (sha or prefix); returns files, touched code entities, call impact, and `geond.evidence.v1` evidence refs. Ambiguous commit prefixes return `ambiguous=true` with candidate matches instead of choosing silently. Pass `include_narrative=true` for a one-paragraph briefing.
 - `record_changeset`: record changed files and optional unified diff patches from an MCP client.

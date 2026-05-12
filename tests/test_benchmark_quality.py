@@ -109,11 +109,16 @@ def test_benchmark_includes_score_diagnostics(monkeypatch) -> None:
             "trigram_score": 0.5,
             "score": 0.75,
             "hybrid_score": 1.0,
+            "rerank": "local",
+            "rerank_score": 1.25,
+            "rerank_total_score": 2.25,
             "snippet": "app_context",
         }
     ]
+    seen_kwargs = {}
 
     def run_once(**kwargs):
+        seen_kwargs.update(kwargs)
         return rows
 
     monkeypatch.setattr("geond.storage.benchmark.run_search_once", run_once)
@@ -125,11 +130,19 @@ def test_benchmark_includes_score_diagnostics(monkeypatch) -> None:
         repeat=1,
         provider=StaticProvider(),
         include_results=True,
+        rerank="local",
+        candidate_limit=25,
     )
 
     top_result = result["queries"][0]["top_results"][0]
 
+    assert result["rerank"] == "local"
+    assert result["candidate_limit"] == 25
+    assert seen_kwargs["rerank"] == "local"
+    assert seen_kwargs["candidate_limit"] == 25
     assert top_result["fts_rank"] == 0.25
     assert top_result["trigram_score"] == 0.5
     assert top_result["vector_score"] == 0.75
     assert top_result["hybrid_score"] == 1.0
+    assert top_result["rerank_score"] == 1.25
+    assert top_result["rerank_total_score"] == 2.25

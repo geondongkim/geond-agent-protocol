@@ -63,6 +63,11 @@ credentials are not persisted. Manifest fingerprints store SHA-256 hashes of
 well-known root files and SHA-256 hashes of package names; raw package names are
 not stored by discovery.
 
+Alias suggestions include `recommendation`, `matched_fingerprint_types`,
+`unmatched_fingerprint_count`, and `competing_top_matches` so a client can tell
+the difference between a single registerable candidate, an already-resolved URI,
+an ambiguous high-confidence match, and a partial match that needs review.
+
 ## Search Strategy
 
 Postgres already gives Geond a practical local-first search stack:
@@ -102,7 +107,7 @@ Recommended order:
 1. Keep `simple` full-text search for portable token indexing.
 2. Add `pg_trgm` for multilingual partial matching and typo tolerance.
 3. Use embeddings for semantic cross-lingual recall.
-4. Add reranking over top candidates.
+4. Use `--rerank local` for deterministic phrase/token reranking over top candidates.
 5. Add language-specific analyzers only when benchmark judgments show lexical
 	 failures that trigram + embeddings cannot cover.
 
@@ -119,9 +124,10 @@ The target retrieval pipeline is:
 2. Pull lexical candidates from GIN full-text and trigram indexes.
 3. Pull semantic candidates from pgvector when embeddings exist.
 4. Merge with reciprocal-rank or weighted scoring.
-5. Expand candidates through changesets, symbols, file paths, sessions, and call
+5. Optionally rerank the candidate pool with local lexical phrase/token coverage.
+6. Expand candidates through changesets, symbols, file paths, sessions, and call
 	 graph edges.
-6. Return `geond.evidence.v1` refs and optional deterministic narratives.
+7. Return `geond.evidence.v1` refs and optional deterministic narratives.
 
 This keeps Geond fast locally while leaving room for a pluggable search backend
 when the project has enough data to justify it.

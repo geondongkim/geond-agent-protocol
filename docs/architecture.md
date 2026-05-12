@@ -203,6 +203,10 @@ Retrieval combines four signals.
 | Timeline | Recover the sequence of decisions and changes |
 | Intent | Prioritize bugfix, refactor, feature, test, or docs context |
 
+Keyword, vector, and hybrid retrieval can optionally rerank an expanded
+candidate pool with a deterministic local phrase/token scorer. This gives local
+quality tuning without requiring an external reranking API.
+
 Retrieval should return structured context, not only text chunks.
 Symbol context includes related changesets plus caller/callee relationships from
 `calls` edges when the code graph can resolve them.

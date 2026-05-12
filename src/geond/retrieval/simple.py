@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from psycopg import Connection
@@ -25,7 +26,11 @@ def search_dev_memory(
     limit: int = 10,
     workspace_uri: str | None = None,
     source: str | None = None,
+    rerank: str | None = None,
+    candidate_limit: int | None = None,
 ) -> list[dict[str, Any]]:
+    rerank_mode = normalize_rerank_mode(rerank)
+    fetch_limit = search_candidate_limit(limit, candidate_limit, rerank_mode)
     pattern = f"%{query}%"
     workspace_id = resolve_workspace_filter(conn, workspace_uri)
     if workspace_uri and not workspace_id:
@@ -64,10 +69,20 @@ def search_dev_memory(
                 m.created_at DESC
             LIMIT %s
             """,
-            (query, query, pattern, query, workspace_id, workspace_id, source, source, limit),
+            (
+                query,
+                query,
+                pattern,
+                query,
+                workspace_id,
+                workspace_id,
+                source,
+                source,
+                fetch_limit,
+            ),
         )
         rows = cur.fetchall()
-    return [
+    results = [
         message_result(
             mode="keyword",
             workspace_id=row[0],
@@ -85,6 +100,7 @@ def search_dev_memory(
         )
         for row in rows
     ]
+    return maybe_rerank_results(query, results, limit, rerank_mode)
 
 
 def vector_search_dev_memory(
@@ -94,7 +110,13 @@ def vector_search_dev_memory(
     limit: int = 10,
     workspace_uri: str | None = None,
     source: str | None = None,
+    *,
+    query: str | None = None,
+    rerank: str | None = None,
+    candidate_limit: int | None = None,
 ) -> list[dict[str, Any]]:
+    rerank_mode = normalize_rerank_mode(rerank)
+    fetch_limit = search_candidate_limit(limit, candidate_limit, rerank_mode)
     vector_literal = vector_to_sql(query_vector)
     workspace_id = resolve_workspace_filter(conn, workspace_uri)
     if workspace_uri and not workspace_id:
@@ -134,11 +156,11 @@ def vector_search_dev_memory(
                 source,
                 source,
                 vector_literal,
-                limit,
+                fetch_limit,
             ),
         )
         rows = cur.fetchall()
-    return [
+    results = [
         message_result(
             mode="vector",
             workspace_id=row[0],
@@ -156,6 +178,7 @@ def vector_search_dev_memory(
         )
         for row in rows
     ]
+    return maybe_rerank_results(query or "", results, limit, rerank_mode)
 
 
 def hybrid_search_dev_memory(
@@ -166,11 +189,15 @@ def hybrid_search_dev_memory(
     limit: int = 10,
     workspace_uri: str | None = None,
     source: str | None = None,
+    rerank: str | None = None,
+    candidate_limit: int | None = None,
 ) -> list[dict[str, Any]]:
+    rerank_mode = normalize_rerank_mode(rerank)
+    fetch_limit = search_candidate_limit(limit, candidate_limit, rerank_mode)
     keyword_results = search_dev_memory(
         conn,
         query,
-        limit=limit,
+        limit=fetch_limit,
         workspace_uri=workspace_uri,
         source=source,
     )
@@ -178,7 +205,7 @@ def hybrid_search_dev_memory(
         conn,
         query_vector,
         model=model,
-        limit=limit,
+        limit=fetch_limit,
         workspace_uri=workspace_uri,
         source=source,
     )
@@ -210,7 +237,118 @@ def hybrid_search_dev_memory(
                 "hybrid_score": contribution,
             }
 
-    return sorted(merged.values(), key=lambda item: item["hybrid_score"], reverse=True)[:limit]
+    results = sorted(merged.values(), key=lambda item: item["hybrid_score"], reverse=True)
+    return maybe_rerank_results(query, results, limit, rerank_mode)
+
+
+def normalize_rerank_mode(rerank: str | None) -> str | None:
+    mode = (rerank or "none").strip().lower()
+    if mode in {"", "none"}:
+        return None
+    if mode != "local":
+        raise ValueError("rerank must be one of: none, local")
+    return mode
+
+
+def search_candidate_limit(
+    limit: int,
+    candidate_limit: int | None,
+    rerank_mode: str | None,
+) -> int:
+    if not rerank_mode:
+        return limit
+    if candidate_limit is None:
+        candidate_limit = limit * 3
+    return max(limit, candidate_limit)
+
+
+def maybe_rerank_results(
+    query: str,
+    results: list[dict[str, Any]],
+    limit: int,
+    rerank_mode: str | None,
+) -> list[dict[str, Any]]:
+    if rerank_mode == "local":
+        return local_rerank_results(query, results, limit)
+    return results[:limit]
+
+
+def local_rerank_results(
+    query: str,
+    results: list[dict[str, Any]],
+    limit: int,
+) -> list[dict[str, Any]]:
+    reranked = []
+    for index, item in enumerate(results):
+        base_rank = index + 1
+        base_score = retrieval_base_score(item, base_rank)
+        rerank_score = lexical_rerank_score(query, item)
+        reranked.append(
+            {
+                **item,
+                "rerank": "local",
+                "rerank_base_rank": base_rank,
+                "rerank_base_score": round(base_score, 6),
+                "rerank_score": round(rerank_score, 6),
+                "rerank_total_score": round(base_score + rerank_score, 6),
+            }
+        )
+    return sorted(
+        reranked,
+        key=lambda item: (
+            item["rerank_total_score"],
+            -item["rerank_base_rank"],
+        ),
+        reverse=True,
+    )[:limit]
+
+
+def retrieval_base_score(item: dict[str, Any], base_rank: int) -> float:
+    score = numeric_score(item.get("hybrid_score"))
+    if score is None:
+        score = numeric_score(item.get("score"))
+    if score is None:
+        rank_score = numeric_score(item.get("rank")) or 0.0
+        trigram_score = numeric_score(item.get("trigram_score")) or 0.0
+        score = rank_score + trigram_score
+    return max(score, 0.0) + (1.0 / (base_rank + 1))
+
+
+def numeric_score(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def lexical_rerank_score(query: str, item: dict[str, Any]) -> float:
+    haystack = rerank_text(item)
+    if not haystack:
+        return 0.0
+    normalized_query = query.casefold().strip()
+    tokens = query_tokens(normalized_query)
+    exact_score = 1.0 if normalized_query and normalized_query in haystack else 0.0
+    if not tokens:
+        return exact_score
+    matched_tokens = sum(1 for token in tokens if token in haystack)
+    coverage_score = matched_tokens / len(tokens)
+    frequency = sum(haystack.count(token) for token in tokens)
+    frequency_score = min(0.25, frequency / max(len(tokens) * 8, 1))
+    return exact_score + (0.75 * coverage_score) + frequency_score
+
+
+def rerank_text(item: dict[str, Any]) -> str:
+    parts = [
+        item.get("snippet"),
+        item.get("session_title"),
+        item.get("source"),
+        item.get("workspace_name"),
+    ]
+    return " ".join(str(part) for part in parts if part).casefold()
+
+
+def query_tokens(query: str) -> list[str]:
+    return [token for token in re.findall(r"[\w가-힣]+", query.casefold()) if token]
 
 
 def resolve_workspace_filter(conn: Connection, workspace_uri: str | None) -> str | None:

@@ -320,11 +320,59 @@ def suggest_workspace_aliases(
         match["matched_count"] = len(match["matched_fingerprints"])
         del match["matched_weight"]
         suggestions.append(match)
-    return sorted(
+    ranked = sorted(
         suggestions,
         key=lambda item: (item["already_resolves"], item["confidence"], item["matched_count"]),
         reverse=True,
     )
+    annotate_workspace_alias_suggestions(ranked, normalized)
+    return ranked
+
+
+def annotate_workspace_alias_suggestions(
+    suggestions: list[dict[str, Any]],
+    normalized_fingerprints: list[dict[str, Any]],
+) -> None:
+    if not suggestions:
+        return
+    input_keys = {
+        (item["fingerprint_type"], item["fingerprint_value"]) for item in normalized_fingerprints
+    }
+    top_confidence = suggestions[0]["confidence"]
+    competing_top_matches = sum(
+        1
+        for item in suggestions
+        if not item["already_resolves"] and item["confidence"] == top_confidence
+    )
+    for item in suggestions:
+        matched_keys = {
+            (fingerprint["fingerprint_type"], fingerprint["fingerprint_value"])
+            for fingerprint in item["matched_fingerprints"]
+        }
+        item["matched_fingerprint_types"] = sorted(
+            {fingerprint_type for fingerprint_type, _ in matched_keys}
+        )
+        item["unmatched_fingerprint_count"] = len(input_keys - matched_keys)
+        item["competing_top_matches"] = (
+            competing_top_matches if item["confidence"] == top_confidence else 0
+        )
+        item["recommendation"] = workspace_alias_recommendation(
+            item,
+            competing_top_matches,
+        )
+
+
+def workspace_alias_recommendation(
+    suggestion: dict[str, Any],
+    competing_top_matches: int,
+) -> str:
+    if suggestion["already_resolves"]:
+        return "already_resolves"
+    if suggestion["confidence"] >= 0.75 and competing_top_matches == 1:
+        return "register_best_candidate"
+    if suggestion["confidence"] >= 0.75 and competing_top_matches > 1:
+        return "ambiguous_top_candidates"
+    return "review_partial_match"
 
 
 def normalize_fingerprints(fingerprints: list[dict[str, Any]]) -> list[dict[str, Any]]:

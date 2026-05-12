@@ -29,6 +29,8 @@ def benchmark_search(
     provider: EmbeddingProvider | None = None,
     judgments: dict[str, dict[str, Any]] | None = None,
     include_results: bool = False,
+    rerank: str = "none",
+    candidate_limit: int | None = None,
 ) -> dict[str, Any]:
     if repeat < 1:
         raise ValueError("repeat must be at least 1")
@@ -50,6 +52,8 @@ def benchmark_search(
                 workspace_uri=workspace_uri,
                 source=source,
                 provider=provider,
+                rerank=rerank,
+                candidate_limit=candidate_limit,
             )
             durations_ms.append((perf_counter() - started) * 1000)
             result_count = len(rows)
@@ -73,6 +77,9 @@ def benchmark_search(
                     "trigram_score": row.get("trigram_score"),
                     "vector_score": row.get("score"),
                     "hybrid_score": row.get("hybrid_score"),
+                    "rerank": row.get("rerank"),
+                    "rerank_score": row.get("rerank_score"),
+                    "rerank_total_score": row.get("rerank_total_score"),
                     "snippet": row.get("snippet"),
                 }
                 for rank, row in enumerate(rows[:limit], start=1)
@@ -81,6 +88,8 @@ def benchmark_search(
 
     return {
         "mode": mode,
+        "rerank": rerank,
+        "candidate_limit": candidate_limit,
         "repeat": repeat,
         "limit": limit,
         "queries": query_results,
@@ -385,6 +394,8 @@ def run_search_once(
     workspace_uri: str | None,
     source: str | None,
     provider: EmbeddingProvider | None,
+    rerank: str = "none",
+    candidate_limit: int | None = None,
 ) -> list[dict[str, Any]]:
     if mode == "keyword":
         return search_dev_memory(
@@ -393,6 +404,8 @@ def run_search_once(
             limit=limit,
             workspace_uri=workspace_uri,
             source=source,
+            rerank=rerank,
+            candidate_limit=candidate_limit,
         )
     if provider is None:
         raise ValueError("provider is required for vector or hybrid search")
@@ -406,6 +419,9 @@ def run_search_once(
             limit=limit,
             workspace_uri=workspace_uri,
             source=source,
+            query=query,
+            rerank=rerank,
+            candidate_limit=candidate_limit,
         )
     if mode == "hybrid":
         return hybrid_search_dev_memory(
@@ -416,5 +432,7 @@ def run_search_once(
             limit=limit,
             workspace_uri=workspace_uri,
             source=source,
+            rerank=rerank,
+            candidate_limit=candidate_limit,
         )
     raise ValueError("mode must be one of: keyword, vector, hybrid")

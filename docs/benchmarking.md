@@ -86,6 +86,22 @@ When `--include-results` is enabled, each top result includes score diagnostics
 for available retrieval signals: `fts_rank`, `trigram_score`, `vector_score`,
 and `hybrid_score`.
 
+Add `--rerank local` to rerank a larger candidate pool with deterministic
+lexical phrase/token coverage after the selected retrieval mode. Use
+`--candidate-limit` to control the pool size; by default Geond expands to three
+times the final `--limit`.
+
+```bash
+uv run geond benchmark-search "왜 service.py 파일이 바뀌었어?" \
+  --mode hybrid \
+  --rerank local \
+  --candidate-limit 30 \
+  --include-results
+```
+
+Reranked top results include `rerank_score` and `rerank_total_score` diagnostics
+alongside the underlying keyword/vector/hybrid scores.
+
 For Korean/English mixed retrieval checks, use the multilingual fixture:
 
 ```bash

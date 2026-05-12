@@ -175,6 +175,16 @@ uv run geond search "왜 이 파일이 바뀌었어?" --mode vector
 uv run geond search "왜 이 파일이 바뀌었어?" --mode hybrid
 ```
 
+Optionally rerank the top candidate pool with a deterministic local lexical
+reranker after keyword, vector, or hybrid retrieval:
+
+```bash
+uv run geond search "왜 service.py 파일이 바뀌었어?" \
+    --mode hybrid \
+    --rerank local \
+    --candidate-limit 30
+```
+
 Limit retrieval to one workspace or source:
 
 ```bash
@@ -381,7 +391,7 @@ Local protocol demo asset:
 
 ## Status
 
-Early MVP stage. The repository contains research notes, architecture, implementation plans, a local Postgres/pgvector schema, VS Code Copilot Chat, Codex, and Claude Code importers, OpenAI/Azure/gateway/local embedding provider modes, keyword/vector/hybrid retrieval, workspace aliases with git and manifest fingerprint suggestions, AST/regex/tree-sitter code graph indexing, Python and TypeScript/JavaScript cross-file/default-import/re-export call edges, changeset-to-symbol evidence links, call-impact narratives, reservation renewal and audit events, benchmark quality metrics, coordination tools, demo assets, Azure samples, and an MCP server.
+Early MVP stage. The repository contains research notes, architecture, implementation plans, a local Postgres/pgvector schema, VS Code Copilot Chat, Codex, and Claude Code importers, OpenAI/Azure/gateway/local embedding provider modes, keyword/vector/hybrid retrieval with optional local reranking, workspace aliases with git and manifest fingerprint suggestions, AST/regex/tree-sitter code graph indexing, Python and TypeScript/JavaScript cross-file/default-import/re-export call edges, changeset-to-symbol evidence links, call-impact narratives, reservation renewal and audit events, benchmark quality metrics, coordination tools, demo assets, Azure samples, and an MCP server.
 
 ## Design Principles
 

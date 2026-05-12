@@ -216,6 +216,8 @@ def main() -> None:
     search.add_argument("--limit", type=int, default=10)
     search.add_argument("--workspace-uri")
     search.add_argument("--source")
+    search.add_argument("--rerank", choices=["none", "local"], default="none")
+    search.add_argument("--candidate-limit", type=int)
 
     index_python = subparsers.add_parser(
         "index-python", help="Index Python files into the code graph tables"
@@ -374,6 +376,8 @@ def main() -> None:
     benchmark.add_argument("--judgments", type=Path)
     benchmark.add_argument("--include-results", action="store_true")
     benchmark.add_argument("--format", choices=["json", "markdown"], default="json")
+    benchmark.add_argument("--rerank", choices=["none", "local"], default="none")
+    benchmark.add_argument("--candidate-limit", type=int)
 
     benchmark_report = subparsers.add_parser(
         "benchmark-report", help="Compare saved benchmark runs"
@@ -458,6 +462,8 @@ def main() -> None:
                 provider=provider,
                 judgments=judgments,
                 include_results=args.include_results,
+                rerank=args.rerank,
+                candidate_limit=args.candidate_limit,
             )
             if args.save:
                 run_id = save_benchmark_run(
@@ -642,6 +648,8 @@ def main() -> None:
                     args.limit,
                     workspace_uri=args.workspace_uri,
                     source=args.source,
+                    rerank=args.rerank,
+                    candidate_limit=args.candidate_limit,
                 )
             else:
                 provider = get_embedding_provider(settings)
@@ -654,6 +662,9 @@ def main() -> None:
                         limit=args.limit,
                         workspace_uri=args.workspace_uri,
                         source=args.source,
+                        query=args.query,
+                        rerank=args.rerank,
+                        candidate_limit=args.candidate_limit,
                     )
                 else:
                     results = hybrid_search_dev_memory(
@@ -664,6 +675,8 @@ def main() -> None:
                         limit=args.limit,
                         workspace_uri=args.workspace_uri,
                         source=args.source,
+                        rerank=args.rerank,
+                        candidate_limit=args.candidate_limit,
                     )
         print(json.dumps(results, ensure_ascii=False, indent=2))
         return
