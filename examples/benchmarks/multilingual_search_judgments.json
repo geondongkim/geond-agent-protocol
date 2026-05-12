@@ -1,0 +1,26 @@
+{
+  "queries": [
+    {
+      "query": "왜 service.py 파일이 바뀌었어?",
+      "expected": [
+        {
+          "source": "seed",
+          "snippet_contains": "service.py"
+        }
+      ]
+    },
+    {
+      "query": "database initialization app_context",
+      "expected": [
+        {
+          "source": "seed",
+          "snippet_contains": "app_context"
+        }
+      ]
+    },
+    {
+      "query": "폴더 이동 workspace alias",
+      "expected_substrings": ["폴더 이동"]
+    }
+  ]
+}

@@ -198,6 +198,22 @@ Workspace-scoped search resolves both root URIs and registered aliases. Keyword
 search uses Postgres full-text GIN plus `pg_trgm` substring matching, while
 hybrid search adds pgvector semantic candidates when embeddings are configured.
 
+For moved git repositories, record durable fingerprints on the original
+workspace and ask Geond to suggest the alias for a new checkout path:
+
+```bash
+uv run geond fingerprint-workspace \
+    "file:///C:/old/path/project" \
+    "C:/old/path/project"
+
+uv run geond suggest-workspace-aliases \
+    "C:/new/path/project" \
+    --register-best
+```
+
+The git remote fingerprint is sanitized before storage so URL credentials are
+not persisted.
+
 Index Python code into the local code graph:
 
 ```bash
@@ -344,13 +360,15 @@ uv run geond benchmark-search "app_context" "build_answer" \
 uv run geond benchmark-report --workspace-uri "file:///sample/geond" --format markdown
 ```
 
+Use [examples/benchmarks/multilingual_search_judgments.json](examples/benchmarks/multilingual_search_judgments.json) when checking Korean/English mixed retrieval behavior.
+
 Local protocol demo asset:
 
 ![Geond demo](docs/assets/geond_demo.gif)
 
 ## Status
 
-Early MVP stage. The repository contains research notes, architecture, implementation plans, a local Postgres/pgvector schema, VS Code Copilot Chat, Codex, and Claude Code importers, OpenAI/Azure/gateway/local embedding provider modes, keyword/vector/hybrid retrieval, AST/regex/tree-sitter code graph indexing, Python and TypeScript/JavaScript cross-file call edges, changeset-to-symbol evidence links, call-impact narratives, reservation renewal, benchmark quality metrics, coordination tools, demo assets, Azure samples, and an MCP server.
+Early MVP stage. The repository contains research notes, architecture, implementation plans, a local Postgres/pgvector schema, VS Code Copilot Chat, Codex, and Claude Code importers, OpenAI/Azure/gateway/local embedding provider modes, keyword/vector/hybrid retrieval, workspace aliases with git fingerprint suggestions, AST/regex/tree-sitter code graph indexing, Python and TypeScript/JavaScript cross-file call edges, changeset-to-symbol evidence links, call-impact narratives, reservation renewal, benchmark quality metrics, coordination tools, demo assets, Azure samples, and an MCP server.
 
 ## Design Principles
 

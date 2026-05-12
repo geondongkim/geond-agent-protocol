@@ -142,7 +142,7 @@ Important projections:
 - agent actions and handoffs
 - embeddings and summaries
 - active reservations
-- workspace aliases for renamed or moved local folders
+- workspace aliases and fingerprints for renamed or moved local folders
 
 ### 4.5 Code Graph Builder
 
@@ -203,7 +203,9 @@ Symbol context includes related changesets plus caller/callee relationships from
 Change explanations and changeset detail records include `call_impact`, allowing
 deterministic narratives to cite upstream callers and downstream callees.
 Workspace-scoped retrieval resolves registered `workspace_aliases`, so a moved
-folder can keep using the original workspace memory.
+folder can keep using the original workspace memory. `workspace_fingerprints`
+stores conservative identity hints such as sanitized git remote URL and first
+commit, allowing clients to ask for alias suggestions before registering one.
 
 Example response shape:
 
@@ -249,6 +251,8 @@ handoff_summaries
 benchmark_runs
 retrieval_events
 redaction_findings
+workspace_aliases
+workspace_fingerprints
 ```
 
 ### 5.1 Key Tables
@@ -260,6 +264,22 @@ redaction_findings
 - `name`
 - `created_at`
 - `metadata`
+
+`workspace_aliases`
+
+- `workspace_id`
+- `alias_uri`
+- `reason`
+- `metadata`
+- `last_seen_at`
+
+`workspace_fingerprints`
+
+- `workspace_id`
+- `fingerprint_type`
+- `fingerprint_value`
+- `metadata`
+- `last_seen_at`
 
 `sessions`
 

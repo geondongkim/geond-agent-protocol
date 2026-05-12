@@ -27,6 +27,9 @@ from geond.storage.repository import record_agent_action as record_agent_action_
 from geond.storage.repository import record_changeset as record_changeset_row
 from geond.storage.repository import record_handoff_summary as record_handoff_summary_row
 from geond.storage.repository import (
+    record_workspace_fingerprints as record_workspace_fingerprints_row,
+)
+from geond.storage.repository import (
     register_workspace_alias as register_workspace_alias_row,
 )
 from geond.storage.repository import release_reservation as release_reservation_row
@@ -35,6 +38,7 @@ from geond.storage.repository import renew_reservation as renew_reservation_row
 from geond.storage.repository import renew_symbol_reservation as renew_symbol_reservation_row
 from geond.storage.repository import reserve_files as reserve_files_row
 from geond.storage.repository import reserve_symbols as reserve_symbols_row
+from geond.storage.repository import suggest_workspace_aliases as suggest_workspace_aliases_row
 from geond.storage.resources import (
     get_session_resource,
     get_symbol_resource,
@@ -166,6 +170,26 @@ def list_workspace_aliases(workspace_id_or_uri: str | None = None) -> list[dict[
     """List workspace aliases, optionally scoped to one workspace id, root URI, or alias URI."""
     with connect(get_settings()) as conn:
         return list_workspace_aliases_row(conn, workspace_id_or_uri)
+
+
+@mcp.tool()
+def record_workspace_fingerprints(
+    workspace_id_or_uri: str,
+    fingerprints: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Record durable identity fingerprints, such as git remote and first commit."""
+    with connect(get_settings()) as conn:
+        return record_workspace_fingerprints_row(conn, workspace_id_or_uri, fingerprints)
+
+
+@mcp.tool()
+def suggest_workspace_aliases(
+    alias_uri: str,
+    fingerprints: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Suggest existing workspaces for a moved folder based on identity fingerprints."""
+    with connect(get_settings()) as conn:
+        return suggest_workspace_aliases_row(conn, alias_uri, fingerprints)
 
 
 @mcp.tool()

@@ -15,6 +15,7 @@ from geond.retrieval.simple import (
     search_dev_memory,
     vector_search_dev_memory,
 )
+from geond.storage.repository import resolve_workspace_id
 
 
 def benchmark_search(
@@ -68,6 +69,10 @@ def benchmark_search(
                     "source": row.get("source"),
                     "session_external_id": row.get("session_external_id"),
                     "message_id": row.get("message_id"),
+                    "fts_rank": row.get("rank"),
+                    "trigram_score": row.get("trigram_score"),
+                    "vector_score": row.get("score"),
+                    "hybrid_score": row.get("hybrid_score"),
                     "snippet": row.get("snippet"),
                 }
                 for rank, row in enumerate(rows[:limit], start=1)
@@ -133,8 +138,11 @@ def list_benchmark_runs(
     filters: list[str] = []
     params: list[Any] = []
     if workspace_uri:
-        filters.append("w.root_uri = %s")
-        params.append(workspace_uri)
+        workspace_id = resolve_workspace_id(conn, workspace_uri)
+        if not workspace_id:
+            return []
+        filters.append("br.workspace_id = %s::uuid")
+        params.append(workspace_id)
     if mode:
         filters.append("br.mode = %s")
         params.append(mode)
@@ -367,13 +375,6 @@ def format_benchmark_report_markdown(report: dict[str, Any]) -> str:
 
 def markdown_value(value: Any) -> str:
     return "" if value is None else str(value)
-
-
-def resolve_workspace_id(conn: Connection, workspace_uri: str) -> str | None:
-    with conn.cursor() as cur:
-        cur.execute("SELECT id::text FROM workspaces WHERE root_uri = %s", (workspace_uri,))
-        row = cur.fetchone()
-    return row[0] if row else None
 
 
 def run_search_once(

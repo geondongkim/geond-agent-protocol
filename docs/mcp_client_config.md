@@ -31,6 +31,8 @@ Use [examples/mcp_clients/continue_config.yaml](../examples/mcp_clients/continue
 - `get_symbol_context`: inspect indexed code graph entities, related changesets, and caller/callee `calls` edges.
 - `register_workspace_alias`: attach a moved or renamed folder URI to an existing workspace.
 - `list_workspace_aliases`: inspect registered workspace aliases.
+- `record_workspace_fingerprints`: store durable workspace identity hints such as sanitized git remote and first commit.
+- `suggest_workspace_aliases`: ask Geond which existing workspace a new folder URI probably belongs to before registering an alias.
 - `explain_change`: inspect file snapshots, related messages, changesets, touched symbols, and resolved call impact. Pass `include_narrative=true` to attach a deterministic, evidence-citing summary under `narrative` (schema `geond.evidence.v1.narrative`).
 - `get_changeset_detail`: look up a changeset by UUID or git commit (sha or prefix); returns files, touched code entities, call impact, and `geond.evidence.v1` evidence refs. Ambiguous commit prefixes return `ambiguous=true` with candidate matches instead of choosing silently. Pass `include_narrative=true` for a one-paragraph briefing.
 - `record_changeset`: record changed files and optional unified diff patches from an MCP client.

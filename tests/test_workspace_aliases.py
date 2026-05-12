@@ -11,7 +11,9 @@ from geond.db import connect, run_schema_file
 from geond.retrieval.simple import search_dev_memory
 from geond.storage.repository import (
     list_workspace_aliases,
+    record_workspace_fingerprints,
     register_workspace_alias,
+    suggest_workspace_aliases,
     upsert_workspace,
 )
 
@@ -47,6 +49,15 @@ def test_workspace_alias_tracks_moved_folder_for_imports_and_search() -> None:
             metadata={"source": "pytest"},
         )
         try:
+            fingerprints = [
+                {
+                    "fingerprint_type": "git:remote:first-commit",
+                    "fingerprint_value": "https://github.com/example/project.git#abc123",
+                    "metadata": {"source": "pytest"},
+                }
+            ]
+            recorded_fingerprints = record_workspace_fingerprints(conn, old_uri, fingerprints)
+            suggestions = suggest_workspace_aliases(conn, new_uri, fingerprints)
             alias = register_workspace_alias(
                 conn,
                 workspace_id_or_uri=old_uri,
@@ -94,6 +105,9 @@ def test_workspace_alias_tracks_moved_folder_for_imports_and_search() -> None:
             aliases = list_workspace_aliases(conn, new_uri)
             results = search_dev_memory(conn, "폴더 이동", workspace_uri=new_uri, limit=5)
 
+            assert recorded_fingerprints[0]["workspace_id"] == workspace_id
+            assert suggestions[0]["workspace_id"] == workspace_id
+            assert suggestions[0]["confidence"] == 1.0
             assert alias["workspace_id"] == workspace_id
             assert reused_workspace_id == workspace_id
             assert aliases[0]["alias_uri"] == new_uri

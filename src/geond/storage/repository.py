@@ -213,6 +213,162 @@ def list_workspace_aliases(
     ]
 
 
+def record_workspace_fingerprints(
+    conn: Connection,
+    workspace_id_or_uri: str,
+    fingerprints: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    with conn.cursor() as cur:
+        workspace_id = resolve_workspace_id_cursor(cur, workspace_id_or_uri)
+        if not workspace_id:
+            raise ValueError("workspace_id_or_uri does not resolve to a workspace")
+
+        rows: list[tuple[Any, ...]] = []
+        for fingerprint in normalize_fingerprints(fingerprints):
+            cur.execute(
+                """
+                INSERT INTO workspace_fingerprints (
+                    workspace_id,
+                    fingerprint_type,
+                    fingerprint_value,
+                    metadata
+                )
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (workspace_id, fingerprint_type, fingerprint_value)
+                DO UPDATE SET metadata = workspace_fingerprints.metadata || EXCLUDED.metadata,
+                              last_seen_at = now()
+                RETURNING
+                    id::text,
+                    workspace_id::text,
+                    fingerprint_type,
+                    fingerprint_value,
+                    metadata,
+                    last_seen_at
+                """,
+                (
+                    workspace_id,
+                    fingerprint["fingerprint_type"],
+                    fingerprint["fingerprint_value"],
+                    Jsonb(fingerprint.get("metadata") or {}),
+                ),
+            )
+            rows.append(cur.fetchone())
+    conn.commit()
+    return [workspace_fingerprint_result(row) for row in rows]
+
+
+def suggest_workspace_aliases(
+    conn: Connection,
+    alias_uri: str,
+    fingerprints: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    normalized = normalize_fingerprints(fingerprints)
+    if not normalized:
+        return []
+
+    with conn.cursor() as cur:
+        existing_workspace_id = resolve_workspace_id_cursor(cur, alias_uri)
+        matches_by_workspace: dict[str, dict[str, Any]] = {}
+        total_weight = sum(fingerprint_weight(item["fingerprint_type"]) for item in normalized)
+        for fingerprint in normalized:
+            cur.execute(
+                """
+                SELECT
+                    wf.workspace_id::text,
+                    w.root_uri,
+                    w.name,
+                    wf.fingerprint_type,
+                    wf.fingerprint_value,
+                    wf.metadata,
+                    wf.last_seen_at
+                FROM workspace_fingerprints wf
+                JOIN workspaces w ON w.id = wf.workspace_id
+                WHERE wf.fingerprint_type = %s
+                  AND wf.fingerprint_value = %s
+                ORDER BY wf.last_seen_at DESC
+                """,
+                (fingerprint["fingerprint_type"], fingerprint["fingerprint_value"]),
+            )
+            for row in cur.fetchall():
+                workspace_id = row[0]
+                match = matches_by_workspace.setdefault(
+                    workspace_id,
+                    {
+                        "workspace_id": workspace_id,
+                        "workspace_uri": row[1],
+                        "workspace_name": row[2],
+                        "alias_uri": alias_uri,
+                        "already_resolves": existing_workspace_id == workspace_id,
+                        "matched_weight": 0.0,
+                        "matched_fingerprints": [],
+                    },
+                )
+                match["matched_weight"] += fingerprint_weight(row[3])
+                match["matched_fingerprints"].append(
+                    {
+                        "fingerprint_type": row[3],
+                        "fingerprint_value": row[4],
+                        "metadata": row[5],
+                        "last_seen_at": row[6].isoformat() if row[6] else None,
+                    }
+                )
+
+    suggestions = []
+    for match in matches_by_workspace.values():
+        confidence = match["matched_weight"] / total_weight if total_weight else 0.0
+        match["confidence"] = round(confidence, 4)
+        match["matched_count"] = len(match["matched_fingerprints"])
+        del match["matched_weight"]
+        suggestions.append(match)
+    return sorted(
+        suggestions,
+        key=lambda item: (item["already_resolves"], item["confidence"], item["matched_count"]),
+        reverse=True,
+    )
+
+
+def normalize_fingerprints(fingerprints: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for fingerprint in fingerprints:
+        fingerprint_type = str(fingerprint.get("fingerprint_type") or "").strip()
+        fingerprint_value = str(fingerprint.get("fingerprint_value") or "").strip()
+        if not fingerprint_type or not fingerprint_value:
+            continue
+        key = (fingerprint_type, fingerprint_value)
+        if key in seen:
+            continue
+        seen.add(key)
+        metadata = (
+            fingerprint.get("metadata") if isinstance(fingerprint.get("metadata"), dict) else {}
+        )
+        normalized.append(
+            {
+                "fingerprint_type": fingerprint_type,
+                "fingerprint_value": fingerprint_value,
+                "metadata": metadata,
+            }
+        )
+    return normalized
+
+
+def fingerprint_weight(fingerprint_type: str) -> float:
+    if fingerprint_type == "git:remote:first-commit":
+        return 2.0
+    return 1.0
+
+
+def workspace_fingerprint_result(row: tuple[Any, ...]) -> dict[str, Any]:
+    return {
+        "fingerprint_id": row[0],
+        "workspace_id": row[1],
+        "fingerprint_type": row[2],
+        "fingerprint_value": row[3],
+        "metadata": row[4],
+        "last_seen_at": row[5].isoformat() if row[5] else None,
+    }
+
+
 def record_changeset(
     conn: Connection,
     workspace_id: str,

@@ -22,8 +22,10 @@ Current behavior:
 - `upsert_workspace` reuses the original workspace when called with a registered
 	alias URI, so future imports from the moved folder do not create a duplicate
 	workspace.
-- `search_dev_memory` and vector search resolve `workspace_uri` through aliases
-	before filtering.
+- `search_dev_memory`, vector search, workspace resources, purge, and benchmark
+	reports resolve workspace URIs through aliases before filtering.
+- `workspace_fingerprints` stores durable hints such as sanitized git remote URL
+	and first commit, so Geond can suggest likely aliases before merging anything.
 
 MCP clients should handle a folder move like this:
 
@@ -42,9 +44,21 @@ remain attached to the same `workspace_id`. The uniqueness boundary is
 
 Important limitation: if a project appears at a completely new path with no
 registered alias, no git metadata, and no persisted fingerprint, Geond should not
-guess automatically. A future identity layer can add repository fingerprints such
-as git remote URL, first commit, `.git` common dir, package name, or a code graph
-hash, but automatic merging should stay conservative.
+guess automatically. Automatic merging should stay conservative; fingerprint
+matches produce suggestions, and `--register-best` only registers a single
+high-confidence candidate.
+
+CLI flow for a moved git checkout:
+
+```bash
+uv run geond fingerprint-workspace "file:///old/path/project" "/old/path/project"
+uv run geond suggest-workspace-aliases "/new/path/project" --register-best
+```
+
+MCP clients can use `record_workspace_fingerprints` and
+`suggest_workspace_aliases` when they already know the durable repository
+fingerprints. The git remote fingerprint is sanitized before storage so URL
+credentials are not persisted.
 
 ## Search Strategy
 

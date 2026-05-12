@@ -25,6 +25,17 @@ CREATE TABLE IF NOT EXISTS workspace_aliases (
     last_seen_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS workspace_fingerprints (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    fingerprint_type text NOT NULL,
+    fingerprint_value text NOT NULL,
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    last_seen_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (workspace_id, fingerprint_type, fingerprint_value)
+);
+
 CREATE TABLE IF NOT EXISTS agents (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     name text NOT NULL,
@@ -255,6 +266,8 @@ CREATE TABLE IF NOT EXISTS redaction_findings (
 
 CREATE INDEX IF NOT EXISTS idx_sessions_workspace ON sessions(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_workspace_aliases_workspace ON workspace_aliases(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_workspace_fingerprints_workspace ON workspace_fingerprints(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_workspace_fingerprints_lookup ON workspace_fingerprints(fingerprint_type, fingerprint_value);
 CREATE INDEX IF NOT EXISTS idx_events_workspace_session ON events(workspace_id, session_id);
 CREATE INDEX IF NOT EXISTS idx_messages_session_ordinal ON messages(session_id, ordinal);
 DROP INDEX IF EXISTS idx_messages_content_trgm_seed;

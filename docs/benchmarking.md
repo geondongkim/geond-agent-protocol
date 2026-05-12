@@ -82,6 +82,20 @@ Judgments can match exact message/session/source/workspace fields or snippets:
 ```
 
 Use `--format markdown` when collecting results for a report or README snippet.
+When `--include-results` is enabled, each top result includes score diagnostics
+for available retrieval signals: `fts_rank`, `trigram_score`, `vector_score`,
+and `hybrid_score`.
+
+For Korean/English mixed retrieval checks, use the multilingual fixture:
+
+```bash
+uv run geond benchmark-search "왜 service.py 파일이 바뀌었어?" \
+  "database initialization app_context" \
+  --mode keyword \
+  --workspace-uri file:///sample/geond \
+  --judgments examples/benchmarks/multilingual_search_judgments.json \
+  --include-results
+```
 
 ## Saved Runs
 
@@ -101,6 +115,9 @@ Compare saved runs:
 ```bash
 uv run geond benchmark-report --workspace-uri file:///sample/geond --format markdown
 ```
+
+`--workspace-uri` accepts the canonical root URI or any registered workspace
+alias, so benchmark history remains queryable after a folder move.
 
 ## Cleanup
 

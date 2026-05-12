@@ -14,6 +14,7 @@ from geond.storage.benchmark import (
     save_benchmark_run,
 )
 from geond.storage.maintenance import seed_sample_workspace
+from geond.storage.repository import register_workspace_alias
 
 SCHEMA = Path(__file__).parents[1] / "schemas" / "001_initial.sql"
 
@@ -40,6 +41,13 @@ def test_benchmark_runs_can_be_saved_and_compared() -> None:
                 (workspace_uri, seeded["workspace_id"]),
             )
         conn.commit()
+        alias_uri = workspace_uri.replace("benchmark-test", "benchmark-alias")
+        register_workspace_alias(
+            conn,
+            workspace_id_or_uri=workspace_uri,
+            alias_uri=alias_uri,
+            reason="pytest-benchmark-alias",
+        )
 
         try:
             result = benchmark_search(
@@ -47,17 +55,17 @@ def test_benchmark_runs_can_be_saved_and_compared() -> None:
                 ["app_context"],
                 mode="keyword",
                 repeat=1,
-                workspace_uri=workspace_uri,
+                workspace_uri=alias_uri,
             )
             run_id = save_benchmark_run(
                 conn,
                 result,
                 label="pytest",
-                workspace_uri=workspace_uri,
+                workspace_uri=alias_uri,
                 provider="none",
                 model="none",
             )
-            report = compare_benchmark_runs(conn, workspace_uri=workspace_uri)
+            report = compare_benchmark_runs(conn, workspace_uri=alias_uri)
 
             assert run_id
             assert report["runs"][0]["label"] == "pytest"

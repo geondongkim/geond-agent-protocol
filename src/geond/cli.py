@@ -43,6 +43,7 @@ from geond.storage.repository import (
     list_workspace_aliases,
     record_changeset,
     record_handoff_summary,
+    record_workspace_fingerprints,
     register_workspace_alias,
     release_symbol_reservation,
     renew_reservation,
@@ -52,7 +53,12 @@ from geond.storage.repository import (
     store_claude_code_session,
     store_codex_session,
     store_vscode_session,
+    suggest_workspace_aliases,
     upsert_workspace,
+)
+from geond.workspace_identity import (
+    discover_workspace_fingerprints,
+    workspace_uri_from_path_or_uri,
 )
 
 
@@ -133,6 +139,17 @@ def require_workspace_id(conn, workspace_id_or_uri: str) -> str:
     if not workspace_id:
         raise SystemExit(f"Workspace not found: {workspace_id_or_uri}")
     return workspace_id
+
+
+def fingerprint_from_arg(value: str) -> dict[str, object]:
+    if "=" not in value:
+        raise SystemExit("--fingerprint must use TYPE=VALUE")
+    fingerprint_type, fingerprint_value = value.split("=", 1)
+    return {
+        "fingerprint_type": fingerprint_type.strip(),
+        "fingerprint_value": fingerprint_value.strip(),
+        "metadata": {"source": "cli"},
+    }
 
 
 def main() -> None:
@@ -243,6 +260,35 @@ def main() -> None:
 
     aliases = subparsers.add_parser("workspace-aliases", help="List workspace aliases")
     aliases.add_argument("--workspace-id-or-uri")
+
+    fingerprint_workspace = subparsers.add_parser(
+        "fingerprint-workspace",
+        help="Record git-derived fingerprints for an existing workspace",
+    )
+    fingerprint_workspace.add_argument("workspace_id_or_uri")
+    fingerprint_workspace.add_argument("path_or_uri")
+    fingerprint_workspace.add_argument(
+        "--fingerprint",
+        action="append",
+        help="Extra fingerprint as TYPE=VALUE; can be repeated",
+    )
+
+    suggest_aliases = subparsers.add_parser(
+        "suggest-workspace-aliases",
+        help="Suggest existing workspaces for a moved folder using fingerprints",
+    )
+    suggest_aliases.add_argument("path_or_uri")
+    suggest_aliases.add_argument(
+        "--fingerprint",
+        action="append",
+        help="Fingerprint as TYPE=VALUE; can be repeated",
+    )
+    suggest_aliases.add_argument(
+        "--register-best",
+        action="store_true",
+        help="Register the alias when exactly one high-confidence suggestion is found",
+    )
+    suggest_aliases.add_argument("--min-confidence", type=float, default=0.75)
 
     conflicts = subparsers.add_parser("conflicts", help="List active file and symbol reservations")
     conflicts.add_argument("workspace_id")
@@ -701,6 +747,58 @@ def main() -> None:
         with connect(get_settings()) as conn:
             result = list_workspace_aliases(conn, args.workspace_id_or_uri)
         print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "fingerprint-workspace":
+        fingerprints = discover_workspace_fingerprints(args.path_or_uri)
+        fingerprints.extend(fingerprint_from_arg(value) for value in args.fingerprint or [])
+        with connect(get_settings()) as conn:
+            recorded = record_workspace_fingerprints(
+                conn,
+                workspace_id_or_uri=args.workspace_id_or_uri,
+                fingerprints=fingerprints,
+            )
+        print(
+            json.dumps(
+                {"status": "ok", "fingerprints": recorded},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
+
+    if args.command == "suggest-workspace-aliases":
+        alias_uri = workspace_uri_from_path_or_uri(args.path_or_uri)
+        fingerprints = discover_workspace_fingerprints(args.path_or_uri)
+        fingerprints.extend(fingerprint_from_arg(value) for value in args.fingerprint or [])
+        with connect(get_settings()) as conn:
+            suggestions = suggest_workspace_aliases(conn, alias_uri, fingerprints)
+            registered = None
+            eligible = [
+                item
+                for item in suggestions
+                if not item["already_resolves"] and item["confidence"] >= args.min_confidence
+            ]
+            if args.register_best and len(eligible) == 1:
+                registered = register_workspace_alias(
+                    conn,
+                    workspace_id_or_uri=eligible[0]["workspace_id"],
+                    alias_uri=alias_uri,
+                    reason="fingerprint-match",
+                    metadata={"source": "cli", "confidence": eligible[0]["confidence"]},
+                )
+        print(
+            json.dumps(
+                {
+                    "alias_uri": alias_uri,
+                    "fingerprints": fingerprints,
+                    "suggestions": suggestions,
+                    "registered": registered,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
         return
 
     if args.command == "conflicts":
