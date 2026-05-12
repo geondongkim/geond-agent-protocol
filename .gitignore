@@ -32,6 +32,7 @@ tmp/
 
 # VS Code and OS noise
 .vscode/
+.claude/
 .DS_Store
 Thumbs.db
 

@@ -69,6 +69,7 @@ validation status, and improvement plan.
 - [docs/vscode_chat_storage_structure.md](docs/vscode_chat_storage_structure.md) documents the first VS Code Copilot Chat test bed.
 - [docs/codex_testbed.md](docs/codex_testbed.md) documents the Codex JSONL test bed.
 - [docs/demo.md](docs/demo.md) walks through the current seed, retrieval, code graph, MCP, coordination, and purge demo.
+- [docs/apple_silicon.md](docs/apple_silicon.md) covers native arm64 setup notes for MacBook development.
 - [docs/public_demo_script.md](docs/public_demo_script.md) provides a ready-to-record public demo/GIF script.
 
 ## Quick Start
@@ -103,7 +104,9 @@ Start Postgres with pgvector:
 docker compose up -d postgres
 ```
 
-On Windows, make sure Docker Desktop is running before this step.
+On Windows, make sure Docker Desktop is running before this step. On Apple
+Silicon Macs, use native arm64 tooling and avoid forcing `linux/amd64`; see
+[docs/apple_silicon.md](docs/apple_silicon.md).
 
 Apply the initial schema:
 

@@ -390,6 +390,7 @@ Completed locally:
 - Claude Code fixture parsing and DB import are covered by tests, including source-filtered retrieval and redaction.
 - Expired file and symbol reservations are marked released automatically on conflict paths and manually through `cleanup-reservations`.
 - `examples/python_service` and `docs/demo.md` provide a runnable local demo path.
+- `docs/apple_silicon.md` documents native arm64 setup and Apple Silicon Docker/Python cautions.
 - `docs/assets/geond_demo.gif` and Azure Foundry/APIM samples provide public demo and deployment starting points.
 
 Known implementation notes:

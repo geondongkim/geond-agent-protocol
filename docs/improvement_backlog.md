@@ -59,6 +59,7 @@ organized by product risk rather than by implementation convenience.
 | TypeScript SDK | Many MCP and editor integrations are TypeScript-first. | Add a thin client package for writing memories and querying evidence refs. |
 | Release automation | Public OSS needs predictable artifacts. | GitHub Actions now runs lint, compile, and tests; next add package build, docs link checks, and release notes. |
 | Example integrations | Users learn faster from concrete adapters. | Add examples for Continue, Claude Desktop, VS Code MCP, and a simple CI benchmark job. |
+| Apple Silicon onboarding | Contributors may clone on M-series MacBooks. | Native arm64 setup notes are documented; next validate on real hardware and add macOS CI if needed. |
 
 ## Current Recommendation
 
@@ -90,6 +91,8 @@ uses Postgres full-text plus `pg_trgm` substring matching before hybrid vector
 merge. Git and manifest fingerprints can now suggest a likely alias before a
 moved folder is registered, explain ambiguous or partial matches, and benchmark
 reports resolve aliases as well.
+Apple Silicon setup notes now document native arm64 tooling, Docker Desktop,
+pgvector image behavior, Rosetta pitfalls, and local `.claude/` ignore handling.
 Keyword, vector, and hybrid search now support optional deterministic local
 reranking over expanded candidate pools, and `rerank=api` can call a configured
 HTTP reranker with local-only privacy guards. Structured handoff templates now preserve
