@@ -309,9 +309,9 @@ redaction_findings
 - `changeset_id`
 - `change_file_id`
 - `code_entity_id`
-- `match_type` (`file_path` now, `line_range` later)
+- `match_type` (`line_range` when a unified diff hunk overlaps an indexed symbol, otherwise `file_path`)
 - `confidence`
-- `metadata`
+- `metadata` (`changed_start_line`, `changed_end_line`, hunk metadata, and link source when available)
 
 This table links changed files to indexed symbols so `explain_change` and
 `get_symbol_context` can return concrete evidence about which functions,

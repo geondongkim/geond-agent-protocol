@@ -16,7 +16,7 @@ organized by product risk rather than by implementation convenience.
 
 | Improvement | Why | Candidate implementation |
 | --- | --- | --- |
-| Patch hunk to symbol linking | File-level links are useful but coarse. | Parse unified diff hunks, map changed line ranges to `code_entities.start_line/end_line`, and store `match_type=line_range`. |
+| Patch hunk to symbol linking | File-level links are useful but coarse. | Implemented for unified diff new-line ranges; next tune deletion-only and cross-language edge cases. |
 | Canonical evidence schema | MCP clients should not reverse-engineer each response shape. | Define a shared `EvidenceRef` shape for messages, snapshots, changesets, symbols, and benchmark runs. |
 | Explain-change synthesis | The current tool returns evidence, not a narrative. | Add optional summary generation that cites evidence objects while respecting privacy mode. |
 | Cross-file call edges | Current call edges are strongest inside a single file. | Resolve imports and exported symbols across Python and TypeScript packages. |
@@ -59,7 +59,7 @@ organized by product risk rather than by implementation convenience.
 
 ## Current Recommendation
 
-The next engineering slice should be patch-hunk to symbol linking plus a canonical
-evidence schema. It directly improves the core promise: an agent can ask why a
-symbol changed and receive precise, inspectable evidence instead of a loose file
-or message match.
+The next engineering slice should be a canonical evidence schema plus larger
+line-range validation across Python and TypeScript repositories. Patch-hunk
+linking now exists, so the next quality gain is making every MCP response expose
+the same evidence reference contract.

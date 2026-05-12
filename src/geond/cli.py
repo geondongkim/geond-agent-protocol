@@ -67,6 +67,25 @@ def workspace_name_from_uri(workspace_uri: str) -> str:
     return name or "claude-code-workspace"
 
 
+def changed_files_from_args(
+    file_paths: list[str],
+    status: str,
+    patch_files: list[Path] | None,
+) -> list[dict[str, object]]:
+    patches: list[str | None] = [None] * len(file_paths)
+    if patch_files:
+        if len(patch_files) == 1 and len(file_paths) == 1:
+            patches[0] = patch_files[0].read_text(encoding="utf-8")
+        elif len(patch_files) == len(file_paths):
+            patches = [path.read_text(encoding="utf-8") for path in patch_files]
+        else:
+            raise SystemExit("--patch-file must be provided once or once per --file")
+    return [
+        {"file_path": file_path, "status": status, "patch": patches[index]}
+        for index, file_path in enumerate(file_paths)
+    ]
+
+
 def format_benchmark_result_markdown(result: dict[str, object]) -> str:
     lines = [
         "# Benchmark Result",
@@ -276,6 +295,12 @@ def main() -> None:
     record_changeset_cmd.add_argument("--branch")
     record_changeset_cmd.add_argument("--intent")
     record_changeset_cmd.add_argument("--summary", default="")
+    record_changeset_cmd.add_argument(
+        "--patch-file",
+        type=Path,
+        action="append",
+        help="Unified diff patch file for the changed file; repeat to map by --file order",
+    )
     args = parser.parse_args()
 
     if args.command == "migrate":
@@ -351,7 +376,7 @@ def main() -> None:
             result = record_changeset(
                 conn,
                 workspace_id=workspace_id,
-                files=[{"file_path": file_path, "status": args.status} for file_path in args.files],
+                files=changed_files_from_args(args.files, args.status, args.patch_file),
                 git_commit=args.git_commit,
                 branch=args.branch,
                 intent=args.intent,

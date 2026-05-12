@@ -216,9 +216,14 @@ uv run geond record-changeset \
     --workspace-uri "file:///C:/path/to/project" \
     --workspace-name "my-project" \
     --file "src/service.py" \
+    --patch-file "tmp/service.diff" \
     --intent "explain recent service change" \
     --summary "Updated service behavior after agent review."
 ```
+
+When a unified diff patch is provided, Geond links the changeset to symbols whose
+`start_line`/`end_line` overlap the changed hunk range. Without a patch, it falls
+back to file-path links.
 
 Run the MCP server:
 

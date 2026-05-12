@@ -331,7 +331,8 @@ def explain_change(conn: Connection, file_path: str, limit: int = 10) -> dict[st
                 cf.file_path,
                 cf.status,
                 celnk.match_type,
-                celnk.confidence
+                celnk.confidence,
+                celnk.metadata
             FROM change_files cf
             JOIN changesets c ON c.id = cf.changeset_id
             JOIN change_entities celnk ON celnk.change_file_id = cf.id
@@ -432,6 +433,7 @@ def explain_change(conn: Connection, file_path: str, limit: int = 10) -> dict[st
                 "change_status": row[12],
                 "match_type": row[13],
                 "confidence": row[14],
+                "metadata": row[15],
                 "evidence": {
                     "kind": "code_entity",
                     "entity_id": row[0],
@@ -491,7 +493,8 @@ def get_symbol_context(conn: Connection, symbol: str, limit: int = 10) -> list[d
                     cf.file_path,
                     cf.status,
                     celnk.match_type,
-                    celnk.confidence
+                    celnk.confidence,
+                    celnk.metadata
                 FROM change_entities celnk
                 JOIN changesets c ON c.id = celnk.changeset_id
                 JOIN workspaces w ON w.id = c.workspace_id
@@ -517,6 +520,7 @@ def get_symbol_context(conn: Connection, symbol: str, limit: int = 10) -> list[d
                         "status": row[11],
                         "match_type": row[12],
                         "confidence": row[13],
+                        "metadata": row[14],
                         "evidence": {
                             "kind": "changeset",
                             "changeset_id": row[1],

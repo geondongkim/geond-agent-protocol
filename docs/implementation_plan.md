@@ -306,8 +306,8 @@ Current status:
 
 ## 14. Recommended Immediate Next Steps
 
-1. Add patch-hunk parsing so changesets link to exact changed symbols by line range, not only by file path.
-2. Define a canonical evidence reference schema shared by messages, snapshots, symbols, changesets, and benchmark runs.
+1. Define a canonical evidence reference schema shared by messages, snapshots, symbols, changesets, and benchmark runs.
+2. Validate patch-hunk symbol links on larger Python/TypeScript repositories and tune deletion-only hunk behavior.
 3. Validate the tree-sitter index path on a larger mixed-language repository and tune duplicate import handling.
 4. Run saved benchmark comparisons across OpenAI, Azure OpenAI, APIM gateway, and local providers using the same judgments file.
 5. Expand benchmark reports with token usage and provider billing dimensions when gateways expose them.
@@ -360,6 +360,7 @@ Completed locally:
 - `index-tree-sitter` indexes mixed Python/TypeScript/JavaScript paths and merges syntax-derived structure with AST/regex call-edge fallback.
 - Changesets can be recorded from the CLI and linked to indexed code entities by touched file path.
 - `explain_change` and `get_symbol_context` now return evidence objects and related changeset links for touched symbols.
+- Changesets with unified diff patches now prefer `line_range` symbol links over broad file-path links.
 - Claude Code fixture parsing and DB import are covered by tests, including source-filtered retrieval and redaction.
 - Expired file and symbol reservations are marked released automatically on conflict paths and manually through `cleanup-reservations`.
 - `examples/python_service` and `docs/demo.md` provide a runnable local demo path.
