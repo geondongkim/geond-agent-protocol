@@ -1,166 +1,216 @@
 # Model and Provider Strategy
 
-This document records the MVP model choices and the provider expansion plan.
+This document explains how to choose a text embedding provider for Geond. The
+project now has three verified paths:
 
-## 1. MVP Defaults
+- OpenAI `text-embedding-3-small` as the MVP baseline.
+- Azure OpenAI `text-embedding-3-small` as the managed Azure validation path.
+- A local multilingual SLM embedding benchmark using
+  `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` on a temporary
+  Azure B2s VM.
 
-| Use | Model | Provider | Notes |
-|---|---|---|---|
-| Embeddings | `text-embedding-3-small` | OpenAI | 1536 dimensions, multilingual semantic retrieval |
-| Deep reasoning | `gpt-5.4` | OpenAI | Use for complex architecture, evaluation synthesis, difficult debugging |
-| Balanced coding work | `gpt-5.4-mini` | OpenAI | Use for implementation, summarization, parser improvements |
-| Fast/cheap tasks | `gpt-5.4-nano` | OpenAI | Use for classification, intent tagging, short summaries, batch metadata |
+Geond keeps keyword, vector, and hybrid retrieval modes side by side. Keyword
+mode works without embeddings. Vector and hybrid modes require embeddings.
+Hybrid mode is the default recommendation for real agent memory because it keeps
+exact lexical matches while adding semantic recall across languages and wording
+differences.
 
-The MVP uses OpenAI cloud APIs. Local-only mode is intentionally deferred so the first version can compare keyword retrieval vs vector retrieval quickly.
+## Current Embedding Options
 
-## 2. Privacy Modes To Support Later
+| Option | Provider mode | Verified model | Dimensions | Status |
+| --- | --- | --- | ---: | --- |
+| OpenAI baseline | `openai` | `text-embedding-3-small` | 1536 | MVP default and first successful live baseline. |
+| Azure OpenAI | `azure-openai` | Azure deployment of `text-embedding-3-small` | 1536 | Validated with S0 `GlobalStandard` capacity `7`. |
+| APIM gateway | `gateway` or `openai-compatible` | Routes to an OpenAI-compatible backend | Backend-dependent | Gateway scaffold validated; full APIM policy remains opt-in. |
+| Local SLM | `local-openai-compatible` or `ollama` for serving; VM benchmark used Python directly | `paraphrase-multilingual-MiniLM-L12-v2` | 384 | Validated for Korean/English retrieval probes on B2s VM. |
+| Disabled | `none` or `disabled` | None | N/A | Keyword retrieval only. |
 
-| Mode | Meaning | MVP Status |
-|---|---|---|
-| `cloud-ok` | Raw or redacted text can be sent to configured cloud APIs | MVP default for embedding experiments |
-| `redacted-cloud` | Redaction runs before any external API call | Next privacy milestone |
-| `local-only` | No text leaves the machine; local embeddings/LLMs only | Later milestone |
+The initial Postgres schema uses `embedding vector(1536)`, which matches
+`text-embedding-3-small`. Local models with different dimensions need a schema
+migration or a separate vector column strategy before production use.
 
-The code should keep provider boundaries explicit so these modes can be enforced centrally.
+## Comparison Matrix
 
-## 3. OpenAI Configuration
+| Criterion | OpenAI `text-embedding-3-small` | Azure OpenAI service | Local multilingual SLM |
+| --- | --- | --- | --- |
+| Main audience | Fast MVPs, OSS demos, provider-neutral development | Teams already on Azure, regulated environments, enterprise identity | Local-first users, offline work, private codebases, cost-sensitive experiments |
+| Data use and training posture | Text leaves the machine and is sent to OpenAI API; use redaction before calls | Text leaves the machine and enters the configured Azure region/resource boundary; supports enterprise controls and Entra ID | Text stays on the machine or private VM when served locally; strongest default for sensitive memory |
+| Security controls | API key, organization/project controls, local `.env` hygiene | API key or Entra ID, RBAC, managed identity, APIM, Key Vault, private networking options | OS/process isolation, local network controls, no cloud model API key required |
+| Model updates | Managed by OpenAI model lifecycle | Managed through Azure model catalog and deployment versions | Controlled by pinned package/model artifact; user must update intentionally |
+| Speed | Usually fast for batch embedding, network-dependent | Similar model quality, region and quota dependent; capacity matters | CPU on small VM is slower to load but predictable after warm-up; GPU can improve throughput |
+| Ecosystem | Broad SDK/docs support and strong baseline compatibility | Azure governance, APIM, Monitor, Cost Management, Foundry integration path | Hugging Face, sentence-transformers, Ollama, llama.cpp, TEI ecosystem |
+| Reliability risks | External API availability, rate limits, key management | Azure quota/capacity, deployment naming, APIM policy complexity | Model download time, local runtime setup, dimension mismatch, CPU/RAM constraints |
+| Best retrieval mode | Hybrid | Hybrid | Hybrid after local vector serving is configured; keyword fallback remains useful |
 
-The `.env` file should contain:
+## Environment Setup Guide
+
+### OpenAI MVP Baseline
+
+Use this when you want the shortest path to vector and hybrid retrieval.
 
 ```env
+GEOND_PRIVACY_MODE=redacted-cloud
 GEOND_EMBEDDING_PROVIDER=openai
 GEOND_EMBEDDING_MODEL=text-embedding-3-small
+GEOND_EMBEDDING_API_KEY=<openai-api-key>
 GEOND_EMBEDDING_DIMENSIONS=1536
-GEOND_EMBEDDING_API_KEY=...
+GEOND_EMBEDDING_MAX_CHARS=3000
 ```
 
-`GEOND_EMBEDDING_BASE_URL` should normally be left empty for OpenAI. The OpenAI SDK then uses its default endpoint, currently `https://api.openai.com/v1`. Only set a base URL for OpenAI-compatible gateways or non-default hosts.
+Recommended for:
 
-If chat-model calls are added during implementation or verification, set:
+- first-time setup
+- OSS demo recording
+- benchmark baselines
+- multilingual semantic retrieval when cloud calls are acceptable
+
+### Azure OpenAI Service
+
+Use this when you need Azure governance, regional deployment control, or Entra ID.
 
 ```env
-OPENAI_API_KEY=...
-GEOND_LLM_MODEL_REASONING=gpt-5.4
-GEOND_LLM_MODEL_BALANCED=gpt-5.4-mini
-GEOND_LLM_MODEL_FAST=gpt-5.4-nano
+GEOND_PRIVACY_MODE=redacted-cloud
+GEOND_EMBEDDING_PROVIDER=azure-openai
+GEOND_AZURE_OPENAI_ENDPOINT=https://<resource>.openai.azure.com
+GEOND_AZURE_OPENAI_AUTH_MODE=api-key
+GEOND_AZURE_OPENAI_API_KEY=<azure-openai-key>
+GEOND_AZURE_OPENAI_API_VERSION=2024-10-21
+GEOND_AZURE_OPENAI_EMBEDDING_DEPLOYMENT=text-embedding-small-prod
+GEOND_EMBEDDING_DIMENSIONS=1536
 ```
 
-For convenience, `OPENAI_API_KEY` may use the same value as `GEOND_EMBEDDING_API_KEY` when the same OpenAI account/project is used.
+For production, prefer Entra ID over API keys:
 
-## 4. Multilingual Requirements
-
-The repository and docs can stay English-first for public distribution, but stored development memory must support multilingual content.
-
-Requirements:
-
-- Read JSON/JSONL/Markdown as UTF-8.
-- Emit JSON with `ensure_ascii=False` where CLI output is intended for humans.
-- Avoid lossy normalization of Korean, Japanese, Chinese, accented Latin text, emoji, or mixed-language code comments.
-- Use multilingual-capable embedding models.
-- Keep keyword search as a fallback, but expect lexical search to be weaker for languages without whitespace tokenization.
-- Prefer vector retrieval for cross-lingual matching, for example Korean chat questions retrieving English code comments or docs.
-
-`text-embedding-3-small` is the MVP embedding model because it gives strong multilingual semantic retrieval at a practical cost and has 1536-dimensional vectors that match the initial schema.
-
-## 5. Provider Expansion Plan
-
-### OpenAI
-
-First-class MVP provider.
-
-Use cases:
-
-- embeddings
-- future summaries
-- future intent classification
-- future evaluation generation
-
-### Azure OpenAI / Microsoft Foundry
-
-Expected future provider.
-
-Information needed later:
-
-- Azure/OpenAI endpoint
-- deployment names for embedding and chat models
-- API version
-- auth mode: API key or Entra ID
-- region and data boundary requirements
-- model dimensions
-
-Implementation note: add a dedicated provider adapter instead of overloading the OpenAI default path, because Azure deployment names and API versions differ from vanilla OpenAI.
-
-### Local Providers
-
-Expected later provider family.
-
-Candidates:
-
-- Ollama embeddings
-- sentence-transformers
-- llama.cpp-compatible embedding endpoint
-- local OpenAI-compatible gateway
-
-Local providers matter for `local-only` privacy mode and offline development, but they should come after the OpenAI MVP comparison baseline.
-
-### Other Hosted Providers To Evaluate Later
-
-| Provider | Why consider it |
-|---|---|
-| Cohere Embed | Strong multilingual/business retrieval options |
-| Voyage AI | Strong retrieval-oriented embeddings, good code/search options |
-| Jina AI embeddings | Multilingual and open embedding model ecosystem |
-| Google Gemini embeddings | Useful if users already run Google AI infrastructure |
-| Anthropic | No general embeddings focus today, but relevant for MCP/client ecosystem |
-| Hugging Face Inference / TEI | Good path for self-hostable or open embeddings |
-
-## 6. Model Comparison Plan
-
-The project should eventually compare providers and models on the same stored development memory.
-
-Minimum benchmark set:
-
-- Korean query -> English code/comment retrieval
-- English query -> Korean chat/session retrieval
-- “Why did this file change?” over chat + file snapshot evidence
-- Similar bug retrieval across sessions
-- Symbol-related retrieval where AST context should improve ranking
-- Cost and latency per 1,000 messages embedded
-
-Metrics:
-
-- recall@k
-- MRR
-- nDCG@k
-- answer faithfulness from cited evidence
-- embedding cost
-- indexing latency
-- query latency
-
-## 7. Current Recommendation
-
-For the MVP:
-
-1. Use OpenAI `text-embedding-3-small` immediately.
-2. Keep `keyword`, `vector`, and `hybrid` retrieval modes side-by-side.
-3. Build a small benchmark from imported Copilot Chat sessions.
-4. Add Azure OpenAI after the OpenAI baseline works.
-5. Add local embeddings after redaction and provider boundaries are stable.
-
-## 8. MVP Verification Note
-
-On the first imported VS Code Copilot Chat session, a Korean query was tested across retrieval modes:
-
-```text
-왜 채팅 세션 복원이 안됐어?
+```env
+GEOND_PRIVACY_MODE=redacted-cloud
+GEOND_EMBEDDING_PROVIDER=azure-openai
+GEOND_AZURE_OPENAI_ENDPOINT=https://<resource>.openai.azure.com
+GEOND_AZURE_OPENAI_AUTH_MODE=entra-id
+GEOND_AZURE_OPENAI_EMBEDDING_DEPLOYMENT=text-embedding-small-prod
+GEOND_EMBEDDING_DIMENSIONS=1536
 ```
 
-Observed result:
+Recommended for:
 
-| Mode | Result |
-|---|---|
-| `keyword` | No result for the exact phrasing |
-| `vector` | Retrieved the relevant Korean chat session about missing/restored chat records |
-| `hybrid` | Retrieved the same vector-backed evidence while preserving keyword mode for exact matches |
+- enterprise Azure users
+- APIM gateway experiments
+- managed identity and RBAC hardening
+- cost tracking with Azure Cost Management
+- regional compliance requirements
 
-This confirms why embeddings are part of the MVP: multilingual semantic retrieval catches related context that lexical search misses.
+### Gateway Or APIM Mode
+
+Use this when model calls should pass through a policy layer.
+
+```env
+GEOND_PRIVACY_MODE=redacted-cloud
+GEOND_EMBEDDING_PROVIDER=gateway
+GEOND_EMBEDDING_BASE_URL=https://<gateway-host>/v1
+GEOND_EMBEDDING_API_KEY=<gateway-key>
+GEOND_EMBEDDING_MODEL=text-embedding-3-small
+GEOND_EMBEDDING_DIMENSIONS=1536
+```
+
+Recommended for:
+
+- central rate limiting
+- workspace or agent headers
+- audit logging
+- policy-based routing between deployments
+- secret redaction before forwarding
+
+### Local-Only Mode
+
+Use this when development memory should not leave the machine.
+
+```env
+GEOND_PRIVACY_MODE=local-only
+GEOND_EMBEDDING_PROVIDER=local-openai-compatible
+GEOND_EMBEDDING_BASE_URL=http://localhost:1234/v1
+GEOND_EMBEDDING_API_KEY=
+GEOND_EMBEDDING_MODEL=<local-embedding-model>
+GEOND_EMBEDDING_DIMENSIONS=<model-dimensions>
+```
+
+For Ollama-compatible setups:
+
+```env
+GEOND_PRIVACY_MODE=local-only
+GEOND_EMBEDDING_PROVIDER=ollama
+GEOND_EMBEDDING_MODEL=nomic-embed-text
+GEOND_EMBEDDING_DIMENSIONS=768
+```
+
+Recommended for:
+
+- private codebases
+- offline demos
+- teams that cannot send development memory to a cloud model
+- local regression benchmarks
+
+The VM validation used MiniLM directly rather than as an OpenAI-compatible
+server. Its result is still useful: it proved a small multilingual embedding
+model can retrieve across Korean and English probes, with observed MRR `0.8333`
+in the sanitized Azure validation run.
+
+## Selection Guide
+
+| Situation | Recommended path | Why |
+| --- | --- | --- |
+| You want the fastest MVP setup | OpenAI baseline | Minimal infrastructure and matches the current schema dimensions. |
+| You are already on Azure | Azure OpenAI | Fits enterprise identity, APIM, monitoring, and cost workflows. |
+| You need gateway governance | APIM or another OpenAI-compatible gateway | Adds rate limits, routing, and centralized audit controls. |
+| You cannot send memory off-device | Local-only SLM | Keeps imported chat, diffs, and snippets inside the local/private environment. |
+| You are comparing retrieval quality | Run all providers with the same judgments file | Makes recall, MRR, nDCG, latency, and cost comparable. |
+| You need multilingual recall | Prefer vector or hybrid modes | Korean queries can retrieve English comments/docs better than keyword search alone. |
+
+## Performance And Reliability Notes
+
+- Keep `keyword` mode available for exact file names, function names, and fallback
+  searches without credentials.
+- Use `hybrid` mode for agent-facing retrieval because it combines lexical
+  precision with semantic recall.
+- Record provider, model, dimensions, content hash, and benchmark label for every
+  run so results remain comparable.
+- Azure OpenAI capacity matters. The first capacity-1 smoke hit request-rate
+  limits, so the script now uses capacity `7` for the small validation run.
+- Local SLMs may spend more time on first model load than on encoding. Record
+  load time and encode time separately.
+- Windows console encoding can mangle multilingual output. Validation artifacts
+  should write UTF-8 files or base64-wrapped JSON for VM command output.
+- Provider/model dimension mismatches should fail early. The current schema is
+  safest with 1536-dimensional providers until migrations are added.
+
+## Benchmark Commands
+
+Keyword baseline without credentials:
+
+```bash
+uv run geond benchmark-search app_context build_answer --mode keyword --repeat 5
+```
+
+Hybrid benchmark after configuring a provider:
+
+```bash
+uv run geond benchmark-search app_context "왜 service.py 파일이 바뀌었어?" \
+    --mode hybrid \
+    --repeat 3 \
+    --judgments examples/benchmarks/search_judgments.json \
+    --save \
+    --label provider-hybrid
+```
+
+Compare saved runs:
+
+```bash
+uv run geond benchmark-report --format markdown
+```
+
+## Current Recommendation
+
+For public OSS demos, keep OpenAI `text-embedding-3-small` as the baseline and
+show local `keyword`, cloud `vector`, and `hybrid` retrieval side by side. For
+Azure-focused validation, use Azure OpenAI behind the `azure-openai` provider and
+record capacity, region, rate limits, and cleanup status. For privacy-sensitive
+work, use `local-only` and a local embedding server, then compare quality against
+the OpenAI/Azure baselines with the same judgments file.

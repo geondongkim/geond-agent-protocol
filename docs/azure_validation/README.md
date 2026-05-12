@@ -4,6 +4,10 @@ This directory stores sanitized evidence from temporary Azure validation runs.
 
 Each run should use a single tagged resource group and must delete that group at the end of the run. Public artifacts should not include subscription IDs, tenant IDs, access keys, tokens, or raw request payloads that contain secrets.
 
+Latest validation evidence:
+
+![Geond Azure validation](20260512-combined/geond_azure_validation.gif)
+
 Typical files:
 
 - `summary.json`: resource names, SKUs, durations, step statuses, and cleanup status

@@ -2,6 +2,8 @@
 
 A shared memory and code-graph protocol for coding agents.
 
+> **About the name:** Geond is inspired by the Old English root of "beyond". We pronounce it modernly as `/dʒiːɒnd/` ("Jee-ond"). The project helps coding agents go geond their stateless prompt limits by connecting LLMs to local, inspectable development memory, code graphs, and handoff context.
+
 `geond-agent-protocol` is an early-stage open source project for making coding agents share durable development context: chat history, code changes, symbol graphs, decisions, and handoff notes. The goal is not to replace Copilot, Codex, Continue, Cursor, or CLI agents. The goal is to give them a common memory layer they can read from and write to through MCP and lightweight adapters.
 
 ## Why
@@ -55,7 +57,7 @@ validation status, and improvement plan.
 - [docs/architecture.md](docs/architecture.md) describes the proposed system architecture and data model.
 - [docs/implementation_plan.md](docs/implementation_plan.md) breaks the work into MVP phases and acceptance criteria.
 - [docs/embedding_configuration.md](docs/embedding_configuration.md) explains embedding provider choices and what secrets/configuration are needed.
-- [docs/model_provider_strategy.md](docs/model_provider_strategy.md) records the OpenAI MVP choices and future provider comparison plan.
+- [docs/model_provider_strategy.md](docs/model_provider_strategy.md) compares OpenAI, Azure OpenAI, and local SLM embedding options.
 - [docs/provider_extensions.md](docs/provider_extensions.md) covers OpenAI, Azure OpenAI, gateway, and local embedding modes.
 - [docs/deployment_guide.md](docs/deployment_guide.md) explains Azure CLI and Azure Portal deployment flows with AWS/GCP resource analogues.
 - [docs/mcp_client_config.md](docs/mcp_client_config.md) provides Claude Desktop, Continue, and VS Code MCP client examples.
@@ -270,6 +272,10 @@ Run a temporary Azure validation smoke test:
 The smoke script creates a tagged temporary resource group, validates Azure OpenAI embeddings, APIM Consumption gateway scaffolding, and a B2s VM multilingual embedding benchmark, then deletes the resource group. Sanitized evidence from the latest validation is in [docs/azure_validation/20260512-combined](docs/azure_validation/20260512-combined).
 For a step-by-step CLI and Azure Portal walkthrough, see [docs/deployment_guide.md](docs/deployment_guide.md).
 
+Azure validation evidence:
+
+![Geond Azure validation](docs/azure_validation/20260512-combined/geond_azure_validation.gif)
+
 Delete a workspace and its cascaded local data:
 
 ```bash
@@ -294,7 +300,7 @@ uv run geond benchmark-search "app_context" "build_answer" \
 uv run geond benchmark-report --workspace-uri "file:///sample/geond" --format markdown
 ```
 
-Demo asset:
+Local protocol demo asset:
 
 ![Geond demo](docs/assets/geond_demo.gif)
 

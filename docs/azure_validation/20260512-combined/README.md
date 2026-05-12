@@ -2,6 +2,8 @@
 
 This directory contains sanitized evidence from temporary Azure smoke runs for `geond-agent-protocol`.
 
+![Geond Azure validation](geond_azure_validation.gif)
+
 ## What was validated
 
 | Area | Result |

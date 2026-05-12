@@ -264,6 +264,8 @@ Status update:
 - [x] Static public demo GIF generated for the local protocol walkthrough.
 - [x] Temporary Azure validation smoke added for Azure OpenAI, APIM Consumption, and B2s VM SLM benchmark.
 - [x] Sanitized Azure evidence and GIF stored in `docs/azure_validation/20260512-combined`.
+- [x] Azure validation GIF embedded in README and Azure validation docs as evidence, while the local demo GIF remains the main protocol walkthrough.
+- [x] Embedding provider strategy refreshed with OpenAI, Azure OpenAI, gateway, and local SLM selection guidance.
 
 Azure validation notes:
 

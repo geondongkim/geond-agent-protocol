@@ -2,6 +2,9 @@
 
 Geond can run without embeddings, but the MVP intentionally uses embeddings so keyword-only retrieval can be compared with vector and hybrid retrieval.
 
+For provider selection tradeoffs across OpenAI, Azure OpenAI, gateway, and local
+SLM embeddings, see [model_provider_strategy.md](model_provider_strategy.md).
+
 ## 1. What I Need From You
 
 You do not need to paste secrets into chat. Put them in a local `.env` file copied from `.env.example`.
@@ -183,7 +186,8 @@ That matches common 1536-dimensional embedding models. If you choose a different
 For the next implementation step:
 
 1. Use OpenAI `text-embedding-3-small` for the first baseline.
-2. Compare `keyword`, `vector`, and `hybrid` retrieval on the same imported sessions.
-3. Add redaction tests.
-4. Benchmark OpenAI, Azure OpenAI, gateway, and local providers on the same fixture queries.
-5. Expand provider comparison reports with quality metrics, cost, and token accounting.
+2. Use Azure OpenAI when you need Azure governance, APIM, Entra ID, or regional controls.
+3. Use `local-only` with a local embedding server when development memory must not leave the machine.
+4. Compare `keyword`, `vector`, and `hybrid` retrieval on the same imported sessions.
+5. Benchmark OpenAI, Azure OpenAI, gateway, and local providers on the same fixture queries.
+6. Expand provider comparison reports with quality metrics, cost, and token accounting.
