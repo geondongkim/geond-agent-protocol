@@ -10,7 +10,7 @@ from geond.code_graph.python_indexer import index_python_file
 from geond.config import get_settings
 from geond.db import connect, run_schema_file
 from geond.storage.benchmark import save_benchmark_run
-from geond.storage.code_graph import store_code_index
+from geond.storage.code_graph import store_code_index, store_lsp_references
 from geond.storage.context_review import review_workspace_context
 from geond.storage.repository import (
     cleanup_expired_reservations_for_workspace,
@@ -51,6 +51,9 @@ def test_symbol_resource_and_file_reservations(tmp_path: Path) -> None:
         """
 def build_answer(prompt):
     return prompt.strip()
+
+def use_answer(prompt):
+    return build_answer(prompt)
 """.strip(),
         encoding="utf-8",
     )
@@ -74,6 +77,18 @@ def build_answer(prompt):
         )
         try:
             store_code_index(conn, workspace_id, [index_python_file(source, tmp_path)])
+            lsp_references = store_lsp_references(
+                conn,
+                workspace_id,
+                [
+                    {
+                        "target_qualified_name": "service.build_answer",
+                        "source_qualified_name": "service.use_answer",
+                        "reference": {"file_path": "service.py", "start_line": 4},
+                        "provider": "pytest-lsp",
+                    }
+                ],
+            )
             symbol = get_symbol_resource(conn, "build_answer")
             first = reserve_files(
                 conn,
@@ -202,6 +217,14 @@ def build_answer(prompt):
             assert any(
                 entity["qualified_name"] == "service.build_answer" for entity in symbol["entities"]
             )
+            build_answer_entity = next(
+                entity
+                for entity in symbol["entities"]
+                if entity["qualified_name"] == "service.build_answer"
+            )
+            assert lsp_references["references"] == 1
+            assert build_answer_entity["references"][0]["qualified_name"] == "service.use_answer"
+            assert build_answer_entity["references"][0]["edge"]["metadata"]["source"] == "lsp"
             assert first["conflicts"] == []
             assert second["conflicts"][0]["agent_name"] == "agent-a"
             assert symbol_first["conflicts"] == []

@@ -32,7 +32,7 @@ from geond.storage.benchmark import (
     load_judgments,
     save_benchmark_run,
 )
-from geond.storage.code_graph import store_code_index
+from geond.storage.code_graph import store_code_index, store_lsp_references
 from geond.storage.context_review import review_workspace_context
 from geond.storage.embeddings import embed_pending_messages, embedding_stats
 from geond.storage.maintenance import purge_workspace, seed_sample_workspace
@@ -248,6 +248,14 @@ def main() -> None:
     index_tree_sitter.add_argument("--workspace-uri", required=True)
     index_tree_sitter.add_argument("--workspace-name", required=True)
     index_tree_sitter.add_argument("--root", type=Path)
+
+    import_lsp = subparsers.add_parser(
+        "import-lsp-references",
+        help="Import LSP reference edges from a JSON file",
+    )
+    import_lsp.add_argument("workspace_id")
+    import_lsp.add_argument("path", type=Path)
+    import_lsp.add_argument("--append", action="store_true")
 
     seed_sample = subparsers.add_parser(
         "seed-sample", help="Insert a small sample workspace and session"
@@ -785,6 +793,22 @@ def main() -> None:
                 indent=2,
             )
         )
+        return
+
+    if args.command == "import-lsp-references":
+        data = json.loads(args.path.read_text(encoding="utf-8"))
+        references = data.get("references") if isinstance(data, dict) else data
+        if not isinstance(references, list):
+            raise SystemExit("LSP reference JSON must be a list or an object with references")
+        with connect(get_settings()) as conn:
+            workspace_id = require_workspace_id(conn, args.workspace_id)
+            result = store_lsp_references(
+                conn,
+                workspace_id=workspace_id,
+                references=references,
+                replace=not args.append,
+            )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
         return
 
     if args.command == "seed-sample":

@@ -269,6 +269,17 @@ indexed in the same workspace. TypeScript/JavaScript default imports also
 resolve to named default-export functions/classes when Geond can identify them,
 and re-export barrel modules are followed for named, default-as, and unambiguous
 wildcard exports.
+Editor or client integrations can also import LSP reference results into the
+same code graph without requiring Geond to host a language server:
+
+```bash
+uv run geond import-lsp-references <workspace-id> references.json
+```
+
+The JSON input can be a list or `{ "references": [...] }`. Each reference may
+identify a `target_qualified_name` and either a `source_qualified_name` or a
+`reference.file_path` plus `reference.start_line`; imported edges are stored as
+`references` with `metadata.source="lsp"` and surface in `get_symbol_context`.
 
 Record a changeset and link it to indexed code entities:
 

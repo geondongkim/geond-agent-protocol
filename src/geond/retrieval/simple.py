@@ -1132,6 +1132,9 @@ def get_symbol_context(conn: Connection, symbol: str, limit: int = 10) -> list[d
         callees_by_entity: dict[str, list[dict[str, Any]]] = {
             entity_id: [] for entity_id in entity_ids
         }
+        references_by_entity: dict[str, list[dict[str, Any]]] = {
+            entity_id: [] for entity_id in entity_ids
+        }
         if entity_ids:
             cur.execute(
                 """
@@ -1225,7 +1228,7 @@ def get_symbol_context(conn: Connection, symbol: str, limit: int = 10) -> list[d
                 FROM code_edges e
                 JOIN code_entities source ON source.id = e.source_entity_id
                 JOIN code_entities target ON target.id = e.target_entity_id
-                WHERE e.edge_type = 'calls'
+                WHERE e.edge_type IN ('calls', 'references')
                   AND (
                       e.source_entity_id = ANY(%s::uuid[])
                       OR e.target_entity_id = ANY(%s::uuid[])
@@ -1273,10 +1276,12 @@ def get_symbol_context(conn: Connection, symbol: str, limit: int = 10) -> list[d
                     "start_line": row[14],
                     "end_line": row[15],
                 }
-                if row[2] in callees_by_entity:
+                if row[16] == "calls" and row[2] in callees_by_entity:
                     callees_by_entity[row[2]].append({**target, "edge": edge})
-                if row[9] in callers_by_entity:
+                if row[16] == "calls" and row[9] in callers_by_entity:
                     callers_by_entity[row[9]].append({**source, "edge": edge})
+                if row[16] == "references" and row[9] in references_by_entity:
+                    references_by_entity[row[9]].append({**source, "edge": edge})
 
     return [
         {
@@ -1293,6 +1298,7 @@ def get_symbol_context(conn: Connection, symbol: str, limit: int = 10) -> list[d
             "related_changesets": changesets_by_entity.get(row[0], []),
             "callers": callers_by_entity.get(row[0], []),
             "callees": callees_by_entity.get(row[0], []),
+            "references": references_by_entity.get(row[0], []),
             "evidence": evidence_ref(
                 "code_entity",
                 target_id=row[0],

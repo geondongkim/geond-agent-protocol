@@ -166,7 +166,9 @@ MVP parsing strategy:
   syntax. The TypeScript/JavaScript fallback infers function, class, method,
   and module line spans so diff hunks can link to body changes, not only
   declaration lines.
-- Later add LSP-based references when available.
+- Import LSP reference results from editor or client integrations when
+  available. These imports store `references` edges with `metadata.source="lsp"`
+  while keeping regex/tree-sitter indexing as deterministic fallbacks.
 
 Entity examples:
 
@@ -211,7 +213,8 @@ URLs.
 
 Retrieval should return structured context, not only text chunks.
 Symbol context includes related changesets plus caller/callee relationships from
-`calls` edges when the code graph can resolve them.
+`calls` edges when the code graph can resolve them, and LSP-backed `references`
+edges when an editor or MCP client imports provider results.
 Change explanations and changeset detail records include `call_impact`, allowing
 deterministic narratives to cite upstream callers and downstream callees.
 Workspace-scoped retrieval resolves registered `workspace_aliases`, so a moved

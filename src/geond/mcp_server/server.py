@@ -13,6 +13,7 @@ from geond.retrieval.simple import get_symbol_context as get_symbol_context_quer
 from geond.retrieval.simple import hybrid_search_dev_memory as hybrid_search_dev_memory_query
 from geond.retrieval.simple import search_dev_memory as search_dev_memory_query
 from geond.retrieval.simple import vector_search_dev_memory as vector_search_dev_memory_query
+from geond.storage.code_graph import store_lsp_references as store_lsp_references_row
 from geond.storage.context_review import review_workspace_context as review_workspace_context_row
 from geond.storage.repository import close_handoff_summary as close_handoff_summary_row
 from geond.storage.repository import (
@@ -432,6 +433,22 @@ def get_symbol_conflicts(
     """Return active symbol reservations that would conflict with new work."""
     with connect(get_settings()) as conn:
         return list_active_symbol_reservations(conn, workspace_id, symbols)
+
+
+@mcp.tool()
+def record_lsp_references(
+    workspace_id: str,
+    references: list[dict[str, Any]],
+    replace: bool = True,
+) -> dict[str, Any]:
+    """Import LSP-backed reference edges into the code graph."""
+    with connect(get_settings()) as conn:
+        return store_lsp_references_row(
+            conn,
+            workspace_id=workspace_id,
+            references=references,
+            replace=replace,
+        )
 
 
 @mcp.tool()

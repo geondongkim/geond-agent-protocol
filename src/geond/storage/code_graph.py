@@ -230,6 +230,158 @@ def store_code_index(
     }
 
 
+def store_lsp_references(
+    conn: Connection,
+    workspace_id: str,
+    references: list[dict[str, Any]],
+    replace: bool = True,
+) -> dict[str, Any]:
+    inserted = 0
+    skipped: list[dict[str, Any]] = []
+    with conn.cursor() as cur:
+        if replace:
+            cur.execute(
+                """
+                DELETE FROM code_edges
+                WHERE workspace_id = %s
+                  AND edge_type = 'references'
+                  AND metadata->>'source' = 'lsp'
+                """,
+                (workspace_id,),
+            )
+        for index, item in enumerate(references):
+            if not isinstance(item, dict):
+                skipped.append({"index": index, "reason": "invalid_reference_shape"})
+                continue
+            target_id = resolve_lsp_target_entity(cur, workspace_id, item)
+            source_id = resolve_lsp_source_entity(cur, workspace_id, item)
+            if not target_id or not source_id:
+                skipped.append(
+                    {
+                        "index": index,
+                        "reason": "unresolved_source_or_target",
+                        "source_resolved": bool(source_id),
+                        "target_resolved": bool(target_id),
+                    }
+                )
+                continue
+            cur.execute(
+                """
+                INSERT INTO code_edges (
+                    workspace_id,
+                    source_entity_id,
+                    target_entity_id,
+                    edge_type,
+                    confidence,
+                    metadata
+                )
+                VALUES (%s, %s, %s, 'references', %s, %s)
+                """,
+                (
+                    workspace_id,
+                    source_id,
+                    target_id,
+                    lsp_reference_confidence(item),
+                    Jsonb(lsp_reference_metadata(item)),
+                ),
+            )
+            inserted += 1
+    conn.commit()
+    return {"references": inserted, "skipped": skipped, "replace": replace}
+
+
+def resolve_lsp_target_entity(cur: Any, workspace_id: str, item: dict[str, Any]) -> str | None:
+    qualified_name = item.get("target_qualified_name") or item.get("qualified_name")
+    if isinstance(qualified_name, str) and qualified_name.strip():
+        return entity_id_by_qualified_name(cur, workspace_id, qualified_name.strip())
+    target = item.get("target") if isinstance(item.get("target"), dict) else item
+    return enclosing_entity_id(
+        cur,
+        workspace_id,
+        str(target.get("file_path") or target.get("target_file_path") or ""),
+        target.get("start_line") or target.get("target_start_line"),
+    )
+
+
+def resolve_lsp_source_entity(cur: Any, workspace_id: str, item: dict[str, Any]) -> str | None:
+    qualified_name = item.get("source_qualified_name")
+    if isinstance(qualified_name, str) and qualified_name.strip():
+        return entity_id_by_qualified_name(cur, workspace_id, qualified_name.strip())
+    reference = item.get("reference") if isinstance(item.get("reference"), dict) else item
+    return enclosing_entity_id(
+        cur,
+        workspace_id,
+        str(reference.get("file_path") or reference.get("source_file_path") or ""),
+        reference.get("start_line") or reference.get("line") or reference.get("source_start_line"),
+    )
+
+
+def entity_id_by_qualified_name(cur: Any, workspace_id: str, qualified_name: str) -> str | None:
+    cur.execute(
+        """
+        SELECT id::text
+        FROM code_entities
+        WHERE workspace_id = %s
+          AND qualified_name = %s
+        ORDER BY created_at DESC
+        LIMIT 1
+        """,
+        (workspace_id, qualified_name),
+    )
+    row = cur.fetchone()
+    return row[0] if row else None
+
+
+def enclosing_entity_id(
+    cur: Any,
+    workspace_id: str,
+    file_path: str,
+    line: Any,
+) -> str | None:
+    if not file_path or line is None:
+        return None
+    try:
+        line_number = int(line)
+    except (TypeError, ValueError):
+        return None
+    cur.execute(
+        """
+        SELECT id::text
+        FROM code_entities
+        WHERE workspace_id = %s
+          AND file_path = %s
+          AND start_line <= %s
+          AND end_line >= %s
+        ORDER BY (end_line - start_line) ASC NULLS LAST, created_at DESC
+        LIMIT 1
+        """,
+        (workspace_id, file_path, line_number, line_number),
+    )
+    row = cur.fetchone()
+    return row[0] if row else None
+
+
+def lsp_reference_metadata(item: dict[str, Any]) -> dict[str, Any]:
+    metadata = dict(item.get("metadata") or {}) if isinstance(item.get("metadata"), dict) else {}
+    metadata["source"] = "lsp"
+    provider = item.get("provider") or metadata.get("provider")
+    if provider:
+        metadata["provider"] = provider
+    metadata["reference"] = item.get("reference") or {
+        key: item.get(key)
+        for key in ("file_path", "start_line", "end_line", "line", "character")
+        if key in item
+    }
+    return metadata
+
+
+def lsp_reference_confidence(item: dict[str, Any]) -> float:
+    try:
+        return float(item.get("confidence") or 0.95)
+    except (TypeError, ValueError):
+        return 0.95
+
+
 def add_reexport_metadata(
     reexport_qualified_name: str,
     metadata: dict[str, Any],

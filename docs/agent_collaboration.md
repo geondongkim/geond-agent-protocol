@@ -132,11 +132,9 @@ The two flows reinforce each other.
 
 ## Open follow-ups
 
-- **LSP-backed references** so code graph evidence can use editor-grade
-  reference providers when available, with the current regex/tree-sitter paths
-  remaining as deterministic fallbacks.
-- **Reservation arbitration policy** (advisory / strict / override) so
-  geond can do more than report conflicts.
+- **LSP-backed collectors** for specific editors and languages. Geond now has a
+  storage/API boundary for imported LSP reference edges; follow-up work should
+  add concrete VS Code, Continue, or CI collectors that feed that boundary.
 - **Agent-side conventions** documented per testbed (Copilot Chat,
   Codex, Claude Code) so each agent records changesets and handoffs
   consistently. See [`docs/agent_testbeds.md`](agent_testbeds.md).

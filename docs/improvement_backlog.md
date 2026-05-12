@@ -72,7 +72,10 @@ calls through relative, named, namespace, and absolute imports, storing `calls`
 edges with `resolution=import_qualified_name_match`; `get_symbol_context`
 returns those edges as `callers` and `callees`, and default imports plus
 re-export barrel modules now resolve to source functions/classes when the target
-module is indexed.
+module is indexed. Geond also accepts editor-provided LSP reference imports via
+the CLI/MCP surface and exposes those `references` edges in symbol context. A
+good next slice is adding concrete collectors for VS Code or another MCP client
+and covering that contract with fixtures.
 Change narratives cite `code_edge` evidence when touched symbols have call
 impact. Changeset detail lookup rejects ambiguous git commit prefixes with
 explicit candidate matches. Reservation renewal is available for file and symbol

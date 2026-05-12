@@ -30,7 +30,8 @@ Use [examples/mcp_clients/continue_config.yaml](../examples/mcp_clients/continue
 - `search_dev_memory`: retrieve prior session evidence. Pass `rerank="local"` or
     `rerank="api"` and optional `candidate_limit` to rerank keyword/vector/hybrid
     candidates locally or through `GEOND_RERANK_URL`.
-- `get_symbol_context`: inspect indexed code graph entities, related changesets, and caller/callee `calls` edges.
+- `get_symbol_context`: inspect indexed code graph entities, related changesets, caller/callee `calls` edges, and imported LSP-backed `references` edges.
+- `record_lsp_references`: import editor-provided reference edges into the code graph. Pass `replace=false` to append instead of replacing prior LSP reference imports for the workspace.
 - `register_workspace_alias`: attach a moved or renamed folder URI to an existing workspace.
 - `list_workspace_aliases`: inspect registered workspace aliases.
 - `record_workspace_fingerprints`: store durable workspace identity hints such as sanitized git remote, first commit, manifest hashes, and hashed package names.
