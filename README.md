@@ -284,6 +284,12 @@ The same command also accepts VS Code/LSP `Location[]`-style payloads with
 `uri` and `range` fields. Pass `--target-qualified-name`, `--workspace-root`,
 and `--provider` when those values are not embedded in the payload; see
 `examples/lsp_references/vscode_locations.json` for the fixture shape.
+Use `normalize-lsp-references` to inspect or write the converted Geond reference
+JSON before importing:
+
+```bash
+uv run geond normalize-lsp-references examples/lsp_references/vscode_locations.json
+```
 
 Record a changeset and link it to indexed code entities:
 

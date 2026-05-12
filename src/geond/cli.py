@@ -262,6 +262,16 @@ def main() -> None:
     import_lsp.add_argument("--target-qualified-name")
     import_lsp.add_argument("--provider")
 
+    normalize_lsp = subparsers.add_parser(
+        "normalize-lsp-references",
+        help="Normalize VS Code/LSP reference locations to Geond reference JSON",
+    )
+    normalize_lsp.add_argument("path", type=Path)
+    normalize_lsp.add_argument("--workspace-root")
+    normalize_lsp.add_argument("--target-qualified-name")
+    normalize_lsp.add_argument("--provider")
+    normalize_lsp.add_argument("--output", type=Path)
+
     seed_sample = subparsers.add_parser(
         "seed-sample", help="Insert a small sample workspace and session"
     )
@@ -823,6 +833,23 @@ def main() -> None:
                 replace=not args.append,
             )
         print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "normalize-lsp-references":
+        data = json.loads(args.path.read_text(encoding="utf-8"))
+        result = {
+            "references": normalize_lsp_references(
+                data,
+                workspace_root=args.workspace_root,
+                target_qualified_name=args.target_qualified_name,
+                provider=args.provider,
+            )
+        }
+        output = json.dumps(result, ensure_ascii=False, indent=2)
+        if args.output:
+            args.output.write_text(output + "\n", encoding="utf-8")
+        else:
+            print(output)
         return
 
     if args.command == "seed-sample":
