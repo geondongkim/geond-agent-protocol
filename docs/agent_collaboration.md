@@ -27,10 +27,15 @@ What geond gives two agents that git does not:
 - **Reservation audit events** (`list_reservation_events`). Claim creation,
   renewal, release, and expiry are append-only events, so a later agent can
   distinguish an active conflict from an expired or deliberately released claim.
+- **Conflict policy levels** (`get_workspace_coordination_policy`,
+  `set_workspace_coordination_policy`). Workspaces can keep conflicts advisory,
+  block them strictly, or require an explicit override reason before allowing a
+  conflicting reservation.
 - **Handoff summaries** (`record_handoff_summary`, `list_handoff_summaries`,
   `close_handoff_summary`). A structured, one-paragraph briefing with
-  `next_steps` and `blocked_on` so the next agent starts oriented instead
-  of re-reading the entire history.
+  `next_steps`, `blocked_on`, tested commands, remaining risks, and a next
+  action so the next agent starts oriented instead of re-reading the entire
+  history.
 - **Symbol-linked changesets** (`record_changeset`,
   `get_changeset_detail`). When agent A modifies `build_answer`, agent B
   can ask `get_symbol_context("build_answer")` and see which changeset
@@ -44,8 +49,9 @@ What geond gives two agents that git does not:
 
 What geond does *not* solve:
 
-- It does not arbitrate when two agents both claim the same file. It
-  reports the conflict — picking a winner is still a workflow concern.
+- It does not pick a human winner when two agents both claim the same file. It
+  can block or require an override reason, but the workflow still decides who
+  should proceed.
 - It does not run the agents. It is the substrate; the orchestrator
   (Copilot, Codex, Claude Code, or a custom runner) still drives.
 - It does not enforce that an agent records its intent. An agent that

@@ -13,6 +13,7 @@ from geond.storage.code_graph import store_code_index
 from geond.storage.repository import (
     cleanup_expired_reservations_for_workspace,
     close_handoff_summary,
+    get_workspace_coordination_policy,
     list_active_file_reservations,
     list_active_symbol_reservations,
     list_handoff_summaries,
@@ -25,6 +26,7 @@ from geond.storage.repository import (
     renew_symbol_reservation,
     reserve_files,
     reserve_symbols,
+    set_workspace_coordination_policy,
     upsert_workspace,
 )
 from geond.storage.resources import (
@@ -148,7 +150,10 @@ def build_answer(prompt):
                 to_agent_name="agent-b",
                 summary="build_answer is indexed and reserved for a rename check.",
                 next_steps=["Review symbol conflict before editing build_answer."],
+                next_action="Confirm rename plan with agent-b.",
                 blocked_on=[],
+                tested_commands=["uv run pytest tests/test_resources_and_coordination.py"],
+                remaining_risks=["Symbol conflict may need an override reason."],
             )
             handoffs = list_handoff_summaries(conn, workspace_id, status="open")
             reservation_resource = get_workspace_reservations(conn, workspace_id)
@@ -184,6 +189,13 @@ def build_answer(prompt):
             assert renewed == 1
             assert renewed_symbol == 1
             assert handoffs[0]["handoff_id"] == handoff_id
+            assert handoffs[0]["next_steps"][-1] == "Confirm rename plan with agent-b."
+            assert handoffs[0]["metadata"]["handoff_template"]["tested_commands"] == [
+                "uv run pytest tests/test_resources_and_coordination.py"
+            ]
+            assert handoffs[0]["metadata"]["handoff_template"]["remaining_risks"] == [
+                "Symbol conflict may need an override reason."
+            ]
             assert reservation_resource["symbol_reservations"]
             assert handoff_resource["handoffs"][0]["summary"].startswith("build_answer")
             assert any(event["kind"] == "agent_action" for event in timeline["events"])
@@ -201,6 +213,118 @@ def build_answer(prompt):
                 "expired",
             }
             assert closed_handoff == 1
+        finally:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM workspaces WHERE id = %s", (workspace_id,))
+            conn.commit()
+
+
+def test_reservation_conflict_policy_blocks_or_requires_override(tmp_path: Path) -> None:
+    settings = get_settings()
+    workspace_uri = f"file:///tmp/geond-policy-test-{uuid4()}"
+    source = tmp_path / "service.py"
+    source.write_text(
+        """
+def build_answer(prompt):
+    return prompt.strip()
+""".strip(),
+        encoding="utf-8",
+    )
+
+    try:
+        conn = connect(settings)
+    except psycopg.OperationalError as exc:
+        pytest.skip(f"Postgres integration database is not available: {exc}")
+
+    with conn:
+        try:
+            run_schema_file(conn, SCHEMA)
+        except psycopg.Error as exc:
+            pytest.skip(f"Postgres integration schema is not available: {exc}")
+
+        workspace_id = upsert_workspace(
+            conn,
+            root_uri=workspace_uri,
+            name="policy-fixture",
+            metadata={"source": "pytest"},
+        )
+        try:
+            store_code_index(conn, workspace_id, [index_python_file(source, tmp_path)])
+            default_policy = get_workspace_coordination_policy(conn, workspace_id)
+            first = reserve_files(
+                conn,
+                workspace_id,
+                agent_name="agent-a",
+                file_paths=["service.py"],
+                purpose="first edit",
+            )
+            strict_policy = set_workspace_coordination_policy(
+                conn,
+                workspace_id,
+                reservation_conflict_policy="strict",
+            )
+            strict_blocked = reserve_files(
+                conn,
+                workspace_id,
+                agent_name="agent-b",
+                file_paths=["service.py"],
+                purpose="parallel edit",
+            )
+            override_policy = set_workspace_coordination_policy(
+                conn,
+                workspace_id,
+                reservation_conflict_policy="override-with-reason",
+            )
+            symbol_first = reserve_symbols(
+                conn,
+                workspace_id,
+                agent_name="agent-a",
+                symbols=["build_answer"],
+                purpose="symbol owner",
+            )
+            missing_reason = reserve_symbols(
+                conn,
+                workspace_id,
+                agent_name="agent-b",
+                symbols=["build_answer"],
+                purpose="parallel symbol edit",
+            )
+            symbol_override = reserve_symbols(
+                conn,
+                workspace_id,
+                agent_name="agent-b",
+                symbols=["build_answer"],
+                purpose="pairing on symbol",
+                override_reason="pairing agreed in handoff",
+            )
+            file_override = reserve_files(
+                conn,
+                workspace_id,
+                agent_name="agent-c",
+                file_paths=["service.py"],
+                purpose="override edit",
+                override_reason="urgent production fix",
+            )
+            events = list_reservation_events(conn, workspace_id)
+
+            assert default_policy["reservation_conflict_policy"] == "advisory"
+            assert first["reservation_ids"]
+            assert strict_policy["reservation_conflict_policy"] == "strict"
+            assert strict_blocked["blocked"] is True
+            assert strict_blocked["reservation_ids"] == []
+            assert strict_blocked["block_reason"] == "strict_conflict_policy"
+            assert override_policy["reservation_conflict_policy"] == "override-with-reason"
+            assert symbol_first["reservation_ids"]
+            assert missing_reason["blocked"] is True
+            assert missing_reason["block_reason"] == "override_reason_required"
+            assert symbol_override["blocked"] is False
+            assert symbol_override["conflicts"][0]["agent_name"] == "agent-a"
+            assert file_override["blocked"] is False
+            assert file_override["conflicts"][0]["agent_name"] == "agent-a"
+            assert any(
+                event["metadata"].get("override_reason") == "urgent production fix"
+                for event in events
+            )
         finally:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM workspaces WHERE id = %s", (workspace_id,))

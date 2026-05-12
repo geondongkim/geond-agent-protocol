@@ -33,16 +33,20 @@ Use [examples/mcp_clients/continue_config.yaml](../examples/mcp_clients/continue
 - `list_workspace_aliases`: inspect registered workspace aliases.
 - `record_workspace_fingerprints`: store durable workspace identity hints such as sanitized git remote, first commit, manifest hashes, and hashed package names.
 - `suggest_workspace_aliases`: ask Geond which existing workspace a new folder URI probably belongs to before registering an alias; responses include recommendation fields for single, ambiguous, already-resolved, and partial matches.
+- `get_workspace_coordination_policy`: read reservation conflict behavior for a workspace.
+- `set_workspace_coordination_policy`: set reservation conflict behavior to `advisory`, `strict`, or `override-with-reason`.
 - `explain_change`: inspect file snapshots, related messages, changesets, touched symbols, and resolved call impact. Pass `include_narrative=true` to attach a deterministic, evidence-citing summary under `narrative` (schema `geond.evidence.v1.narrative`).
 - `get_changeset_detail`: look up a changeset by UUID or git commit (sha or prefix); returns files, touched code entities, call impact, and `geond.evidence.v1` evidence refs. Ambiguous commit prefixes return `ambiguous=true` with candidate matches instead of choosing silently. Pass `include_narrative=true` for a one-paragraph briefing.
 - `record_changeset`: record changed files and optional unified diff patches from an MCP client.
-- `reserve_files`: warn other agents about file-level work.
-- `reserve_symbols`: warn other agents about symbol-level work.
+- `reserve_files`: warn other agents about file-level work; pass `override_reason` when policy requires it.
+- `reserve_symbols`: warn other agents about symbol-level work; pass `override_reason` when policy requires it.
 - `renew_reservation`: extend an active file reservation by id or file path.
 - `renew_symbol_reservation`: extend an active symbol reservation by id or symbol.
 - `list_reservation_events`: inspect created, renewed, released, and expired reservation audit events.
 - `get_symbol_conflicts`: check active symbol reservations before editing.
-- `record_handoff_summary`: leave concise next-step context for another agent.
+- `record_handoff_summary`: leave concise next-step context for another agent,
+  including optional `tested_commands`, `remaining_risks`, and `next_action`
+  template fields.
 - `list_handoff_summaries`: read open or closed handoffs.
 
 ## Useful Resources

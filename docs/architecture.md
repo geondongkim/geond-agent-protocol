@@ -476,11 +476,17 @@ canonical `target_id`, `locator`, and `metadata` fields.
 
 `reserve_files`
 
-- Marks files as actively edited by an agent to reduce collision risk.
+- Marks files as actively edited by an agent to reduce collision risk. Workspace
+  conflict policy can leave conflicts advisory, block them strictly, or require
+  an explicit override reason.
 
 `reserve_symbols`
 
 - Marks symbols as actively edited by an agent and returns active symbol conflicts.
+
+`get_workspace_coordination_policy` / `set_workspace_coordination_policy`
+
+- Reads or updates workspace-level reservation conflict behavior.
 
 `get_symbol_conflicts`
 
@@ -496,7 +502,8 @@ canonical `target_id`, `locator`, and `metadata` fields.
 
 `record_handoff_summary`
 
-- Stores a concise transfer note, next steps, and blockers for the next agent.
+- Stores a concise transfer note, next steps, blockers, tested commands,
+  remaining risks, and a next action for the next agent.
 
 `list_handoff_summaries`
 

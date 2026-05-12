@@ -37,6 +37,7 @@ from geond.storage.embeddings import embed_pending_messages, embedding_stats
 from geond.storage.maintenance import purge_workspace, seed_sample_workspace
 from geond.storage.repository import (
     cleanup_expired_reservations_for_workspace,
+    get_workspace_coordination_policy,
     list_active_file_reservations,
     list_active_symbol_reservations,
     list_handoff_summaries,
@@ -51,6 +52,7 @@ from geond.storage.repository import (
     renew_symbol_reservation,
     reserve_symbols,
     resolve_workspace_id,
+    set_workspace_coordination_policy,
     store_claude_code_session,
     store_codex_session,
     store_vscode_session,
@@ -264,6 +266,16 @@ def main() -> None:
     aliases = subparsers.add_parser("workspace-aliases", help="List workspace aliases")
     aliases.add_argument("--workspace-id-or-uri")
 
+    workspace_policy = subparsers.add_parser(
+        "workspace-policy",
+        help="Get or set workspace coordination policy",
+    )
+    workspace_policy.add_argument("workspace_id_or_uri")
+    workspace_policy.add_argument(
+        "--reservation-conflict-policy",
+        choices=["advisory", "strict", "override-with-reason"],
+    )
+
     fingerprint_workspace = subparsers.add_parser(
         "fingerprint-workspace",
         help="Record git-derived fingerprints for an existing workspace",
@@ -311,6 +323,7 @@ def main() -> None:
     reserve_symbols_cmd.add_argument("--symbol", dest="symbols", action="append", required=True)
     reserve_symbols_cmd.add_argument("--purpose", default="")
     reserve_symbols_cmd.add_argument("--ttl-minutes", type=int, default=120)
+    reserve_symbols_cmd.add_argument("--override-reason")
 
     release_symbol = subparsers.add_parser("release-symbol", help="Release a symbol reservation")
     release_symbol.add_argument("workspace_id")
@@ -343,7 +356,11 @@ def main() -> None:
     record_handoff.add_argument("--to-agent")
     record_handoff.add_argument("--summary", required=True)
     record_handoff.add_argument("--next-step", dest="next_steps", action="append")
+    record_handoff.add_argument("--next-action")
     record_handoff.add_argument("--blocked-on", dest="blocked_on", action="append")
+    record_handoff.add_argument("--tested-command", dest="tested_commands", action="append")
+    record_handoff.add_argument("--risk", dest="remaining_risks", action="append")
+    record_handoff.add_argument("--template", default="standard")
     record_handoff.add_argument("--status", default="open")
 
     list_handoffs = subparsers.add_parser("list-handoffs", help="List handoff summaries")
@@ -774,6 +791,19 @@ def main() -> None:
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return
 
+    if args.command == "workspace-policy":
+        with connect(get_settings()) as conn:
+            if args.reservation_conflict_policy:
+                result = set_workspace_coordination_policy(
+                    conn,
+                    args.workspace_id_or_uri,
+                    reservation_conflict_policy=args.reservation_conflict_policy,
+                )
+            else:
+                result = get_workspace_coordination_policy(conn, args.workspace_id_or_uri)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+
     if args.command == "fingerprint-workspace":
         fingerprints = discover_workspace_fingerprints(args.path_or_uri)
         fingerprints.extend(fingerprint_from_arg(value) for value in args.fingerprint or [])
@@ -863,6 +893,7 @@ def main() -> None:
                 symbols=args.symbols,
                 purpose=args.purpose,
                 ttl_minutes=args.ttl_minutes,
+                override_reason=args.override_reason,
             )
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return
@@ -920,6 +951,10 @@ def main() -> None:
                 next_steps=args.next_steps,
                 blocked_on=args.blocked_on,
                 status=args.status,
+                tested_commands=args.tested_commands,
+                remaining_risks=args.remaining_risks,
+                next_action=args.next_action,
+                template=args.template,
             )
         print(json.dumps({"handoff_id": handoff_id}, ensure_ascii=False, indent=2))
         return

@@ -310,10 +310,14 @@ changeset model.
 Coordinate symbol-level work from CLI or MCP:
 
 ```bash
+uv run geond workspace-policy <workspace-id> \
+    --reservation-conflict-policy override-with-reason
+
 uv run geond reserve-symbols <workspace-id> \
     --agent-name copilot \
     --symbol build_answer \
-    --purpose "rename check"
+    --purpose "rename check" \
+    --override-reason "pairing with the current owner"
 
 uv run geond conflicts <workspace-id> --symbol build_answer
 
@@ -327,6 +331,10 @@ uv run geond reservation-events \
     --kind symbol
 ```
 
+Reservation conflict policy defaults to `advisory`. Use `strict` to block new
+reservations when active conflicts exist, or `override-with-reason` to require
+an explicit reason before allowing a conflicting reservation.
+
 Reservation creation, renewal, explicit release, and expiry are recorded as
 append-only audit events and appear in workspace timeline/reservation resources.
 
@@ -337,8 +345,15 @@ uv run geond record-handoff <workspace-id> \
     --from-agent copilot \
     --to-agent codex \
     --summary "build_answer is indexed; check symbol reservations before editing." \
-    --next-step "Run pytest after changing service.py"
+    --next-step "Run pytest after changing service.py" \
+    --tested-command "uv run pytest tests/test_resources_and_coordination.py" \
+    --risk "Symbol reservation may need an override reason" \
+    --next-action "Confirm rename plan before editing service.py"
 ```
+
+Handoffs keep a standard structured template in metadata: tested commands,
+remaining risks, and a next action are preserved for MCP clients and timeline
+resources.
 
 Benchmark retrieval:
 
@@ -391,7 +406,7 @@ Local protocol demo asset:
 
 ## Status
 
-Early MVP stage. The repository contains research notes, architecture, implementation plans, a local Postgres/pgvector schema, VS Code Copilot Chat, Codex, and Claude Code importers, OpenAI/Azure/gateway/local embedding provider modes, keyword/vector/hybrid retrieval with optional local reranking, workspace aliases with git and manifest fingerprint suggestions, AST/regex/tree-sitter code graph indexing, Python and TypeScript/JavaScript cross-file/default-import/re-export call edges, changeset-to-symbol evidence links, call-impact narratives, reservation renewal and audit events, benchmark quality metrics, coordination tools, demo assets, Azure samples, and an MCP server.
+Early MVP stage. The repository contains research notes, architecture, implementation plans, a local Postgres/pgvector schema, VS Code Copilot Chat, Codex, and Claude Code importers, OpenAI/Azure/gateway/local embedding provider modes, keyword/vector/hybrid retrieval with optional local reranking, workspace aliases with git and manifest fingerprint suggestions, AST/regex/tree-sitter code graph indexing, Python and TypeScript/JavaScript cross-file/default-import/re-export call edges, changeset-to-symbol evidence links, call-impact narratives, reservation renewal, conflict policies, audit events, structured handoff templates, benchmark quality metrics, coordination tools, demo assets, Azure samples, and an MCP server.
 
 ## Design Principles
 

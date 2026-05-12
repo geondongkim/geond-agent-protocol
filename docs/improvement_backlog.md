@@ -45,8 +45,8 @@ organized by product risk rather than by implementation convenience.
 | Improvement | Why | Candidate implementation |
 | --- | --- | --- |
 | Lease renewal | Long-running agents need to extend reservations safely. | Implemented `renew_reservation`, `renew_symbol_reservation`, matching CLI commands, and reservation audit events for create/renew/release/expire transitions. |
-| Conflict policy levels | Some conflicts are warnings; others should block. | Add workspace policy for advisory, strict, and override-with-reason modes. |
-| Handoff templates | Handoffs become better when they are structured. | Support templates for summary, tested commands, remaining risks, and next action. |
+| Conflict policy levels | Some conflicts are warnings; others should block. | Implemented workspace policy for advisory, strict, and override-with-reason modes across file and symbol reservations. |
+| Handoff templates | Handoffs become better when they are structured. | Implemented standard metadata templates for summary, tested commands, remaining risks, and next action. |
 | Session lineage | Multi-agent workflows need provenance. | Link sessions, handoffs, actions, changesets, and benchmark runs into a navigable graph. |
 
 ## Priority 5: Packaging And Adoption
@@ -74,15 +74,17 @@ module is indexed.
 Change narratives cite `code_edge` evidence when touched symbols have call
 impact. Changeset detail lookup rejects ambiguous git commit prefixes with
 explicit candidate matches. Reservation renewal is available for file and symbol
-leases through MCP and CLI, and reservation audit events now record create,
-renew, release, and expiry transitions.
+leases through MCP and CLI, reservation audit events now record create, renew,
+release, and expiry transitions, and workspace conflict policy can keep
+conflicts advisory, block them strictly, or require an explicit override reason.
 Workspace aliases now preserve memory across folder moves, and keyword search
 uses Postgres full-text plus `pg_trgm` substring matching before hybrid vector
 merge. Git and manifest fingerprints can now suggest a likely alias before a
 moved folder is registered, explain ambiguous or partial matches, and benchmark
 reports resolve aliases as well.
 Keyword, vector, and hybrid search now support optional deterministic local
-reranking over expanded candidate pools. The next slice should
-add **LSP-backed references** where available, add pluggable API rerankers, and continue the
+reranking over expanded candidate pools. Structured handoff templates now preserve
+tested commands, remaining risks, and next action metadata. The next slice should
+add **LSP-backed references** where available, add session lineage, and continue the
 **agent-collaboration ergonomics** work described in
 [`docs/agent_collaboration.md`](agent_collaboration.md).

@@ -15,6 +15,9 @@ from geond.retrieval.simple import search_dev_memory as search_dev_memory_query
 from geond.retrieval.simple import vector_search_dev_memory as vector_search_dev_memory_query
 from geond.storage.repository import close_handoff_summary as close_handoff_summary_row
 from geond.storage.repository import (
+    get_workspace_coordination_policy as get_workspace_coordination_policy_row,
+)
+from geond.storage.repository import (
     list_active_file_reservations,
     list_active_symbol_reservations,
     upsert_workspace,
@@ -39,6 +42,9 @@ from geond.storage.repository import renew_reservation as renew_reservation_row
 from geond.storage.repository import renew_symbol_reservation as renew_symbol_reservation_row
 from geond.storage.repository import reserve_files as reserve_files_row
 from geond.storage.repository import reserve_symbols as reserve_symbols_row
+from geond.storage.repository import (
+    set_workspace_coordination_policy as set_workspace_coordination_policy_row,
+)
 from geond.storage.repository import suggest_workspace_aliases as suggest_workspace_aliases_row
 from geond.storage.resources import (
     get_session_resource,
@@ -203,6 +209,27 @@ def suggest_workspace_aliases(
 
 
 @mcp.tool()
+def get_workspace_coordination_policy(workspace_id_or_uri: str) -> dict[str, Any]:
+    """Return the workspace coordination policy, including reservation conflict handling."""
+    with connect(get_settings()) as conn:
+        return get_workspace_coordination_policy_row(conn, workspace_id_or_uri)
+
+
+@mcp.tool()
+def set_workspace_coordination_policy(
+    workspace_id_or_uri: str,
+    reservation_conflict_policy: str = "advisory",
+) -> dict[str, Any]:
+    """Set reservation conflict policy: advisory, strict, or override-with-reason."""
+    with connect(get_settings()) as conn:
+        return set_workspace_coordination_policy_row(
+            conn,
+            workspace_id_or_uri,
+            reservation_conflict_policy=reservation_conflict_policy,
+        )
+
+
+@mcp.tool()
 def record_changeset(
     files: list[dict[str, Any]],
     workspace_id: str | None = None,
@@ -268,6 +295,7 @@ def reserve_files(
     file_paths: list[str],
     purpose: str = "",
     ttl_minutes: int | None = 120,
+    override_reason: str | None = None,
 ) -> dict[str, Any]:
     """Reserve files so other agents can see active work and conflicts."""
     with connect(get_settings()) as conn:
@@ -278,6 +306,7 @@ def reserve_files(
             file_paths=file_paths,
             purpose=purpose,
             ttl_minutes=ttl_minutes,
+            override_reason=override_reason,
         )
 
 
@@ -338,6 +367,7 @@ def reserve_symbols(
     symbols: list[str],
     purpose: str = "",
     ttl_minutes: int | None = 120,
+    override_reason: str | None = None,
 ) -> dict[str, Any]:
     """Reserve symbols so other agents can see symbol-level conflicts."""
     with connect(get_settings()) as conn:
@@ -348,6 +378,7 @@ def reserve_symbols(
             symbols=symbols,
             purpose=purpose,
             ttl_minutes=ttl_minutes,
+            override_reason=override_reason,
         )
 
 
@@ -410,8 +441,12 @@ def record_handoff_summary(
     next_steps: list[str] | None = None,
     blocked_on: list[str] | None = None,
     status: str = "open",
+    tested_commands: list[str] | None = None,
+    remaining_risks: list[str] | None = None,
+    next_action: str | None = None,
+    template: str = "standard",
 ) -> dict[str, str]:
-    """Record a compact handoff summary for the next agent or session."""
+    """Record a compact structured handoff summary for the next agent or session."""
     with connect(get_settings()) as conn:
         handoff_id = record_handoff_summary_row(
             conn=conn,
@@ -422,6 +457,10 @@ def record_handoff_summary(
             next_steps=next_steps,
             blocked_on=blocked_on,
             status=status,
+            tested_commands=tested_commands,
+            remaining_risks=remaining_risks,
+            next_action=next_action,
+            template=template,
         )
     return {"handoff_id": handoff_id}
 

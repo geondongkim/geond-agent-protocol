@@ -14,6 +14,9 @@ from geond.adapters.vscode_copilot import SOURCE, ParsedCopilotSession
 from geond.redaction import RedactionFinding, redact_text, redact_value
 from geond.storage.changesets import link_changesets_to_code_entities_cursor
 
+RESERVATION_CONFLICT_POLICIES = {"advisory", "strict", "override-with-reason"}
+DEFAULT_RESERVATION_CONFLICT_POLICY = "advisory"
+
 
 def upsert_workspace(
     conn: Connection,
@@ -101,6 +104,81 @@ def resolve_workspace_id_cursor(cur: Cursor, workspace_id_or_uri: str) -> str | 
 def resolve_workspace_id(conn: Connection, workspace_id_or_uri: str) -> str | None:
     with conn.cursor() as cur:
         return resolve_workspace_id_cursor(cur, workspace_id_or_uri)
+
+
+def get_workspace_coordination_policy(
+    conn: Connection,
+    workspace_id_or_uri: str,
+) -> dict[str, Any]:
+    with conn.cursor() as cur:
+        workspace_id = resolve_workspace_id_cursor(cur, workspace_id_or_uri)
+        if not workspace_id:
+            raise ValueError("workspace_id_or_uri does not resolve to a workspace")
+        return workspace_coordination_policy_cursor(cur, workspace_id)
+
+
+def set_workspace_coordination_policy(
+    conn: Connection,
+    workspace_id_or_uri: str,
+    reservation_conflict_policy: str = DEFAULT_RESERVATION_CONFLICT_POLICY,
+) -> dict[str, Any]:
+    policy = normalize_reservation_conflict_policy(reservation_conflict_policy)
+    with conn.cursor() as cur:
+        workspace_id = resolve_workspace_id_cursor(cur, workspace_id_or_uri)
+        if not workspace_id:
+            raise ValueError("workspace_id_or_uri does not resolve to a workspace")
+        cur.execute(
+            """
+            UPDATE workspaces
+            SET metadata = jsonb_set(
+                metadata,
+                '{coordination_policy}',
+                COALESCE(metadata->'coordination_policy', '{}'::jsonb) || jsonb_build_object(
+                    'reservation_conflict_policy', %s::text,
+                    'updated_at', now()::text
+                ),
+                true
+            )
+            WHERE id = %s::uuid
+            """,
+            (policy, workspace_id),
+        )
+        result = workspace_coordination_policy_cursor(cur, workspace_id)
+    conn.commit()
+    return result
+
+
+def workspace_coordination_policy_cursor(cur: Cursor, workspace_id: str) -> dict[str, Any]:
+    cur.execute(
+        """
+        SELECT root_uri, name, metadata->'coordination_policy'
+        FROM workspaces
+        WHERE id = %s::uuid
+        """,
+        (workspace_id,),
+    )
+    row = cur.fetchone()
+    coordination_policy = row[2] if row and isinstance(row[2], dict) else {}
+    policy = normalize_reservation_conflict_policy(
+        coordination_policy.get("reservation_conflict_policy")
+    )
+    return {
+        "workspace_id": workspace_id,
+        "workspace_uri": row[0] if row else None,
+        "workspace_name": row[1] if row else None,
+        "reservation_conflict_policy": policy,
+        "coordination_policy": {**coordination_policy, "reservation_conflict_policy": policy},
+    }
+
+
+def normalize_reservation_conflict_policy(policy: object) -> str:
+    normalized = str(policy or DEFAULT_RESERVATION_CONFLICT_POLICY).strip().lower()
+    if normalized not in RESERVATION_CONFLICT_POLICIES:
+        raise ValueError(
+            "reservation_conflict_policy must be one of: "
+            + ", ".join(sorted(RESERVATION_CONFLICT_POLICIES))
+        )
+    return normalized
 
 
 def register_workspace_alias(
@@ -1043,11 +1121,20 @@ def reserve_files(
     file_paths: list[str],
     purpose: str = "",
     ttl_minutes: int | None = 120,
+    override_reason: str | None = None,
 ) -> dict[str, Any]:
     with conn.cursor() as cur:
         cleanup_expired_reservations(cur, workspace_id)
-        agent_id = upsert_agent(conn, agent_name)
         conflicts = active_file_reservations(cur, workspace_id, file_paths)
+        policy = workspace_coordination_policy_cursor(cur, workspace_id)
+        block_reason = reservation_policy_block_reason(
+            policy["reservation_conflict_policy"], conflicts, override_reason
+        )
+        if block_reason:
+            conn.commit()
+            return blocked_reservation_result(conflicts, policy, block_reason)
+
+        agent_id = upsert_agent(conn, agent_name)
         reservation_ids: list[str] = []
         for file_path in file_paths:
             cur.execute(
@@ -1087,12 +1174,16 @@ def reserve_files(
                     "purpose": purpose,
                     "ttl_minutes": ttl_minutes,
                     "conflict_count": len(conflicts),
+                    "override_reason": normalized_override_reason(override_reason),
+                    "reservation_conflict_policy": policy["reservation_conflict_policy"],
                 },
             )
     conn.commit()
     return {
         "reservation_ids": reservation_ids,
         "conflicts": conflicts,
+        "policy": policy,
+        "blocked": False,
     }
 
 
@@ -1279,6 +1370,41 @@ def list_active_file_reservations(
         return active_file_reservations(cur, workspace_id, file_paths)
 
 
+def reservation_policy_block_reason(
+    policy: str,
+    conflicts: list[dict[str, Any]],
+    override_reason: str | None = None,
+) -> str | None:
+    if not conflicts:
+        return None
+    if policy == "advisory":
+        return None
+    if policy == "strict":
+        return "strict_conflict_policy"
+    if policy == "override-with-reason" and not normalized_override_reason(override_reason):
+        return "override_reason_required"
+    return None
+
+
+def blocked_reservation_result(
+    conflicts: list[dict[str, Any]],
+    policy: dict[str, Any],
+    block_reason: str,
+) -> dict[str, Any]:
+    return {
+        "reservation_ids": [],
+        "conflicts": conflicts,
+        "policy": policy,
+        "blocked": True,
+        "block_reason": block_reason,
+    }
+
+
+def normalized_override_reason(override_reason: str | None) -> str | None:
+    value = (override_reason or "").strip()
+    return value or None
+
+
 def reserve_symbols(
     conn: Connection,
     workspace_id: str,
@@ -1286,12 +1412,23 @@ def reserve_symbols(
     symbols: list[str],
     purpose: str = "",
     ttl_minutes: int | None = 120,
+    override_reason: str | None = None,
 ) -> dict[str, Any]:
     with conn.cursor() as cur:
         cleanup_expired_reservations(cur, workspace_id)
-        agent_id = upsert_agent(conn, agent_name)
         targets = resolve_symbol_targets(cur, workspace_id, symbols)
         conflicts = active_symbol_reservations(cur, workspace_id, symbols)
+        policy = workspace_coordination_policy_cursor(cur, workspace_id)
+        block_reason = reservation_policy_block_reason(
+            policy["reservation_conflict_policy"], conflicts, override_reason
+        )
+        if block_reason:
+            result = blocked_reservation_result(conflicts, policy, block_reason)
+            result["resolved_symbols"] = targets
+            conn.commit()
+            return result
+
+        agent_id = upsert_agent(conn, agent_name)
         reservation_ids: list[str] = []
         for symbol in symbols:
             target = targets.get(symbol, {})
@@ -1351,6 +1488,8 @@ def reserve_symbols(
                     "qualified_name": target.get("qualified_name"),
                     "file_path": target.get("file_path"),
                     "conflict_count": len(conflicts),
+                    "override_reason": normalized_override_reason(override_reason),
+                    "reservation_conflict_policy": policy["reservation_conflict_policy"],
                 },
             )
     conn.commit()
@@ -1358,6 +1497,8 @@ def reserve_symbols(
         "reservation_ids": reservation_ids,
         "conflicts": conflicts,
         "resolved_symbols": targets,
+        "policy": policy,
+        "blocked": False,
     }
 
 
@@ -1705,7 +1846,19 @@ def record_handoff_summary(
     blocked_on: list[str] | None = None,
     status: str = "open",
     metadata: dict[str, Any] | None = None,
+    tested_commands: list[str] | None = None,
+    remaining_risks: list[str] | None = None,
+    next_action: str | None = None,
+    template: str = "standard",
 ) -> str:
+    handoff_next_steps = structured_handoff_next_steps(next_steps, next_action)
+    handoff_metadata = structured_handoff_metadata(
+        metadata,
+        template=template,
+        tested_commands=tested_commands,
+        remaining_risks=remaining_risks,
+        next_action=next_action,
+    )
     with conn.cursor() as cur:
         from_agent_id = upsert_agent(conn, from_agent_name)
         to_agent_id = upsert_agent(conn, to_agent_name) if to_agent_name else None
@@ -1732,14 +1885,43 @@ def record_handoff_summary(
                 to_agent_name,
                 status,
                 summary,
-                Jsonb(next_steps or []),
+                Jsonb(handoff_next_steps),
                 Jsonb(blocked_on or []),
-                Jsonb(metadata or {}),
+                Jsonb(handoff_metadata),
             ),
         )
         handoff_id = cur.fetchone()[0]
     conn.commit()
     return handoff_id
+
+
+def structured_handoff_next_steps(
+    next_steps: list[str] | None,
+    next_action: str | None = None,
+) -> list[str]:
+    steps = [item for item in (next_steps or []) if item]
+    action = (next_action or "").strip()
+    if action and action not in steps:
+        steps.append(action)
+    return steps
+
+
+def structured_handoff_metadata(
+    metadata: dict[str, Any] | None,
+    *,
+    template: str = "standard",
+    tested_commands: list[str] | None = None,
+    remaining_risks: list[str] | None = None,
+    next_action: str | None = None,
+) -> dict[str, Any]:
+    result = dict(metadata or {})
+    result["handoff_template"] = {
+        "template": template or "standard",
+        "tested_commands": [item for item in (tested_commands or []) if item],
+        "remaining_risks": [item for item in (remaining_risks or []) if item],
+        "next_action": (next_action or "").strip() or None,
+    }
+    return result
 
 
 def list_handoff_summaries(
