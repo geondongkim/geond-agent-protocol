@@ -38,6 +38,7 @@ from geond.storage.embeddings import embed_pending_messages, embedding_stats
 from geond.storage.maintenance import purge_workspace, seed_sample_workspace
 from geond.storage.repository import (
     cleanup_expired_reservations_for_workspace,
+    close_handoff_summary,
     get_workspace_coordination_policy,
     list_active_file_reservations,
     list_active_symbol_reservations,
@@ -404,6 +405,10 @@ def main() -> None:
     list_handoffs.add_argument("--workspace-id-or-uri")
     list_handoffs.add_argument("--status")
     list_handoffs.add_argument("--limit", type=int, default=50)
+
+    close_handoff = subparsers.add_parser("close-handoff", help="Close a handoff summary")
+    close_handoff.add_argument("handoff_id")
+    close_handoff.add_argument("--status", default="closed")
 
     reservation_events = subparsers.add_parser(
         "reservation-events", help="List reservation audit events"
@@ -1063,6 +1068,12 @@ def main() -> None:
                 limit=args.limit,
             )
         print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "close-handoff":
+        with connect(get_settings()) as conn:
+            closed = close_handoff_summary(conn, args.handoff_id, status=args.status)
+        print(json.dumps({"closed": closed}, ensure_ascii=False, indent=2))
         return
 
     if args.command == "reservation-events":

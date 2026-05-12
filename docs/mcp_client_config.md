@@ -39,6 +39,7 @@ Use [examples/mcp_clients/continue_config.yaml](../examples/mcp_clients/continue
 - `get_workspace_coordination_policy`: read reservation conflict behavior for a workspace.
 - `set_workspace_coordination_policy`: set reservation conflict behavior to `advisory`, `strict`, or `override-with-reason`.
 - `explain_change`: inspect file snapshots, related messages, changesets, touched symbols, and resolved call impact. Pass `include_narrative=true` to attach a deterministic, evidence-citing summary under `narrative` (schema `geond.evidence.v1.narrative`).
+- CLI handoff lifecycle: use `record-handoff`, `list-handoffs`, and `close-handoff <handoff-id>` to keep context reviews focused on truly open work.
 - `get_changeset_detail`: look up a changeset by UUID or git commit (sha or prefix); returns files, touched code entities, call impact, and `geond.evidence.v1` evidence refs. Ambiguous commit prefixes return `ambiguous=true` with candidate matches instead of choosing silently. Pass `include_narrative=true` for a one-paragraph briefing.
 - `record_changeset`: record changed files and optional unified diff patches from an MCP client.
 - `reserve_files`: warn other agents about file-level work; pass `override_reason` when policy requires it.
