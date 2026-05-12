@@ -48,7 +48,8 @@ What geond gives two agents that git does not:
 - **Context review** (`review_workspace_context`, `geond review-context`). Before
   a new prompt-driven task starts, an agent can compare the requested intent,
   files, and symbols with active reservations, handoffs, and lineage matches,
-  then decide whether to proceed, coordinate, or record more context.
+  then decide whether to proceed, coordinate, or record more context. Use
+  `--format markdown` for a compact preflight and JSON for automation.
 - **Evidence-cited narratives** (`explain_change(include_narrative=True)`,
   `get_changeset_detail(include_narrative=True)`). Every claim in the
   narrative carries a `geond.evidence.v1` pointer like

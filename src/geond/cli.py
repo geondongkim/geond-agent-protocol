@@ -34,7 +34,7 @@ from geond.storage.benchmark import (
     save_benchmark_run,
 )
 from geond.storage.code_graph import store_code_index, store_lsp_references
-from geond.storage.context_review import review_workspace_context
+from geond.storage.context_review import format_context_review_markdown, review_workspace_context
 from geond.storage.embeddings import embed_pending_messages, embedding_stats
 from geond.storage.maintenance import purge_workspace, seed_sample_workspace
 from geond.storage.repository import (
@@ -346,6 +346,7 @@ def main() -> None:
     review_context.add_argument("--symbol", dest="symbols", action="append")
     review_context.add_argument("--agent-name")
     review_context.add_argument("--limit", type=int, default=5)
+    review_context.add_argument("--format", choices=["json", "markdown"], default="json")
 
     reserve_files_cmd = subparsers.add_parser("reserve-files", help="Reserve files for agent work")
     reserve_files_cmd.add_argument("workspace_id")
@@ -979,7 +980,10 @@ def main() -> None:
                 agent_name=args.agent_name,
                 limit=args.limit,
             )
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        if args.format == "markdown":
+            print(format_context_review_markdown(result))
+        else:
+            print(json.dumps(result, ensure_ascii=False, indent=2))
         return
 
     if args.command == "reserve-files":

@@ -202,6 +202,63 @@ def context_matches(
     return sorted(ranked, key=lambda item: item["score"], reverse=True)[:limit]
 
 
+def format_context_review_markdown(review: dict[str, Any]) -> str:
+    if review.get("status") == "workspace_not_found":
+        recommendations = "\n".join(f"- {item}" for item in review.get("recommendations", []))
+        return (
+            "# Context Review\n\n"
+            f"- Workspace: `{review.get('workspace_id_or_uri')}`\n"
+            "- Status: `workspace_not_found`\n\n"
+            "## Recommendations\n"
+            f"{recommendations}\n"
+        )
+
+    assessment = review.get("assessment") or {}
+    requested = review.get("requested") or {}
+    loaded = review.get("loaded_context") or {}
+    lines = [
+        "# Context Review",
+        "",
+        f"- Workspace: `{review.get('workspace_uri') or review.get('workspace_id')}`",
+        f"- Status: `{assessment.get('status')}`",
+        f"- Policy: `{assessment.get('reservation_conflict_policy')}`",
+        f"- Intent: {requested.get('intent') or ''}",
+        f"- Files: {format_inline_list(requested.get('file_paths') or [])}",
+        f"- Symbols: {format_inline_list(requested.get('symbols') or [])}",
+        "",
+        "## Loaded Context",
+        "",
+        f"- File reservations: `{len(loaded.get('file_reservations') or [])}`",
+        f"- Symbol reservations: `{len(loaded.get('symbol_reservations') or [])}`",
+        f"- Open handoffs: `{len(loaded.get('open_handoffs') or [])}`",
+        f"- Lineage nodes shown: `{len(loaded.get('lineage_nodes') or [])}`",
+        "",
+        "## Matches",
+        "",
+    ]
+    matches = review.get("matches") or []
+    if matches:
+        lines.extend(
+            f"- `{item.get('kind')}` {item.get('title') or item.get('id')} "
+            f"(score {item.get('score')})"
+            for item in matches
+        )
+    else:
+        lines.append("- No matching handoff or lineage context found.")
+
+    lines.extend(["", "## Recommendations", ""])
+    recommendations = review.get("recommendations") or []
+    if recommendations:
+        lines.extend(f"- {item}" for item in recommendations)
+    else:
+        lines.append("- No follow-up required.")
+    return "\n".join(lines)
+
+
+def format_inline_list(values: list[str]) -> str:
+    return ", ".join(f"`{value}`" for value in values) if values else "`none`"
+
+
 def handoff_match_text(handoff: dict[str, Any]) -> str:
     metadata = handoff.get("metadata") or {}
     template = metadata.get("handoff_template") if isinstance(metadata, dict) else {}
@@ -229,4 +286,11 @@ def match_score(needles: set[str], text: str) -> float:
 
 
 def query_tokens(text: str) -> list[str]:
-    return [token for token in re.findall(r"[\w가-힣]+", text.casefold()) if token]
+    tokens: list[str] = []
+    for raw_token in re.findall(r"\w+", text.casefold(), flags=re.UNICODE):
+        token = raw_token.strip("_")
+        if not token:
+            continue
+        tokens.append(token)
+        tokens.extend(part for part in token.split("_") if part)
+    return sorted(set(tokens))

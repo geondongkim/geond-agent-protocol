@@ -383,7 +383,8 @@ uv run geond review-context <workspace-id> \
     --agent-name copilot \
     --intent "rename build_answer after checking service.py" \
     --file service.py \
-    --symbol build_answer
+    --symbol build_answer \
+    --format markdown
 ```
 
 Reservation conflict policy defaults to `advisory`. Use `strict` to block new
@@ -391,7 +392,8 @@ reservations when active conflicts exist, or `override-with-reason` to require
 an explicit reason before allowing a conflicting reservation.
 `review-context` compares requested work with active reservations, open
 handoffs, and lineage matches, then returns an assessment and recommended next
-actions before the agent edits.
+actions before the agent edits. Markdown output is useful for a quick agent
+preflight; JSON remains the default for MCP-style automation.
 
 Reservation creation, renewal, explicit release, and expiry are recorded as
 append-only audit events and appear in workspace timeline/reservation resources.
