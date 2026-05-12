@@ -19,7 +19,7 @@ organized by product risk rather than by implementation convenience.
 | Patch hunk to symbol linking | File-level links are useful but coarse. | Implemented for unified diff new-line ranges, deletion-only hunks, and TypeScript/JavaScript body-span matching. |
 | Canonical evidence schema | MCP clients should not reverse-engineer each response shape. | Implemented `geond.evidence.v1` with `target_id`, `locator`, `metadata`, and compatibility aliases for messages, snapshots, changesets, and symbols. |
 | Explain-change synthesis | The current tool returns evidence, not a narrative. | Implemented as a deterministic, template-driven summary that cites `geond.evidence.v1` refs, available via `explain_change(include_narrative=True)`, the new `get_changeset_detail` MCP tool, and the `geond summarize-changeset` / `geond explain-change --narrative` CLI commands. |
-| Cross-file call edges | Current call edges are strongest inside a single file. | Resolve imports and exported symbols across Python and TypeScript packages. |
+| Cross-file call edges | Current call edges are strongest inside a single file. | Initial Python import-qualified call resolution and `get_symbol_context` caller/callee retrieval are implemented. Next: TypeScript/JavaScript exports and narrative use of call impact. |
 
 ## Priority 2: Deployment And Operations
 
@@ -59,11 +59,17 @@ organized by product risk rather than by implementation convenience.
 
 ## Current Recommendation
 
-MCP contract testing and narrative synthesis have landed: see
+MCP contract testing, narrative synthesis, and the first cross-file code graph
+slice have landed: see
 `tests/test_mcp_evidence_contract.py` (asserts `geond.evidence.v1` on every
 tool that returns evidence) and `src/geond/retrieval/narrative.py`
 (deterministic citation-bearing summaries used by `explain_change` and
-`get_changeset_detail`). The next slice should focus on **cross-file call
-edges** so narratives can describe upstream and downstream impact, and on
-**agent-collaboration ergonomics** — see [`docs/agent_collaboration.md`](agent_collaboration.md)
-for the questions the protocol still needs to answer.
+`get_changeset_detail`). Python code graph indexing now resolves calls through
+absolute and relative imports, storing `calls` edges with
+`resolution=import_qualified_name_match`; `get_symbol_context` returns those
+edges as `callers` and `callees`. Changeset detail lookup now rejects ambiguous
+git commit prefixes with explicit candidate matches. The next slice should
+extend this to **TypeScript/JavaScript export/import resolution** and feed call
+impact into narratives, while continuing the
+**agent-collaboration ergonomics** work described in
+[`docs/agent_collaboration.md`](agent_collaboration.md).

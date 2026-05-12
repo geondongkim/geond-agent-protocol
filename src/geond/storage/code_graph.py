@@ -77,6 +77,28 @@ def store_code_index(
                 entity_id_by_qualified_name[entity.qualified_name] = cur.fetchone()[0]
                 entity_count += 1
 
+        required_qualified_names = {
+            qualified_name
+            for indexed_file in indexed_files
+            for edge in indexed_file.edges
+            for qualified_name in (edge.source_qualified_name, edge.target_qualified_name)
+        }
+        missing_qualified_names = sorted(
+            required_qualified_names - set(entity_id_by_qualified_name)
+        )
+        if missing_qualified_names:
+            cur.execute(
+                """
+                SELECT qualified_name, id::text
+                FROM code_entities
+                WHERE workspace_id = %s
+                  AND qualified_name = ANY(%s)
+                """,
+                (workspace_id, missing_qualified_names),
+            )
+            for qualified_name, entity_id in cur.fetchall():
+                entity_id_by_qualified_name.setdefault(qualified_name, entity_id)
+
         for indexed_file in indexed_files:
             for edge in indexed_file.edges:
                 source_id = entity_id_by_qualified_name.get(edge.source_qualified_name)

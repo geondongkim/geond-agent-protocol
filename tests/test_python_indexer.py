@@ -94,6 +94,92 @@ def build_answer(prompt):
             conn.commit()
 
 
+def test_store_python_index_resolves_cross_file_import_calls(tmp_path: Path) -> None:
+    settings = get_settings()
+    workspace_uri = f"file:///tmp/geond-python-cross-file-test-{uuid4()}"
+    package = tmp_path / "package"
+    package.mkdir()
+    utils = package / "utils.py"
+    service = package / "service.py"
+    utils.write_text(
+        """
+def clean(value):
+    return value.strip()
+""".strip(),
+        encoding="utf-8",
+    )
+    service.write_text(
+        """
+from .utils import clean
+
+def build_answer(prompt):
+    return clean(prompt).upper()
+""".strip(),
+        encoding="utf-8",
+    )
+
+    try:
+        conn = connect(settings)
+    except psycopg.OperationalError as exc:
+        pytest.skip(f"Postgres integration database is not available: {exc}")
+
+    with conn:
+        try:
+            run_schema_file(conn, SCHEMA)
+        except psycopg.Error as exc:
+            pytest.skip(f"Postgres integration schema is not available: {exc}")
+
+        workspace_id = upsert_workspace(
+            conn,
+            root_uri=workspace_uri,
+            name="python-cross-file-fixture",
+            metadata={"source": "pytest"},
+        )
+        try:
+            stats = store_code_index(
+                conn,
+                workspace_id,
+                [index_python_file(utils, tmp_path), index_python_file(service, tmp_path)],
+            )
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT e.edge_type, e.metadata
+                    FROM code_edges e
+                    JOIN code_entities source ON source.id = e.source_entity_id
+                    JOIN code_entities target ON target.id = e.target_entity_id
+                    WHERE e.workspace_id = %s
+                      AND source.qualified_name = %s
+                      AND target.qualified_name = %s
+                    """,
+                    (workspace_id, "package.service.build_answer", "package.utils.clean"),
+                )
+                edge = cur.fetchone()
+            clean_context = next(
+                item
+                for item in get_symbol_context(conn, "clean", limit=5)
+                if item["qualified_name"] == "package.utils.clean"
+            )
+            answer_context = next(
+                item
+                for item in get_symbol_context(conn, "build_answer", limit=5)
+                if item["qualified_name"] == "package.service.build_answer"
+            )
+
+            assert stats["edges"] >= 1
+            assert edge is not None
+            assert edge[0] == "calls"
+            assert edge[1]["call"] == "clean"
+            assert edge[1]["resolution"] == "import_qualified_name_match"
+            assert clean_context["callers"][0]["qualified_name"] == "package.service.build_answer"
+            assert clean_context["callers"][0]["edge"]["evidence"]["schema"] == "geond.evidence.v1"
+            assert answer_context["callees"][0]["qualified_name"] == "package.utils.clean"
+        finally:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM workspaces WHERE id = %s", (workspace_id,))
+            conn.commit()
+
+
 def test_changesets_link_to_indexed_symbols_and_explain_change(tmp_path: Path) -> None:
     settings = get_settings()
     workspace_uri = f"file:///tmp/geond-changeset-link-test-{uuid4()}"

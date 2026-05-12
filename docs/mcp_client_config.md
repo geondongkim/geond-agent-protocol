@@ -28,9 +28,9 @@ Use [examples/mcp_clients/continue_config.yaml](../examples/mcp_clients/continue
 ## Useful Tools
 
 - `search_dev_memory`: retrieve prior session evidence.
-- `get_symbol_context`: inspect indexed code graph entities.
+- `get_symbol_context`: inspect indexed code graph entities, related changesets, and caller/callee `calls` edges.
 - `explain_change`: inspect file snapshots, related messages, changesets, and touched symbols. Pass `include_narrative=true` to attach a deterministic, evidence-citing summary under `narrative` (schema `geond.evidence.v1.narrative`).
-- `get_changeset_detail`: look up a changeset by UUID or git commit (sha or prefix); returns files, touched code entities, and `geond.evidence.v1` evidence refs. Pass `include_narrative=true` for a one-paragraph briefing.
+- `get_changeset_detail`: look up a changeset by UUID or git commit (sha or prefix); returns files, touched code entities, and `geond.evidence.v1` evidence refs. Ambiguous commit prefixes return `ambiguous=true` with candidate matches instead of choosing silently. Pass `include_narrative=true` for a one-paragraph briefing.
 - `record_changeset`: record changed files and optional unified diff patches from an MCP client.
 - `reserve_files`: warn other agents about file-level work.
 - `reserve_symbols`: warn other agents about symbol-level work.

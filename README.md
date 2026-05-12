@@ -207,7 +207,9 @@ uv run geond index-tree-sitter "C:/path/to/project" \
     --workspace-name "my-project"
 ```
 
-Use the MCP tool `get_symbol_context` or the Python API to retrieve functions, classes, methods, modules, and imports stored in `code_entities`.
+Use the MCP tool `get_symbol_context` or the Python API to retrieve functions, classes, methods, modules, imports, related changesets, and caller/callee relationships stored in the code graph.
+Python indexing records same-file calls and import-qualified cross-file calls as
+`calls` edges when the target symbol is indexed in the same workspace.
 
 Record a changeset and link it to indexed code entities:
 
@@ -230,6 +232,8 @@ Retrieval outputs include canonical `geond.evidence.v1` evidence references with
 stable `target_id`, `locator`, and `metadata` fields. Existing alias fields such
 as `message_id`, `changeset_id`, `entity_id`, and `file_path` remain available
 for compatibility with early MCP clients.
+Changeset detail lookup accepts UUIDs and git commit prefixes; ambiguous
+prefixes return candidate matches instead of silently selecting one.
 
 Run the MCP server:
 
@@ -322,7 +326,7 @@ Local protocol demo asset:
 
 ## Status
 
-Early MVP stage. The repository contains research notes, architecture, implementation plans, a local Postgres/pgvector schema, VS Code Copilot Chat, Codex, and Claude Code importers, OpenAI/Azure/gateway/local embedding provider modes, keyword/vector/hybrid retrieval, AST/regex/tree-sitter code graph indexing, changeset-to-symbol evidence links, benchmark quality metrics, coordination tools, demo assets, Azure samples, and an MCP server.
+Early MVP stage. The repository contains research notes, architecture, implementation plans, a local Postgres/pgvector schema, VS Code Copilot Chat, Codex, and Claude Code importers, OpenAI/Azure/gateway/local embedding provider modes, keyword/vector/hybrid retrieval, AST/regex/tree-sitter code graph indexing, Python cross-file call edges, changeset-to-symbol evidence links, benchmark quality metrics, coordination tools, demo assets, Azure samples, and an MCP server.
 
 ## Design Principles
 

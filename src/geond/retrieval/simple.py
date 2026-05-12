@@ -516,6 +516,7 @@ def get_changeset_detail(
 
     with conn.cursor() as cur:
         is_uuid = len(ref) == 36 and ref.count("-") == 4
+        row: tuple[Any, ...] | None
         if is_uuid:
             cur.execute(
                 """
@@ -535,6 +536,7 @@ def get_changeset_detail(
                 """,
                 (ref,),
             )
+            row = cur.fetchone()
         else:
             cur.execute(
                 """
@@ -550,13 +552,55 @@ def get_changeset_detail(
                     c.created_at
                 FROM changesets c
                 JOIN workspaces w ON w.id = c.workspace_id
-                WHERE c.git_commit = %s OR c.git_commit LIKE %s
+                WHERE c.git_commit = %s
                 ORDER BY c.created_at DESC
                 LIMIT 1
                 """,
-                (ref, f"{ref}%"),
+                (ref,),
             )
-        row = cur.fetchone()
+            row = cur.fetchone()
+            if row is None:
+                cur.execute(
+                    """
+                    SELECT
+                        c.id::text,
+                        c.workspace_id::text,
+                        w.root_uri,
+                        c.git_commit,
+                        c.branch,
+                        c.intent,
+                        c.summary,
+                        c.metadata,
+                        c.created_at
+                    FROM changesets c
+                    JOIN workspaces w ON w.id = c.workspace_id
+                    WHERE c.git_commit LIKE %s
+                    ORDER BY c.created_at DESC
+                    LIMIT 2
+                    """,
+                    (f"{ref}%",),
+                )
+                prefix_rows = cur.fetchall()
+                if len(prefix_rows) > 1:
+                    return {
+                        "changeset_ref": ref,
+                        "found": False,
+                        "ambiguous": True,
+                        "matches": [
+                            {
+                                "changeset_id": match[0],
+                                "workspace_id": match[1],
+                                "workspace_uri": match[2],
+                                "git_commit": match[3],
+                                "branch": match[4],
+                                "intent": match[5],
+                                "summary": match[6],
+                                "created_at": match[8].isoformat() if match[8] else None,
+                            }
+                            for match in prefix_rows
+                        ],
+                    }
+                row = prefix_rows[0] if prefix_rows else None
         if row is None:
             return {"changeset_ref": ref, "found": False}
 
@@ -716,6 +760,12 @@ def get_symbol_context(conn: Connection, symbol: str, limit: int = 10) -> list[d
         changesets_by_entity: dict[str, list[dict[str, Any]]] = {
             entity_id: [] for entity_id in entity_ids
         }
+        callers_by_entity: dict[str, list[dict[str, Any]]] = {
+            entity_id: [] for entity_id in entity_ids
+        }
+        callees_by_entity: dict[str, list[dict[str, Any]]] = {
+            entity_id: [] for entity_id in entity_ids
+        }
         if entity_ids:
             cur.execute(
                 """
@@ -784,6 +834,84 @@ def get_symbol_context(conn: Connection, symbol: str, limit: int = 10) -> list[d
                     }
                 )
 
+            cur.execute(
+                """
+                SELECT
+                    e.id::text,
+                    e.workspace_id::text,
+                    e.source_entity_id::text,
+                    source.kind,
+                    source.name,
+                    source.qualified_name,
+                    source.file_path,
+                    source.start_line,
+                    source.end_line,
+                    e.target_entity_id::text,
+                    target.kind,
+                    target.name,
+                    target.qualified_name,
+                    target.file_path,
+                    target.start_line,
+                    target.end_line,
+                    e.edge_type,
+                    e.confidence,
+                    e.metadata
+                FROM code_edges e
+                JOIN code_entities source ON source.id = e.source_entity_id
+                JOIN code_entities target ON target.id = e.target_entity_id
+                WHERE e.edge_type = 'calls'
+                  AND (
+                      e.source_entity_id = ANY(%s::uuid[])
+                      OR e.target_entity_id = ANY(%s::uuid[])
+                  )
+                ORDER BY e.created_at DESC
+                """,
+                (entity_ids, entity_ids),
+            )
+            for row in cur.fetchall():
+                edge = {
+                    "edge_id": row[0],
+                    "workspace_id": row[1],
+                    "edge_type": row[16],
+                    "confidence": row[17],
+                    "metadata": row[18],
+                    "evidence": evidence_ref(
+                        "code_edge",
+                        target_id=row[0],
+                        workspace_id=row[1],
+                        locator={
+                            "source_entity_id": row[2],
+                            "source_qualified_name": row[5],
+                            "target_entity_id": row[9],
+                            "target_qualified_name": row[12],
+                            "edge_type": row[16],
+                        },
+                        metadata={"confidence": row[17], "edge_metadata": row[18]},
+                    ),
+                }
+                source = {
+                    "entity_id": row[2],
+                    "kind": row[3],
+                    "name": row[4],
+                    "qualified_name": row[5],
+                    "file_path": row[6],
+                    "start_line": row[7],
+                    "end_line": row[8],
+                }
+                target = {
+                    "entity_id": row[9],
+                    "kind": row[10],
+                    "name": row[11],
+                    "qualified_name": row[12],
+                    "file_path": row[13],
+                    "start_line": row[14],
+                    "end_line": row[15],
+                }
+                if row[2] in callees_by_entity:
+                    callees_by_entity[row[2]].append({**target, "edge": edge})
+                if row[9] in callers_by_entity:
+                    callers_by_entity[row[9]].append({**source, "edge": edge})
+
     return [
         {
             "entity_id": row[0],
@@ -797,6 +925,8 @@ def get_symbol_context(conn: Connection, symbol: str, limit: int = 10) -> list[d
             "signature": row[8],
             "metadata": row[9],
             "related_changesets": changesets_by_entity.get(row[0], []),
+            "callers": callers_by_entity.get(row[0], []),
+            "callees": callees_by_entity.get(row[0], []),
             "evidence": evidence_ref(
                 "code_entity",
                 target_id=row[0],

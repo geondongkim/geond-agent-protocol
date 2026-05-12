@@ -151,6 +151,9 @@ MVP parsing strategy:
 
 - Use lightweight language-specific extractors first: Python via stdlib `ast`, and
   TypeScript/JavaScript via a conservative declaration scanner.
+- Python indexing records intra-file calls and resolves cross-file calls when a
+  function or method calls a symbol imported with absolute imports or package
+  relative imports.
 - Use tree-sitter where available and keep language fallbacks for unsupported
   syntax. The TypeScript/JavaScript fallback infers function, class, method,
   and module line spans so diff hunks can link to body changes, not only
@@ -192,6 +195,8 @@ Retrieval combines four signals.
 | Intent | Prioritize bugfix, refactor, feature, test, or docs context |
 
 Retrieval should return structured context, not only text chunks.
+Symbol context includes related changesets plus caller/callee relationships from
+`calls` edges when the code graph can resolve them.
 
 Example response shape:
 

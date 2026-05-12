@@ -109,6 +109,15 @@ def helper(value):
                 summary="Upper-case the build_answer output.",
             )
             changeset_id = recorded["changeset_id"]
+            record_changeset(
+                conn,
+                workspace_id=workspace_id,
+                files=[{"file_path": "package/other.py", "status": "modified"}],
+                git_commit="abcdef9999999999",
+                branch="main",
+                intent="contract ambiguity test",
+                summary="Create a second changeset with the same commit prefix.",
+            )
 
             symbol_results = mcp_server.get_symbol_context("build_answer", limit=5)
             assert symbol_results, "symbol context must return at least one entity"
@@ -151,6 +160,11 @@ def helper(value):
             assert commit_detail["changeset_id"] == changeset_id
             assert commit_detail.get("narrative") is None
             _assert_evidence_ref(commit_detail["evidence"], expected_kinds={"changeset"})
+
+            ambiguous = mcp_server.get_changeset_detail("abcdef")
+            assert ambiguous["found"] is False
+            assert ambiguous["ambiguous"] is True
+            assert len(ambiguous["matches"]) == 2
 
             missing = mcp_server.get_changeset_detail("0" * 8)
             assert missing["found"] is False

@@ -121,6 +121,7 @@ class PythonIndexVisitor(ast.NodeVisitor):
         self.edges: list[CodeEdgeDraft] = []
         self.stack: list[str] = [module_name]
         self.name_to_qualified_names: dict[str, list[str]] = {}
+        self.imported_name_by_alias: dict[str, str] = {}
         self.calls_by_source: dict[str, list[str]] = {}
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
@@ -194,6 +195,8 @@ class PythonIndexVisitor(ast.NodeVisitor):
 
     def add_import(self, imported_name: str, alias: str | None, line_number: int) -> None:
         display_name = alias or imported_name.rsplit(".", 1)[-1]
+        imported_qualified_name = resolve_imported_qualified_name(imported_name, self.module_name)
+        self.imported_name_by_alias[display_name] = imported_qualified_name
         qualified_name = f"{self.module_name}:import:{line_number}:{display_name}"
         self.add_entity(
             CodeEntityDraft(
@@ -204,14 +207,20 @@ class PythonIndexVisitor(ast.NodeVisitor):
                 start_line=line_number,
                 end_line=line_number,
                 signature=imported_name,
-                metadata={"language": "python", "imported_name": imported_name, "alias": alias},
+                metadata={
+                    "language": "python",
+                    "imported_name": imported_name,
+                    "imported_qualified_name": imported_qualified_name,
+                    "alias": alias,
+                },
             )
         )
         self.add_edge(self.module_name, qualified_name, "imports")
 
     def add_entity(self, entity: CodeEntityDraft) -> None:
         self.entities.append(entity)
-        self.name_to_qualified_names.setdefault(entity.name, []).append(entity.qualified_name)
+        if entity.kind in {"class", "function", "method"}:
+            self.name_to_qualified_names.setdefault(entity.name, []).append(entity.qualified_name)
 
     def add_edge(
         self,
@@ -230,18 +239,75 @@ class PythonIndexVisitor(ast.NodeVisitor):
         )
 
     def add_resolved_call_edges(self) -> None:
+        added_edges: set[tuple[str, str, str]] = set()
         for source_qualified_name, calls in self.calls_by_source.items():
             for call_name in calls:
                 name = call_name.rsplit(".", 1)[-1]
                 targets = self.name_to_qualified_names.get(name, [])
-                if not targets:
+                if targets:
+                    self.add_call_edge(
+                        source_qualified_name,
+                        targets[0],
+                        call_name,
+                        "same_file_name_match",
+                        added_edges,
+                    )
                     continue
-                self.add_edge(
-                    source_qualified_name,
-                    targets[0],
-                    "calls",
-                    metadata={"call": call_name, "resolution": "same_file_name_match"},
-                )
+
+                imported_target = self.resolve_imported_call(call_name)
+                if imported_target:
+                    self.add_call_edge(
+                        source_qualified_name,
+                        imported_target,
+                        call_name,
+                        "import_qualified_name_match",
+                        added_edges,
+                    )
+
+    def add_call_edge(
+        self,
+        source_qualified_name: str,
+        target_qualified_name: str,
+        call_name: str,
+        resolution: str,
+        added_edges: set[tuple[str, str, str]],
+    ) -> None:
+        edge_key = (source_qualified_name, target_qualified_name, "calls")
+        if edge_key in added_edges:
+            return
+        added_edges.add(edge_key)
+        self.add_edge(
+            source_qualified_name,
+            target_qualified_name,
+            "calls",
+            metadata={"call": call_name, "resolution": resolution},
+        )
+
+    def resolve_imported_call(self, call_name: str) -> str | None:
+        if call_name in self.imported_name_by_alias:
+            return self.imported_name_by_alias[call_name]
+
+        alias, _, member_path = call_name.partition(".")
+        if not member_path:
+            return None
+        imported_base = self.imported_name_by_alias.get(alias)
+        if not imported_base:
+            return None
+        return f"{imported_base}.{member_path}"
+
+
+def resolve_imported_qualified_name(imported_name: str, module_name: str) -> str:
+    if not imported_name.startswith("."):
+        return imported_name
+
+    relative_level = len(imported_name) - len(imported_name.lstrip("."))
+    suffix = imported_name[relative_level:]
+    package_parts = module_name.split(".")[:-1]
+    keep_count = max(len(package_parts) - relative_level + 1, 0)
+    parts = package_parts[:keep_count]
+    if suffix:
+        parts.extend(part for part in suffix.split(".") if part)
+    return ".".join(parts)
 
 
 def find_calls(node: ast.AST) -> list[ast.Call]:
