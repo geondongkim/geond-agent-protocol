@@ -1,4 +1,5 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
 CREATE EXTENSION IF NOT EXISTS vector;
 
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -12,6 +13,16 @@ CREATE TABLE IF NOT EXISTS workspaces (
     name text NOT NULL,
     metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
     created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS workspace_aliases (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    alias_uri text NOT NULL UNIQUE,
+    reason text NOT NULL DEFAULT 'alias',
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    last_seen_at timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS agents (
@@ -243,10 +254,12 @@ CREATE TABLE IF NOT EXISTS redaction_findings (
 );
 
 CREATE INDEX IF NOT EXISTS idx_sessions_workspace ON sessions(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_workspace_aliases_workspace ON workspace_aliases(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_events_workspace_session ON events(workspace_id, session_id);
 CREATE INDEX IF NOT EXISTS idx_messages_session_ordinal ON messages(session_id, ordinal);
 DROP INDEX IF EXISTS idx_messages_content_trgm_seed;
 CREATE INDEX IF NOT EXISTS idx_messages_content_tsv_seed ON messages USING gin (to_tsvector('simple', left(content, 50000)));
+CREATE INDEX IF NOT EXISTS idx_messages_content_trgm ON messages USING gin ((left(content, 50000)) gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_file_snapshots_workspace_path ON file_snapshots(workspace_id, file_path);
 CREATE INDEX IF NOT EXISTS idx_code_entities_workspace_name ON code_entities(workspace_id, name);
 CREATE INDEX IF NOT EXISTS idx_code_entities_workspace_path ON code_entities(workspace_id, file_path);

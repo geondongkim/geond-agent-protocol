@@ -142,6 +142,7 @@ Important projections:
 - agent actions and handoffs
 - embeddings and summaries
 - active reservations
+- workspace aliases for renamed or moved local folders
 
 ### 4.5 Code Graph Builder
 
@@ -191,6 +192,7 @@ Retrieval combines four signals.
 | Signal | Purpose |
 |---|---|
 | Semantic similarity | Find related conversations, snippets, and summaries |
+| Lexical indexes | Fast token and substring matching with Postgres GIN, full-text search, and `pg_trgm` |
 | Symbol graph | Expand context around functions/classes/modules |
 | Timeline | Recover the sequence of decisions and changes |
 | Intent | Prioritize bugfix, refactor, feature, test, or docs context |
@@ -200,6 +202,8 @@ Symbol context includes related changesets plus caller/callee relationships from
 `calls` edges when the code graph can resolve them.
 Change explanations and changeset detail records include `call_impact`, allowing
 deterministic narratives to cite upstream callers and downstream callees.
+Workspace-scoped retrieval resolves registered `workspace_aliases`, so a moved
+folder can keep using the original workspace memory.
 
 Example response shape:
 

@@ -40,12 +40,15 @@ from geond.storage.repository import (
     list_active_file_reservations,
     list_active_symbol_reservations,
     list_handoff_summaries,
+    list_workspace_aliases,
     record_changeset,
     record_handoff_summary,
+    register_workspace_alias,
     release_symbol_reservation,
     renew_reservation,
     renew_symbol_reservation,
     reserve_symbols,
+    resolve_workspace_id,
     store_claude_code_session,
     store_codex_session,
     store_vscode_session,
@@ -123,6 +126,13 @@ def format_benchmark_result_markdown(result: dict[str, object]) -> str:
             )
         )
     return "\n".join(lines)
+
+
+def require_workspace_id(conn, workspace_id_or_uri: str) -> str:
+    workspace_id = resolve_workspace_id(conn, workspace_id_or_uri)
+    if not workspace_id:
+        raise SystemExit(f"Workspace not found: {workspace_id_or_uri}")
+    return workspace_id
 
 
 def main() -> None:
@@ -222,6 +232,17 @@ def main() -> None:
     purge = subparsers.add_parser("purge-workspace", help="Delete one workspace and its data")
     purge.add_argument("workspace_id_or_uri")
     purge.add_argument("--yes", action="store_true", help="Confirm deletion")
+
+    register_alias = subparsers.add_parser(
+        "register-workspace-alias",
+        help="Register a moved or renamed workspace URI as an alias",
+    )
+    register_alias.add_argument("workspace_id_or_uri")
+    register_alias.add_argument("alias_uri")
+    register_alias.add_argument("--reason", default="moved")
+
+    aliases = subparsers.add_parser("workspace-aliases", help="List workspace aliases")
+    aliases.add_argument("--workspace-id-or-uri")
 
     conflicts = subparsers.add_parser("conflicts", help="List active file and symbol reservations")
     conflicts.add_argument("workspace_id")
@@ -664,17 +685,36 @@ def main() -> None:
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return
 
+    if args.command == "register-workspace-alias":
+        with connect(get_settings()) as conn:
+            result = register_workspace_alias(
+                conn,
+                workspace_id_or_uri=args.workspace_id_or_uri,
+                alias_uri=args.alias_uri,
+                reason=args.reason,
+                metadata={"source": "cli"},
+            )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "workspace-aliases":
+        with connect(get_settings()) as conn:
+            result = list_workspace_aliases(conn, args.workspace_id_or_uri)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+
     if args.command == "conflicts":
         with connect(get_settings()) as conn:
+            workspace_id = require_workspace_id(conn, args.workspace_id)
             result = {
                 "file_reservations": list_active_file_reservations(
                     conn,
-                    args.workspace_id,
+                    workspace_id,
                     args.files,
                 ),
                 "symbol_reservations": list_active_symbol_reservations(
                     conn,
-                    args.workspace_id,
+                    workspace_id,
                     args.symbols,
                 ),
             }
@@ -683,15 +723,19 @@ def main() -> None:
 
     if args.command == "cleanup-reservations":
         with connect(get_settings()) as conn:
-            result = cleanup_expired_reservations_for_workspace(conn, args.workspace_id)
+            workspace_id = (
+                require_workspace_id(conn, args.workspace_id) if args.workspace_id else None
+            )
+            result = cleanup_expired_reservations_for_workspace(conn, workspace_id)
         print(json.dumps({"status": "ok", **result}, ensure_ascii=False, indent=2))
         return
 
     if args.command == "reserve-symbols":
         with connect(get_settings()) as conn:
+            workspace_id = require_workspace_id(conn, args.workspace_id)
             result = reserve_symbols(
                 conn,
-                workspace_id=args.workspace_id,
+                workspace_id=workspace_id,
                 agent_name=args.agent_name,
                 symbols=args.symbols,
                 purpose=args.purpose,
@@ -702,9 +746,10 @@ def main() -> None:
 
     if args.command == "release-symbol":
         with connect(get_settings()) as conn:
+            workspace_id = require_workspace_id(conn, args.workspace_id)
             released = release_symbol_reservation(
                 conn,
-                workspace_id=args.workspace_id,
+                workspace_id=workspace_id,
                 reservation_id=args.reservation_id,
                 symbol=args.symbol,
                 agent_name=args.agent_name,
@@ -714,9 +759,10 @@ def main() -> None:
 
     if args.command == "renew-reservation":
         with connect(get_settings()) as conn:
+            workspace_id = require_workspace_id(conn, args.workspace_id)
             renewed = renew_reservation(
                 conn,
-                workspace_id=args.workspace_id,
+                workspace_id=workspace_id,
                 reservation_id=args.reservation_id,
                 file_path=args.file_path,
                 agent_name=args.agent_name,
@@ -727,9 +773,10 @@ def main() -> None:
 
     if args.command == "renew-symbol":
         with connect(get_settings()) as conn:
+            workspace_id = require_workspace_id(conn, args.workspace_id)
             renewed = renew_symbol_reservation(
                 conn,
-                workspace_id=args.workspace_id,
+                workspace_id=workspace_id,
                 reservation_id=args.reservation_id,
                 symbol=args.symbol,
                 agent_name=args.agent_name,
@@ -740,9 +787,10 @@ def main() -> None:
 
     if args.command == "record-handoff":
         with connect(get_settings()) as conn:
+            workspace_id = require_workspace_id(conn, args.workspace_id)
             handoff_id = record_handoff_summary(
                 conn,
-                workspace_id=args.workspace_id,
+                workspace_id=workspace_id,
                 from_agent_name=args.from_agent,
                 to_agent_name=args.to_agent,
                 summary=args.summary,

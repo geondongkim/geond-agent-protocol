@@ -14,6 +14,7 @@ from geond.retrieval.narrative import (
     summarize_explain_change as summarize_explain_change_narrative,
 )
 from geond.storage.embeddings import vector_to_sql
+from geond.storage.repository import resolve_workspace_id
 
 SNIPPET_CHARS = 1200
 
@@ -26,6 +27,9 @@ def search_dev_memory(
     source: str | None = None,
 ) -> list[dict[str, Any]]:
     pattern = f"%{query}%"
+    workspace_id = resolve_workspace_filter(conn, workspace_uri)
+    if workspace_uri and not workspace_id:
+        return []
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -43,20 +47,24 @@ def search_dev_memory(
                 ts_rank(
                     to_tsvector('simple', left(m.content, 50000)),
                     plainto_tsquery('simple', %s)
-                ) AS rank
+                ) AS rank,
+                similarity(left(m.content, 50000), %s) AS trigram_score
             FROM messages m
             JOIN sessions s ON s.id = m.session_id
             JOIN workspaces w ON w.id = s.workspace_id
             WHERE (
-                m.content ILIKE %s
+                left(m.content, 50000) ILIKE %s
                 OR to_tsvector('simple', left(m.content, 50000)) @@ plainto_tsquery('simple', %s)
             )
-              AND (%s::text IS NULL OR w.root_uri = %s::text)
+              AND (%s::uuid IS NULL OR w.id = %s::uuid)
               AND (%s::text IS NULL OR s.source = %s::text)
-            ORDER BY rank DESC NULLS LAST, m.created_at DESC
+            ORDER BY
+                rank DESC NULLS LAST,
+                trigram_score DESC NULLS LAST,
+                m.created_at DESC
             LIMIT %s
             """,
-            (query, pattern, query, workspace_uri, workspace_uri, source, source, limit),
+            (query, query, pattern, query, workspace_id, workspace_id, source, source, limit),
         )
         rows = cur.fetchall()
     return [
@@ -73,6 +81,7 @@ def search_dev_memory(
             ordinal=row[8],
             snippet=make_snippet(row[9]),
             rank=float(row[10] or 0),
+            trigram_score=float(row[11] or 0),
         )
         for row in rows
     ]
@@ -87,6 +96,9 @@ def vector_search_dev_memory(
     source: str | None = None,
 ) -> list[dict[str, Any]]:
     vector_literal = vector_to_sql(query_vector)
+    workspace_id = resolve_workspace_filter(conn, workspace_uri)
+    if workspace_uri and not workspace_id:
+        return []
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -109,7 +121,7 @@ def vector_search_dev_memory(
             WHERE e.target_table = 'messages'
               AND e.model = %s
               AND e.embedding IS NOT NULL
-              AND (%s::text IS NULL OR w.root_uri = %s::text)
+              AND (%s::uuid IS NULL OR w.id = %s::uuid)
               AND (%s::text IS NULL OR s.source = %s::text)
             ORDER BY e.embedding <=> %s::vector ASC
             LIMIT %s
@@ -117,8 +129,8 @@ def vector_search_dev_memory(
             (
                 vector_literal,
                 model,
-                workspace_uri,
-                workspace_uri,
+                workspace_id,
+                workspace_id,
                 source,
                 source,
                 vector_literal,
@@ -199,6 +211,12 @@ def hybrid_search_dev_memory(
             }
 
     return sorted(merged.values(), key=lambda item: item["hybrid_score"], reverse=True)[:limit]
+
+
+def resolve_workspace_filter(conn: Connection, workspace_uri: str | None) -> str | None:
+    if not workspace_uri:
+        return None
+    return resolve_workspace_id(conn, workspace_uri)
 
 
 def message_result(

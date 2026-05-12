@@ -20,9 +20,15 @@ from geond.storage.repository import (
     upsert_workspace,
 )
 from geond.storage.repository import list_handoff_summaries as list_handoff_summaries_row
+from geond.storage.repository import (
+    list_workspace_aliases as list_workspace_aliases_row,
+)
 from geond.storage.repository import record_agent_action as record_agent_action_row
 from geond.storage.repository import record_changeset as record_changeset_row
 from geond.storage.repository import record_handoff_summary as record_handoff_summary_row
+from geond.storage.repository import (
+    register_workspace_alias as register_workspace_alias_row,
+)
 from geond.storage.repository import release_reservation as release_reservation_row
 from geond.storage.repository import release_symbol_reservation as release_symbol_reservation_row
 from geond.storage.repository import renew_reservation as renew_reservation_row
@@ -135,6 +141,31 @@ def get_symbol_context(symbol: str, limit: int = 10) -> list[dict[str, Any]]:
     """Return known code entities matching a symbol name."""
     with connect(get_settings()) as conn:
         return get_symbol_context_query(conn, symbol, limit)
+
+
+@mcp.tool()
+def register_workspace_alias(
+    workspace_id_or_uri: str,
+    alias_uri: str,
+    reason: str = "moved",
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Register a moved or renamed workspace URI as an alias for an existing workspace."""
+    with connect(get_settings()) as conn:
+        return register_workspace_alias_row(
+            conn,
+            workspace_id_or_uri=workspace_id_or_uri,
+            alias_uri=alias_uri,
+            reason=reason,
+            metadata=metadata,
+        )
+
+
+@mcp.tool()
+def list_workspace_aliases(workspace_id_or_uri: str | None = None) -> list[dict[str, Any]]:
+    """List workspace aliases, optionally scoped to one workspace id, root URI, or alias URI."""
+    with connect(get_settings()) as conn:
+        return list_workspace_aliases_row(conn, workspace_id_or_uri)
 
 
 @mcp.tool()

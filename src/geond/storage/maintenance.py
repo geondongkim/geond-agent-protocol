@@ -6,6 +6,7 @@ from psycopg import Connection
 from psycopg.types.json import Jsonb
 
 from geond.redaction import redact_text
+from geond.storage.repository import resolve_workspace_id_cursor
 
 
 def seed_sample_workspace(conn: Connection) -> dict[str, Any]:
@@ -109,21 +110,22 @@ def seed_sample_workspace(conn: Connection) -> dict[str, Any]:
 
 def purge_workspace(conn: Connection, workspace_id_or_uri: str) -> dict[str, Any]:
     with conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT id::text, root_uri, name
-            FROM workspaces
-            WHERE id::text = %s OR root_uri = %s
-            """,
-            (workspace_id_or_uri, workspace_id_or_uri),
-        )
-        workspace = cur.fetchone()
-        if not workspace:
+        workspace_id = resolve_workspace_id_cursor(cur, workspace_id_or_uri)
+        if not workspace_id:
             return {
                 "status": "not_found",
                 "workspace_id_or_uri": workspace_id_or_uri,
                 "deleted": {},
             }
+        cur.execute(
+            """
+            SELECT id::text, root_uri, name
+            FROM workspaces
+            WHERE id::text = %s
+            """,
+            (workspace_id,),
+        )
+        workspace = cur.fetchone()
 
         workspace_id = workspace[0]
         deleted = count_workspace_rows(cur, workspace_id)
@@ -156,6 +158,7 @@ def count_workspace_rows(cur: Any, workspace_id: str) -> dict[str, int]:
         "handoff_summaries",
         "benchmark_runs",
         "redaction_findings",
+        "workspace_aliases",
     ):
         cur.execute(f"SELECT count(*) FROM {table} WHERE workspace_id = %s", (workspace_id,))
         counts[table] = cur.fetchone()[0]

@@ -24,6 +24,40 @@ def upsert_workspace(
     with conn.cursor() as cur:
         cur.execute(
             """
+            SELECT w.id::text
+            FROM workspace_aliases wa
+            JOIN workspaces w ON w.id = wa.workspace_id
+            WHERE wa.alias_uri = %s
+            LIMIT 1
+            """,
+            (root_uri,),
+        )
+        alias_row = cur.fetchone()
+        if alias_row:
+            workspace_id = alias_row[0]
+            cur.execute(
+                """
+                UPDATE workspaces
+                SET name = %s,
+                    metadata = metadata || %s
+                WHERE id = %s::uuid
+                """,
+                (name, Jsonb(metadata or {}), workspace_id),
+            )
+            cur.execute(
+                """
+                UPDATE workspace_aliases
+                SET last_seen_at = now()
+                WHERE workspace_id = %s::uuid
+                  AND alias_uri = %s
+                """,
+                (workspace_id, root_uri),
+            )
+            conn.commit()
+            return workspace_id
+
+        cur.execute(
+            """
             INSERT INTO workspaces (root_uri, name, metadata)
             VALUES (%s, %s, %s)
             ON CONFLICT (root_uri)
@@ -35,6 +69,148 @@ def upsert_workspace(
         workspace_id = cur.fetchone()[0]
     conn.commit()
     return workspace_id
+
+
+def resolve_workspace_id_cursor(cur: Cursor, workspace_id_or_uri: str) -> str | None:
+    cur.execute(
+        """
+        SELECT id::text
+        FROM workspaces
+        WHERE id::text = %s OR root_uri = %s
+        LIMIT 1
+        """,
+        (workspace_id_or_uri, workspace_id_or_uri),
+    )
+    row = cur.fetchone()
+    if row:
+        return row[0]
+
+    cur.execute(
+        """
+        SELECT workspace_id::text
+        FROM workspace_aliases
+        WHERE alias_uri = %s
+        LIMIT 1
+        """,
+        (workspace_id_or_uri,),
+    )
+    row = cur.fetchone()
+    return row[0] if row else None
+
+
+def resolve_workspace_id(conn: Connection, workspace_id_or_uri: str) -> str | None:
+    with conn.cursor() as cur:
+        return resolve_workspace_id_cursor(cur, workspace_id_or_uri)
+
+
+def register_workspace_alias(
+    conn: Connection,
+    workspace_id_or_uri: str,
+    alias_uri: str,
+    reason: str = "moved",
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    with conn.cursor() as cur:
+        workspace_id = resolve_workspace_id_cursor(cur, workspace_id_or_uri)
+        if not workspace_id:
+            raise ValueError("workspace_id_or_uri does not resolve to a workspace")
+
+        cur.execute(
+            """
+            SELECT id::text
+            FROM workspaces
+            WHERE root_uri = %s
+            LIMIT 1
+            """,
+            (alias_uri,),
+        )
+        root_row = cur.fetchone()
+        if root_row and root_row[0] != workspace_id:
+            raise ValueError("alias_uri is already the root_uri of another workspace")
+
+        cur.execute(
+            """
+            SELECT workspace_id::text
+            FROM workspace_aliases
+            WHERE alias_uri = %s
+            LIMIT 1
+            """,
+            (alias_uri,),
+        )
+        alias_row = cur.fetchone()
+        if alias_row and alias_row[0] != workspace_id:
+            raise ValueError("alias_uri is already registered for another workspace")
+
+        cur.execute(
+            """
+            INSERT INTO workspace_aliases (workspace_id, alias_uri, reason, metadata)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (alias_uri)
+            DO UPDATE SET reason = EXCLUDED.reason,
+                          metadata = workspace_aliases.metadata || EXCLUDED.metadata,
+                          last_seen_at = now()
+            RETURNING id::text, workspace_id::text, alias_uri, reason, metadata, last_seen_at
+            """,
+            (workspace_id, alias_uri, reason or "alias", Jsonb(metadata or {})),
+        )
+        row = cur.fetchone()
+    conn.commit()
+    return {
+        "alias_id": row[0],
+        "workspace_id": row[1],
+        "alias_uri": row[2],
+        "reason": row[3],
+        "metadata": row[4],
+        "last_seen_at": row[5].isoformat() if row[5] else None,
+    }
+
+
+def list_workspace_aliases(
+    conn: Connection,
+    workspace_id_or_uri: str | None = None,
+) -> list[dict[str, Any]]:
+    with conn.cursor() as cur:
+        workspace_id = (
+            resolve_workspace_id_cursor(cur, workspace_id_or_uri) if workspace_id_or_uri else None
+        )
+        if workspace_id_or_uri and not workspace_id:
+            return []
+        workspace_filter = "WHERE wa.workspace_id = %s::uuid" if workspace_id else ""
+        params: tuple[Any, ...] = (workspace_id,) if workspace_id else ()
+        cur.execute(
+            f"""
+            SELECT
+                wa.id::text,
+                wa.workspace_id::text,
+                w.root_uri,
+                w.name,
+                wa.alias_uri,
+                wa.reason,
+                wa.metadata,
+                wa.created_at,
+                wa.last_seen_at
+            FROM workspace_aliases wa
+            JOIN workspaces w ON w.id = wa.workspace_id
+            {workspace_filter}
+            ORDER BY wa.last_seen_at DESC
+            """,
+            params,
+        )
+        rows = cur.fetchall()
+    return [
+        {
+            "alias_id": row[0],
+            "workspace_id": row[1],
+            "workspace_uri": row[2],
+            "workspace_name": row[3],
+            "alias_uri": row[4],
+            "reason": row[5],
+            "metadata": row[6],
+            "created_at": row[7].isoformat() if row[7] else None,
+            "last_seen_at": row[8].isoformat() if row[8] else None,
+        }
+        for row in rows
+    ]
 
 
 def record_changeset(
@@ -1154,8 +1330,17 @@ def list_handoff_summaries(
     filters: list[str] = []
     params: list[Any] = []
     if workspace_id_or_uri:
-        filters.append("(w.id::text = %s OR w.root_uri = %s)")
-        params.extend([workspace_id_or_uri, workspace_id_or_uri])
+        filters.append(
+            """
+            (w.id::text = %s OR w.root_uri = %s OR EXISTS (
+                SELECT 1
+                FROM workspace_aliases wa
+                WHERE wa.workspace_id = w.id
+                  AND wa.alias_uri = %s
+            ))
+            """
+        )
+        params.extend([workspace_id_or_uri, workspace_id_or_uri, workspace_id_or_uri])
     if status:
         filters.append("hs.status = %s")
         params.append(status)

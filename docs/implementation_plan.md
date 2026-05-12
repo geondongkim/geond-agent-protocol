@@ -101,6 +101,7 @@ Tasks:
 - [x] Add Postgres image with pgvector.
 - [x] Create initial SQL migration.
 - [x] Add tables: `workspaces`, `agents`, `sessions`, `messages`, `events`, `file_snapshots`, `changesets`, `code_entities`, `code_edges`, `embeddings`, `agent_actions`, `file_reservations`.
+- [x] Add `workspace_aliases` so moved or renamed folders can resolve to the same workspace.
 - [x] Add indexes for workspace, session, file path, entity name, and baseline text search.
 - [x] Add seed script with sample workspace and session.
 
@@ -201,6 +202,7 @@ Tasks:
 - [x] Add embedding provider abstraction.
 - [x] Add local/no-op embedding mode for privacy-first development.
 - [x] Add pgvector search when embeddings are configured.
+- [x] Add `pg_trgm` substring indexing for multilingual and partial-match keyword search.
 - [x] Implement first-pass hybrid scoring: keyword reciprocal rank + vector reciprocal rank.
 - [x] Return evidence objects for `search_dev_memory` results.
 - [x] Expand evidence objects to `explain_change` and symbol retrieval.
@@ -222,6 +224,7 @@ Tasks:
 - [x] Implement `get_symbol_context`.
 - [x] Implement `explain_change`.
 - [x] Implement `get_changeset_detail` with optional narrative synthesis.
+- [x] Implement workspace alias registration/listing for moved folders.
 - [x] Implement `record_changeset` with optional patch hunk linking.
 - [x] Implement `record_agent_action`.
 - [x] Expose resources for sessions, symbols, changesets, and workspace timeline.

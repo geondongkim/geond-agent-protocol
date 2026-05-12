@@ -11,6 +11,7 @@ organized by product risk rather than by implementation convenience.
 | Redaction review mode | Pattern redaction is useful but imperfect. | Add `geond audit-redaction` to report finding counts and sample-safe categories before import. |
 | Secret-free benchmark artifacts | Public evidence should be safe by default. | Add an artifact sanitizer that rejects subscription IDs, tenant IDs, emails, and key-looking strings before writing docs. |
 | Keyless Azure path | API keys are acceptable for smoke tests but not ideal for production. | Make Entra ID auth the documented production default and add a managed-identity smoke variant. |
+| Workspace identity guardrails | Folder moves and renames should not split agent memory. | Implemented `workspace_aliases`, alias-aware search filters, and MCP/CLI alias registration. Next: optional git fingerprint suggestions. |
 
 ## Priority 1: Evidence Quality
 
@@ -35,7 +36,7 @@ organized by product risk rather than by implementation convenience.
 | Improvement | Why | Candidate implementation |
 | --- | --- | --- |
 | Provider comparison matrix | Retrieval quality differs across OpenAI, Azure OpenAI, gateway, and local embeddings. | Run saved benchmark comparisons with the same judgment file and publish markdown reports. |
-| Reranking | Hybrid reciprocal rank is simple but not always precise. | Add optional local or API reranker stage after keyword/vector candidate generation. |
+| Reranking | Hybrid reciprocal rank is simple but not always precise. | Add optional local or API reranker stage after keyword/vector/trigram candidate generation. |
 | Multilingual corpus | Korean and English queries are core to the project story. | Expand fixtures with multilingual messages, symbols, and expected evidence judgments. |
 | Token and request accounting | Cost estimates need provider usage dimensions. | Capture token/request usage when providers or gateways expose it. |
 
@@ -71,8 +72,10 @@ returns those edges as `callers` and `callees`, and change narratives cite
 `code_edge` evidence when touched symbols have call impact. Changeset detail
 lookup rejects ambiguous git commit prefixes with explicit candidate matches.
 Reservation renewal is available for file and symbol leases through MCP and CLI.
-The next slice should handle **re-export/default-export edge cases**, add
+Workspace aliases now preserve memory across folder moves, and keyword search
+uses Postgres full-text plus `pg_trgm` substring matching before hybrid vector
+merge. The next slice should handle **re-export/default-export edge cases**, add
 **LSP-backed references** where available, add richer reservation audit events,
-and continue the
+add optional reranking over lexical/vector candidates, and continue the
 **agent-collaboration ergonomics** work described in
 [`docs/agent_collaboration.md`](agent_collaboration.md).

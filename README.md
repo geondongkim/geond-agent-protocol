@@ -61,6 +61,7 @@ validation status, and improvement plan.
 - [docs/provider_extensions.md](docs/provider_extensions.md) covers OpenAI, Azure OpenAI, gateway, and local embedding modes.
 - [docs/deployment_guide.md](docs/deployment_guide.md) explains Azure CLI and Azure Portal deployment flows with AWS/GCP resource analogues.
 - [docs/mcp_client_config.md](docs/mcp_client_config.md) provides Claude Desktop, Continue, and VS Code MCP client examples.
+- [docs/workspace_identity_and_search.md](docs/workspace_identity_and_search.md) explains folder move tracking, workspace aliases, multilingual search, and when Elasticsearch/CDC may be worth it.
 - [docs/benchmarking.md](docs/benchmarking.md) shows the current retrieval benchmark command.
 - [docs/azure_validation/README.md](docs/azure_validation/README.md) records the temporary Azure OpenAI, APIM, and VM validation workflow and sanitized evidence.
 - [docs/improvement_backlog.md](docs/improvement_backlog.md) lists prioritized next improvements for evidence quality, deployment, retrieval, and adoption.
@@ -182,6 +183,20 @@ uv run geond search "추가 테스트베드" \
     --workspace-uri "file:///C:/path/to/project" \
     --source codex
 ```
+
+If a project folder is renamed or moved, register the new URI as an alias so
+future imports and searches continue to resolve to the original workspace:
+
+```bash
+uv run geond register-workspace-alias \
+    "file:///C:/old/path/project" \
+    "file:///C:/new/path/project" \
+    --reason folder-move
+```
+
+Workspace-scoped search resolves both root URIs and registered aliases. Keyword
+search uses Postgres full-text GIN plus `pg_trgm` substring matching, while
+hybrid search adds pgvector semantic candidates when embeddings are configured.
 
 Index Python code into the local code graph:
 

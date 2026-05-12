@@ -9,6 +9,7 @@ from geond.storage.repository import (
     list_active_file_reservations,
     list_active_symbol_reservations,
     list_handoff_summaries,
+    resolve_workspace_id,
 )
 
 
@@ -167,10 +168,13 @@ def list_changesets(conn: Connection, limit: int = 50) -> list[dict[str, Any]]:
 
 
 def get_workspace_reservations(conn: Connection, workspace_id: str) -> dict[str, Any]:
+    resolved_workspace_id = resolve_workspace_id(conn, workspace_id)
+    if not resolved_workspace_id:
+        return {"workspace_id": workspace_id, "file_reservations": [], "symbol_reservations": []}
     return {
-        "workspace_id": workspace_id,
-        "file_reservations": list_active_file_reservations(conn, workspace_id),
-        "symbol_reservations": list_active_symbol_reservations(conn, workspace_id),
+        "workspace_id": resolved_workspace_id,
+        "file_reservations": list_active_file_reservations(conn, resolved_workspace_id),
+        "symbol_reservations": list_active_symbol_reservations(conn, resolved_workspace_id),
     }
 
 
@@ -180,11 +184,14 @@ def get_workspace_handoffs(
     status: str | None = None,
     limit: int = 50,
 ) -> dict[str, Any]:
+    resolved_workspace_id = resolve_workspace_id(conn, workspace_id)
+    if not resolved_workspace_id:
+        return {"workspace_id": workspace_id, "handoffs": []}
     return {
-        "workspace_id": workspace_id,
+        "workspace_id": resolved_workspace_id,
         "handoffs": list_handoff_summaries(
             conn,
-            workspace_id_or_uri=workspace_id,
+            workspace_id_or_uri=resolved_workspace_id,
             status=status,
             limit=limit,
         ),
@@ -196,19 +203,20 @@ def get_workspace_timeline(
     workspace_id: str,
     limit: int = 100,
 ) -> dict[str, Any]:
+    resolved_workspace_id = resolve_workspace_id(conn, workspace_id)
+    if not resolved_workspace_id:
+        return {"workspace_id": workspace_id, "events": []}
     with conn.cursor() as cur:
         cur.execute(
             """
             SELECT id::text, root_uri, name
             FROM workspaces
-            WHERE id::text = %s OR root_uri = %s
+            WHERE id::text = %s
             LIMIT 1
             """,
-            (workspace_id, workspace_id),
+            (resolved_workspace_id,),
         )
         workspace = cur.fetchone()
-        if not workspace:
-            return {"workspace_id": workspace_id, "events": []}
 
         cur.execute(
             """
