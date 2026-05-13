@@ -12,6 +12,12 @@ replace Copilot, Codex, Continue, Cursor, Claude Code, or CLI agents. The goal
 is to give them a common local memory layer they can read from and write to
 through MCP and lightweight adapters.
 
+Geond is local-first, not local-only. The default workflow runs the MCP server,
+CLI, dashboard, and database-facing adapters on each developer machine. Teams
+can intentionally point those local processes at a shared PostgreSQL-compatible
+database, such as Azure Database for PostgreSQL Flexible Server, and route model
+calls through an embedding gateway when they need cloud-backed collaboration.
+
 ## Why
 
 Coding agents are getting better, but their memory is fragmented.
@@ -58,8 +64,8 @@ flowchart LR
 
 ## Planned Next
 
-- Add a read-only localhost dashboard API and UI for agent activity, reservations, handoffs, lineage, code risk, and PM/orchestrator read models.
-- Add normalized activity events so agent lifecycle hooks, CLI workflows, and future orchestrators can read one ordered stream.
+- Expand the read-only localhost dashboard with richer code-risk and handoff-board views on top of the current mission-control, agent-lane, session, and timeline views.
+- Add normalized activity events so agent lifecycle hooks, CLI workflows, trace adapters, and future orchestrators can read one ordered stream.
 - Continue improving adoption paths with editor commands, TestPyPI/release observation, and smaller local setup options.
 
 ## Command Map
@@ -95,6 +101,7 @@ validation status, and improvement plan.
 - [docs/model_provider_strategy.md](docs/model_provider_strategy.md) compares OpenAI, Azure OpenAI, and local SLM embedding options.
 - [docs/provider_extensions.md](docs/provider_extensions.md) covers OpenAI, Azure OpenAI, gateway, and local embedding modes.
 - [docs/deployment_guide.md](docs/deployment_guide.md) explains Azure CLI and Azure Portal deployment flows with AWS/GCP resource analogues.
+- [docs/azure_validation/team_collab_validation.md](docs/azure_validation/team_collab_validation.md) defines the shared Azure PostgreSQL validation for Windows and Apple Silicon clients.
 - [docs/developer_setup.md](docs/developer_setup.md) lists prerequisites, OS-specific install notes, and verification commands.
 - [docs/mcp_client_config.md](docs/mcp_client_config.md) provides Claude Desktop, Continue, and VS Code MCP client examples.
 - [docs/workspace_identity_and_search.md](docs/workspace_identity_and_search.md) explains folder move tracking, workspace aliases, multilingual search, and when Elasticsearch/CDC may be worth it.
@@ -462,10 +469,12 @@ uv run geond dashboard serve --host 127.0.0.1 --port 8765
 ```
 
 Read-only endpoints include `/health`,
-`/api/workspaces/{workspace_id}/overview`, and
-`/api/workspaces/{workspace_id}/activity`. Open
+`/api/workspaces/{workspace_id}/overview`,
+`/api/workspaces/{workspace_id}/activity`, and
+`/api/workspaces/{workspace_id}/sessions`. Open
 `http://127.0.0.1:8765/?workspace=<workspace-id>` for the local Command Center,
-Agent Fleet, reservations, handoffs, lineage counts, and timeline.
+horizontal Agent Fleet lanes, session/message cards, reservations, handoffs,
+lineage counts, and timeline.
 
 Coordinate symbol-level work from CLI or MCP:
 
@@ -553,6 +562,20 @@ Run a temporary Azure validation smoke test:
 The smoke script creates a tagged temporary resource group, validates Azure OpenAI embeddings, APIM Consumption gateway scaffolding, and a B2s VM multilingual embedding benchmark, then deletes the resource group. Sanitized evidence from the latest validation is in [docs/azure_validation/20260512-combined](docs/azure_validation/20260512-combined).
 For a step-by-step CLI and Azure Portal walkthrough, see [docs/deployment_guide.md](docs/deployment_guide.md).
 
+For team collaboration validation, keep each agent local and point each machine
+at the same shared database:
+
+```powershell
+.\scripts\azure_team_collab_validate.ps1 -Mode Provision
+```
+
+That flow validates Geond as local-first infrastructure: Windows/Codex can
+import, index, reserve, and hand off into Azure Database for PostgreSQL, while a
+MacBook or another workstation runs its own local `geond-mcp` against the same
+database to search, inspect conflicts, and consume handoffs. APIM remains the
+recommended gateway for embedding/model calls, not for Geond MCP itself until
+HTTP/SSE transport and auth are designed.
+
 Azure validation evidence:
 
 ![Geond Azure validation](docs/azure_validation/20260512-combined/geond_azure_validation.gif)
@@ -598,7 +621,7 @@ Local protocol demo asset:
 
 ## Status
 
-Alpha MVP. The repository contains research notes, architecture, implementation plans, a local Postgres/pgvector schema, VS Code Copilot Chat, Codex, and Claude Code importers, OpenAI/Azure/gateway/local embedding provider modes, keyword/vector/hybrid retrieval with optional local or API reranking, workspace aliases with git and manifest fingerprint suggestions, AST/regex/tree-sitter code graph indexing, Python and TypeScript/JavaScript cross-file/default-import/re-export call edges, editor-provided LSP reference imports, changeset-to-symbol evidence links, call-impact narratives, reservation renewal, conflict policies, audit events, structured handoff templates, workspace lineage graphs, context review, benchmark quality metrics, coordination tools, demo assets, Azure samples, release automation, and an MCP server. The local agent activity dashboard is planned next and documented as a read-only observer, not as an agent runner.
+Alpha MVP. The repository contains research notes, architecture, implementation plans, a local Postgres/pgvector schema, VS Code Copilot Chat, Codex, and Claude Code importers, OpenAI/Azure/gateway/local embedding provider modes, keyword/vector/hybrid retrieval with optional local or API reranking, workspace aliases with git and manifest fingerprint suggestions, AST/regex/tree-sitter code graph indexing, Python and TypeScript/JavaScript cross-file/default-import/re-export call edges, editor-provided LSP reference imports, changeset-to-symbol evidence links, call-impact narratives, reservation renewal, conflict policies, audit events, structured handoff templates, workspace lineage graphs, context review, benchmark quality metrics, coordination tools, demo assets, Azure samples, release automation, an MCP server, and a read-only local dashboard. The dashboard is an observer and PM/orchestration read model, not an agent runner.
 
 ## Design Principles
 

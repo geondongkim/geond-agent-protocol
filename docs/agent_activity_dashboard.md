@@ -20,14 +20,20 @@ boringly reliable.
 
 ## Design Inputs
 
-The dashboard direction comes from three recurring needs in multi-agent coding
+The dashboard direction comes from five recurring needs in multi-agent coding
 workflows:
 
 - a mission-control view that makes agent ownership, blockers, and next actions
   visible without reading raw JSON
+- horizontally expanding agent lanes so adding agents does not make the primary
+  page taller
+- session cards that surface the recent chat/context that caused the current
+  work
 - a provenance graph that separates append-only evidence from reduced UI state
 - lifecycle hooks and adapters that can record explicit agent activity without
   capturing every keystroke
+- a handoff lifecycle model that lets PM/orchestrator agents reason about
+  open, blocked, consumed, and released work
 
 ## Non-Goals
 
@@ -59,7 +65,7 @@ Primary interaction: click any row to open a right-side evidence panel.
 
 Purpose: answer "what is each agent doing?"
 
-Columns:
+Horizontal lanes:
 
 - agent name and kind
 - status inferred from recent actions and open reservations
@@ -76,6 +82,10 @@ Detail panel:
 - reservations and expiry
 - handoffs, tested commands, risks, next action
 - changesets associated with the agent or session
+
+Layout rule: agent count expands the board horizontally. The primary mission
+control page should avoid whole-page vertical scroll; each lane owns its own
+small scroll area and collapsible groups.
 
 ### 3. Activity Timeline
 
@@ -189,6 +199,7 @@ GET /readyz
 GET /api/workspaces
 GET /api/workspaces/{workspace_id}/overview
 GET /api/workspaces/{workspace_id}/agents
+GET /api/workspaces/{workspace_id}/sessions?limit=50&message_limit=5
 GET /api/workspaces/{workspace_id}/timeline?limit=100&after=<cursor>
 GET /api/workspaces/{workspace_id}/lineage?limit=250
 GET /api/workspaces/{workspace_id}/reservations
@@ -251,8 +262,12 @@ Recommended stack:
 UX rules:
 
 - First screen is the Command Center, not a landing page.
-- Use dense tables, filters, segmented controls, tabs, and right-side detail
-  panels.
+- Use tabs to split mission control, sessions, timeline, and trace/graph views.
+- Use horizontally scrolling agent and session lanes instead of one long page.
+- Use dense tables, filters, segmented controls, and right-side detail panels
+  only when they reduce scanning cost.
+- Collapse long sections by default: graph details, event history, and old
+  handoffs should not crowd the mission-control lane.
 - Keep cards for repeated summary items only; do not nest cards.
 - Use functional colors: green for healthy/completed, amber for waiting, red for
   failed/conflict, blue/teal for active, gray for archived.
@@ -305,9 +320,10 @@ memory, but visible work state.
 
 1. Build a simulated two-agent demo with `seed-sample`, `record_agent_action`,
    `reserve-symbols`, `record-handoff`, `record-changeset`, and `benchmark-search`.
-2. Add `geond dashboard serve` that exposes the read-only API and serves a local
-   Vite build or development proxy.
-3. Render a new GIF: dashboard opens, shows two agents, one reservation, one
+2. Continue with `geond dashboard serve` as a single-command local UI before
+   extracting a Vite/React app.
+3. Render a new GIF: dashboard opens, shows two or more horizontal agent lanes,
+   one reservation, one
    handoff, a timeline item, and a lineage graph.
 4. Add optional Claude Code and Codex hook examples that write Geond activity
    events at session start, tool use, validation, stop, and compaction.
@@ -322,8 +338,8 @@ memory, but visible work state.
 | --- | --- | --- |
 | 0. Product docs | Align on dashboard shape. | This document, README link, backlog entry, and demo-script note exist. |
 | 1. Read model | Expose dashboard-shaped JSON from existing repository functions. | Implemented through `dashboard-overview`, `dashboard-events`, `get_dashboard_overview`, `get_agent_activity_events`, `geond://workspaces/{id}/overview`, and `geond://workspaces/{id}/activity`. |
-| 1.5. Local HTTP API | Serve the same read model over localhost. | Implemented as `geond dashboard serve` with `/health`, `/api/workspaces/{id}/overview`, `/activity`, `/timeline`, `/lineage`, `/reservations`, and `/handoffs`. |
-| 2. Local UI MVP | Render command center, timeline, agent fleet, handoffs, and lineage graph. | Command Center, Agent Fleet, reservations, handoffs, lineage counts, and Activity Timeline are served at `/?workspace=<workspace-id>`; next add richer code-risk views. |
+| 1.5. Local HTTP API | Serve the same read model over localhost. | Implemented as `geond dashboard serve` with `/health`, `/api/workspaces/{id}/overview`, `/activity`, `/sessions`, `/timeline`, `/lineage`, `/reservations`, and `/handoffs`. |
+| 2. Local UI MVP | Render command center, timeline, agent fleet, handoffs, and lineage graph. | Mission Control, horizontally expanding Agent Fleet lanes, session/message cards, reservations, handoffs, lineage counts, Activity Timeline, and trace-model tab are served at `/?workspace=<workspace-id>`; next add richer code-risk views. |
 | 3. Activity projection | Normalize agent activity events for UI and orchestrators. | Agent actions, reservations, handoffs, changesets, and benchmark runs reduce into one ordered event stream. |
 | 4. Hook adapters | Capture real agent lifecycle events. | Codex/Claude Code hook examples record session/tool/stop events without exposing secrets. |
 | 5. PM/orchestrator loop | Use the read model to guide work assignment. | A PM prompt and CLI dry-run can recommend next work, detect blockers, and cite evidence. |
@@ -331,6 +347,7 @@ memory, but visible work state.
 
 ## Recommended Next Slice
 
-Add richer code-risk views next. The first local UI now renders the Command
-Center, Agent Fleet, reservations, handoffs, lineage counts, and Activity
-Timeline over the same read-only payloads.
+Add richer code-risk views next. The first local UI now renders split pages with
+Mission Control, horizontally expanding Agent Fleet lanes, session/message
+cards, reservations, handoffs, lineage counts, Activity Timeline, and a
+trace-model tab over the same read-only payloads.

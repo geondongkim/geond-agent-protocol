@@ -1,0 +1,35 @@
+﻿{
+    "run_id":  "20260514-015902",
+    "created_at":  "2026-05-14T02:11:49.3642612+09:00",
+    "status":  "provisioned_for_macbook_validation",
+    "location":  "koreacentral",
+    "resource_group":  "rg-geond-team-validate-20260514-015902",
+    "postgres_server":  "pg-geond-team-20260514015902",
+    "postgres_fqdn":  "pg-geond-team-20260514015902.postgres.database.azure.com",
+    "database":  "geond",
+    "admin_user":  "geondadmin",
+    "redacted_database_url":  "postgresql://geondadmin:***@pg-geond-team-20260514015902.postgres.database.azure.com:5432/geond?sslmode=require",
+    "client_ip_firewall_rule":  "121.166.35.242",
+    "extension_allow_list":  [
+                                 "pgcrypto",
+                                 "pg_trgm",
+                                 "vector"
+                             ],
+    "local_import":  {
+                         "status":  "skipped_pg_dump_psql_missing_on_windows_path",
+                         "requested":  false
+                     },
+    "seed_workspace_id":  "7b786436-73e2-4d23-a4a4-f724eaf96c3d",
+    "overview_counts":  {
+                            "sessions":  1,
+                            "agent_actions":  0,
+                            "active_file_reservations":  1,
+                            "active_symbol_reservations":  1,
+                            "open_handoffs":  1,
+                            "changesets":  1,
+                            "benchmark_runs":  0,
+                            "agents":  1
+                        },
+    "event_count":  7,
+    "cleanup_command":  "az group delete --name rg-geond-team-validate-20260514-015902 --yes"
+}

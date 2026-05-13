@@ -7,7 +7,11 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from geond.config import Settings
 from geond.db import connect
-from geond.storage.dashboard import get_agent_activity_events, get_dashboard_overview
+from geond.storage.dashboard import (
+    get_agent_activity_events,
+    get_dashboard_overview,
+    get_dashboard_sessions,
+)
 from geond.storage.resources import (
     get_workspace_handoffs,
     get_workspace_lineage,
@@ -101,6 +105,15 @@ def dashboard_payload(settings: Settings, path: str) -> tuple[int, dict[str, Any
             status = parse_qs(parsed.query).get("status", [None])[0]
             payload = get_workspace_handoffs(conn, workspace_id, status=status, limit=limit)
             return status_for_payload(payload), payload
+        if endpoint == "sessions":
+            message_limit = query_int(parsed.query, "message_limit", default=4, maximum=20)
+            payload = get_dashboard_sessions(
+                conn,
+                workspace_id,
+                limit=limit,
+                message_limit=message_limit,
+            )
+            return status_for_payload(payload), payload
 
     return 404, {"status": "not_found", "workspace_id": workspace_id, "endpoint": endpoint}
 
@@ -118,11 +131,16 @@ def dashboard_index() -> dict[str, Any]:
             "/api/workspaces/{workspace_id}/lineage",
             "/api/workspaces/{workspace_id}/reservations",
             "/api/workspaces/{workspace_id}/handoffs",
+            "/api/workspaces/{workspace_id}/sessions",
         ],
     }
 
 
 def dashboard_html() -> str:
+    return mission_control_html()
+
+
+def mission_control_html() -> str:
     return """<!doctype html>
 <html lang="en">
 <head>
@@ -153,6 +171,8 @@ def dashboard_html() -> str:
       color: var(--text);
       font-size: 14px;
       letter-spacing: 0;
+      height: 100vh;
+      overflow: hidden;
     }
     header {
       height: 64px;
@@ -173,9 +193,9 @@ def dashboard_html() -> str:
       font-weight: 680;
     }
     main {
-      max-width: 1440px;
-      margin: 0 auto;
-      padding: 20px 24px 32px;
+      height: calc(100vh - 64px);
+      padding: 12px 14px 14px;
+      overflow: hidden;
     }
     .toolbar {
       display: grid;
@@ -216,15 +236,144 @@ def dashboard_html() -> str:
     }
     .status-line {
       min-height: 20px;
-      margin: 12px 0 18px;
+      margin: 0 0 10px;
       color: var(--muted);
       font-size: 13px;
     }
-    .grid {
+    .tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 10px;
+      overflow-x: auto;
+    }
+    .tab {
+      height: 32px;
+      background: var(--surface);
+      color: var(--text);
+      border-color: var(--line);
+      white-space: nowrap;
+    }
+    .tab.active {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+    .view {
+      display: none;
+      height: calc(100% - 62px);
+      min-height: 0;
+    }
+    .view.active {
+      display: block;
+    }
+    .overview-shell {
       display: grid;
-      grid-template-columns: 1.05fr 1fr;
-      gap: 18px;
+      grid-template-columns: 360px minmax(0, 1fr);
+      gap: 12px;
+      height: 100%;
+      min-height: 0;
+    }
+    .compact-stack {
+      display: grid;
+      gap: 10px;
+      align-content: start;
+      overflow: auto;
+      min-height: 0;
+      padding-right: 2px;
+    }
+    .agent-board, .session-board {
+      display: grid;
+      grid-auto-flow: column;
+      grid-auto-columns: minmax(330px, 380px);
+      gap: 12px;
+      height: 100%;
+      min-width: 0;
+      overflow-x: auto;
+      overflow-y: hidden;
+      padding-bottom: 8px;
+    }
+    .agent-lane, .session-lane {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      min-height: 0;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .lane-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
       align-items: start;
+      padding: 12px;
+      border-bottom: 1px solid var(--line);
+      background: #fff;
+    }
+    .lane-body {
+      display: grid;
+      gap: 10px;
+      align-content: start;
+      overflow: auto;
+      min-height: 0;
+      padding: 10px;
+    }
+    .collapsible {
+      border-top: 1px solid var(--line);
+    }
+    details.collapsible {
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: #fff;
+      overflow: hidden;
+    }
+    details.collapsible > summary {
+      cursor: pointer;
+      padding: 9px 10px;
+      font-weight: 680;
+      list-style-position: inside;
+    }
+    details.collapsible > .list,
+    details.collapsible > .mini-list {
+      margin-top: 0;
+      padding: 0 10px 10px;
+    }
+    .mini-list {
+      display: grid;
+      gap: 7px;
+    }
+    .session-card, .message {
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: #fff;
+      padding: 9px 10px;
+    }
+    .session-card {
+      display: grid;
+      gap: 8px;
+    }
+    .message {
+      background: var(--surface-2);
+    }
+    .message .role {
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .message .content {
+      font-size: 12px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    .trace-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(260px, 1fr));
+      gap: 12px;
+      height: 100%;
+      overflow: auto;
+      align-items: stretch;
     }
     section {
       background: var(--surface);
@@ -318,7 +467,7 @@ def dashboard_html() -> str:
     .timeline {
       display: grid;
       gap: 0;
-      max-height: 650px;
+      height: 100%;
       overflow: auto;
     }
     .event {
@@ -358,8 +507,8 @@ def dashboard_html() -> str:
     @media (max-width: 980px) {
       header { height: auto; padding: 14px; align-items: stretch; flex-direction: column; }
       .toolbar { grid-template-columns: 1fr; width: 100%; }
-      main { padding: 14px; }
-      .grid, .split, .lineage { grid-template-columns: 1fr; }
+      main { height: calc(100vh - 145px); padding: 10px; }
+      .overview-shell, .split, .lineage, .trace-grid { grid-template-columns: 1fr; }
       .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .panel + .panel, .lineage div + div { border-left: 0; border-top: 1px solid var(--line); }
       .event { grid-template-columns: 1fr; }
@@ -389,32 +538,45 @@ def dashboard_html() -> str:
   </header>
   <main>
     <div class="status-line" id="status">Enter a workspace id or URI to load dashboard data.</div>
-    <div class="grid">
-      <section>
-        <header>
-          <h2>Command Center</h2>
-          <button class="secondary" id="copy-api" type="button">Copy API</button>
-        </header>
-        <div class="metrics" id="metrics"></div>
-        <div class="split">
-          <div class="panel">
-            <h2>Active Reservations</h2>
+    <nav class="tabs" aria-label="Dashboard views">
+      <button class="tab active" type="button" data-view="mission">Mission Control</button>
+      <button class="tab" type="button" data-view="sessions">Sessions</button>
+      <button class="tab" type="button" data-view="timeline">Timeline</button>
+      <button class="tab" type="button" data-view="trace">Trace Model</button>
+    </nav>
+    <section class="view active" data-view-panel="mission">
+      <div class="overview-shell">
+        <aside class="compact-stack">
+          <section>
+            <header>
+              <h2>Command Center</h2>
+              <button class="secondary" id="copy-api" type="button">Copy API</button>
+            </header>
+            <div class="metrics" id="metrics"></div>
+          </section>
+          <details class="collapsible" open>
+            <summary>Active Reservations</summary>
             <div class="list" id="reservations"></div>
-          </div>
-          <div class="panel">
-            <h2>Open Handoffs</h2>
+          </details>
+          <details class="collapsible" open>
+            <summary>Open Handoffs</summary>
             <div class="list" id="handoffs"></div>
-          </div>
-        </div>
-        <div class="lineage">
-          <div><div class="meta">Lineage nodes</div><strong id="lineage-nodes">0</strong></div>
-          <div><div class="meta">Lineage edges</div><strong id="lineage-edges">0</strong></div>
-        </div>
-        <div class="full-panel">
-          <h2>Agent Fleet</h2>
-          <div class="list" id="agents"></div>
-        </div>
-      </section>
+          </details>
+          <details class="collapsible">
+            <summary>Lineage</summary>
+            <div class="lineage">
+              <div><div class="meta">Lineage nodes</div><strong id="lineage-nodes">0</strong></div>
+              <div><div class="meta">Lineage edges</div><strong id="lineage-edges">0</strong></div>
+            </div>
+          </details>
+        </aside>
+        <div class="agent-board" id="agent-board"></div>
+      </div>
+    </section>
+    <section class="view" data-view-panel="sessions">
+      <div class="session-board" id="session-board"></div>
+    </section>
+    <section class="view" data-view-panel="timeline">
       <section>
         <header>
           <h2>Activity Timeline</h2>
@@ -422,7 +584,51 @@ def dashboard_html() -> str:
         </header>
         <div class="timeline" id="timeline"></div>
       </section>
-    </div>
+    </section>
+    <section class="view" data-view-panel="trace">
+      <div class="trace-grid">
+        <section>
+          <header><h2>Graph UI Pattern</h2></header>
+          <div class="panel">
+            <div class="row">
+              <div>
+                <div class="title">Fast graph, localhost first</div>
+                <div class="meta">
+                  Use the lineage payload before adding a heavier graph canvas.
+                </div>
+              </div>
+              <span class="badge ok">read-only</span>
+            </div>
+          </div>
+        </section>
+        <section>
+          <header><h2>Trace And Hooks</h2></header>
+          <div class="panel">
+            <div class="row">
+              <div>
+                <div class="title">Session, tool, validation, stop</div>
+                <div class="meta">Normalize Codex/Claude hook events into the activity stream.</div>
+              </div>
+              <span class="badge warn">next</span>
+            </div>
+          </div>
+        </section>
+        <section>
+          <header><h2>Handoff Lifecycle</h2></header>
+          <div class="panel">
+            <div class="row">
+              <div>
+                <div class="title">Open, blocked, closed, released</div>
+                <div class="meta">
+                  Tie PM/orchestration state to reservations and code evidence.
+                </div>
+              </div>
+              <span class="badge ok">linked</span>
+            </div>
+          </div>
+        </section>
+      </div>
+    </section>
   </main>
   <script>
     const state = { workspace: "", limit: 50 };
@@ -433,7 +639,8 @@ def dashboard_html() -> str:
     const metrics = document.querySelector("#metrics");
     const reservations = document.querySelector("#reservations");
     const handoffs = document.querySelector("#handoffs");
-    const agents = document.querySelector("#agents");
+    const agentBoard = document.querySelector("#agent-board");
+    const sessionBoard = document.querySelector("#session-board");
     const timeline = document.querySelector("#timeline");
     const countBadge = document.querySelector("#activity-count");
     const lineageNodes = document.querySelector("#lineage-nodes");
@@ -447,6 +654,9 @@ def dashboard_html() -> str:
       event.preventDefault();
       loadDashboard();
     });
+    for (const button of document.querySelectorAll(".tab")) {
+      button.addEventListener("click", () => switchView(button.dataset.view));
+    }
     copyApi.addEventListener("click", async () => {
       const workspace = workspaceInput.value.trim();
       if (!workspace) return;
@@ -458,6 +668,15 @@ def dashboard_html() -> str:
     function setStatus(message, error = false) {
       statusLine.textContent = message;
       statusLine.style.color = error ? "var(--danger)" : "var(--muted)";
+    }
+
+    function switchView(view) {
+      for (const button of document.querySelectorAll(".tab")) {
+        button.classList.toggle("active", button.dataset.view === view);
+      }
+      for (const panel of document.querySelectorAll("[data-view-panel]")) {
+        panel.classList.toggle("active", panel.dataset.viewPanel === view);
+      }
     }
 
     function badgeClass(status) {
@@ -542,43 +761,186 @@ def dashboard_html() -> str:
       }
     }
 
-    function renderAgents(events) {
-      const grouped = new Map();
-      for (const event of events) {
-        const name = event.agent_name || "unknown";
-        const current = grouped.get(name) || {
-          count: 0,
-          latest: null,
-          status: event.status || event.kind
-        };
-        current.count += 1;
-        if (!current.latest || (event.occurred_at || "") > (current.latest.occurred_at || "")) {
-          current.latest = event;
-          current.status = event.status || event.kind;
-        }
-        grouped.set(name, current);
+    function agentKey(name) {
+      return name || "system";
+    }
+
+    function eventAgentName(event) {
+      return agentKey(event.agent_name);
+    }
+
+    function sessionCard(session) {
+      const card = document.createElement("article");
+      card.className = "session-card";
+      card.innerHTML = `
+        <div>
+          <div class="title"></div>
+          <div class="meta"></div>
+        </div>
+        <details class="collapsible" open>
+          <summary>Recent messages</summary>
+          <div class="mini-list"></div>
+        </details>`;
+      card.querySelector(".title").textContent = session.title || session.external_id;
+      card.querySelector(".meta").textContent = [
+        session.source,
+        `${session.message_count || 0} messages`,
+        session.external_id
+      ].filter(Boolean).join(" | ");
+      const messages = card.querySelector(".mini-list");
+      if (!(session.messages || []).length) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = "No stored messages.";
+        messages.append(empty);
+        return card;
       }
-      const rows = [...grouped.entries()].sort((left, right) => {
-        return (right[1].latest?.occurred_at || "").localeCompare(
-          left[1].latest?.occurred_at || ""
-        );
-      });
-      renderList(
-        agents,
-        rows,
-        "No agent activity yet.",
-        ([name, summary]) => {
-          const latest = summary.latest;
-          const title = latest?.title || latest?.kind || "No recent event";
-          const item = row(name, title, summary.status);
-          item.classList.add("agent-row");
-          const count = document.createElement("span");
-          count.className = "badge";
-          count.textContent = `${summary.count} events`;
-          item.append(count);
-          return item;
+      for (const message of session.messages || []) {
+        const item = document.createElement("div");
+        item.className = "message";
+        item.innerHTML = `<div class="role"></div><div class="content"></div>`;
+        item.querySelector(".role").textContent = `${message.role} #${message.ordinal}`;
+        item.querySelector(".content").textContent = message.content || "";
+        messages.append(item);
+      }
+      return card;
+    }
+
+    function laneShell(name, summary) {
+      const lane = document.createElement("section");
+      lane.className = "agent-lane";
+      lane.innerHTML = `
+        <div class="lane-head">
+          <div>
+            <h2></h2>
+            <div class="meta"></div>
+          </div>
+          <span class="badge"></span>
+        </div>
+        <div class="lane-body"></div>`;
+      lane.querySelector("h2").textContent = name;
+      lane.querySelector(".meta").textContent = summary || "";
+      lane.querySelector(".badge").textContent = "agent";
+      return lane;
+    }
+
+    function appendDetails(target, title, items, emptyText, mapper, open = false) {
+      const details = document.createElement("details");
+      details.className = "collapsible";
+      details.open = open;
+      details.innerHTML = `<summary></summary><div class="mini-list"></div>`;
+      details.querySelector("summary").textContent = `${title} (${items.length})`;
+      const list = details.querySelector(".mini-list");
+      if (!items.length) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = emptyText;
+        list.append(empty);
+      } else {
+        for (const item of items) list.append(mapper(item));
+      }
+      target.append(details);
+    }
+
+    function renderAgentBoard(events, sessions, overview) {
+      const lanes = new Map();
+      const ensure = (name) => {
+        const key = agentKey(name);
+        if (!lanes.has(key)) {
+          lanes.set(key, { events: [], sessions: [], reservations: [], handoffs: [] });
         }
-      );
+        return lanes.get(key);
+      };
+      for (const event of events) ensure(eventAgentName(event)).events.push(event);
+      for (const session of sessions) ensure(session.agent_name).sessions.push(session);
+      for (const item of [
+        ...(overview.active_reservations?.files || []),
+        ...(overview.active_reservations?.symbols || []),
+      ]) {
+        ensure(item.agent_name).reservations.push(item);
+      }
+      for (const handoff of overview.open_handoffs || []) {
+        ensure(handoff.from_agent_name).handoffs.push(handoff);
+      }
+
+      agentBoard.replaceChildren();
+      const ordered = [...lanes.entries()].sort((left, right) => {
+        const rightTime = right[1].events[0]?.occurred_at || "";
+        const leftTime = left[1].events[0]?.occurred_at || "";
+        return rightTime.localeCompare(leftTime);
+      });
+      if (!ordered.length) {
+        const lane = laneShell("No agents", "No activity recorded yet.");
+        agentBoard.append(lane);
+        return;
+      }
+      for (const [name, laneData] of ordered) {
+        const lane = laneShell(
+          name,
+          `${laneData.sessions.length} sessions | ${laneData.events.length} events`
+        );
+        const body = lane.querySelector(".lane-body");
+        appendDetails(
+          body,
+          "Active work",
+          [...laneData.reservations, ...laneData.handoffs],
+          "No active reservations or handoffs.",
+          (item) => row(
+            item.file_path || item.qualified_name || item.symbol || item.summary,
+            item.purpose || item.status || item.agent_name,
+            item.status || "active"
+          ),
+          true
+        );
+        appendDetails(
+          body,
+          "Sessions",
+          laneData.sessions,
+          "No sessions for this agent.",
+          sessionCard,
+          true
+        );
+        appendDetails(
+          body,
+          "Recent events",
+          laneData.events.slice(0, 12),
+          "No recent events.",
+          (event) => row(event.title || event.kind, event.kind, event.status),
+          false
+        );
+        agentBoard.append(lane);
+      }
+    }
+
+    function renderSessionBoard(sessions) {
+      sessionBoard.replaceChildren();
+      if (!sessions.length) {
+        const lane = document.createElement("section");
+        lane.className = "session-lane";
+        lane.innerHTML = `
+          <div class="lane-head"><h2>No sessions</h2></div>
+          <div class="lane-body"><div class="empty">No stored sessions.</div></div>`;
+        sessionBoard.append(lane);
+        return;
+      }
+      for (const session of sessions) {
+        const lane = document.createElement("section");
+        lane.className = "session-lane";
+        lane.innerHTML = `
+          <div class="lane-head">
+            <div>
+              <h2></h2>
+              <div class="meta"></div>
+            </div>
+            <span class="badge"></span>
+          </div>
+          <div class="lane-body"></div>`;
+        lane.querySelector("h2").textContent = session.agent_name || session.source;
+        lane.querySelector(".meta").textContent = session.external_id || "";
+        lane.querySelector(".badge").textContent = session.source;
+        lane.querySelector(".lane-body").append(sessionCard(session));
+        sessionBoard.append(lane);
+      }
     }
 
     async function loadDashboard() {
@@ -594,12 +956,18 @@ def dashboard_html() -> str:
       const encoded = encodeURIComponent(workspace);
       const overviewUrl = `/api/workspaces/${encoded}/overview?limit=${encodeURIComponent(limit)}`;
       const activityUrl = `/api/workspaces/${encoded}/activity?limit=${encodeURIComponent(limit)}`;
-      const [overviewResponse, activityResponse] = await Promise.all([
+      const sessionsUrl = [
+        `/api/workspaces/${encoded}/sessions?limit=${encodeURIComponent(limit)}`,
+        "message_limit=5"
+      ].join("&");
+      const [overviewResponse, activityResponse, sessionsResponse] = await Promise.all([
         fetch(overviewUrl),
         fetch(activityUrl),
+        fetch(sessionsUrl),
       ]);
       const overview = await overviewResponse.json();
       const activity = await activityResponse.json();
+      const sessionPayload = await sessionsResponse.json();
       if (!overviewResponse.ok || overview.status === "not_found") {
         setStatus(`Workspace not found: ${workspace}`, true);
         return;
@@ -630,7 +998,9 @@ def dashboard_html() -> str:
       lineageNodes.textContent = overview.lineage?.node_count ?? 0;
       lineageEdges.textContent = overview.lineage?.edge_count ?? 0;
       const events = activity.events || overview.recent_activity || [];
-      renderAgents(events);
+      const sessions = sessionPayload.sessions || [];
+      renderAgentBoard(events, sessions, overview);
+      renderSessionBoard(sessions);
       renderTimeline(events);
       const url = new URL(location.href);
       url.searchParams.set("workspace", workspace);
@@ -650,17 +1020,29 @@ def match_workspace_route(path: str) -> tuple[str, str] | None:
     if len(parts) != 4 or parts[0] != "api" or parts[1] != "workspaces":
         return None
     endpoint = parts[3]
-    if endpoint not in {"overview", "activity", "timeline", "lineage", "reservations", "handoffs"}:
+    if endpoint not in {
+        "overview",
+        "activity",
+        "timeline",
+        "lineage",
+        "reservations",
+        "handoffs",
+        "sessions",
+    }:
         return None
     return parts[2], endpoint
 
 
 def query_limit(query: str, default: int = 100) -> int:
-    values = parse_qs(query).get("limit")
+    return query_int(query, "limit", default=default, maximum=500)
+
+
+def query_int(query: str, key: str, *, default: int, maximum: int) -> int:
+    values = parse_qs(query).get(key)
     if not values:
         return default
     try:
-        return max(1, min(int(values[0]), 500))
+        return max(1, min(int(values[0]), maximum))
     except ValueError:
         return default
 

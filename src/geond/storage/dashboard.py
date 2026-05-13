@@ -251,6 +251,114 @@ def get_dashboard_overview(
     }
 
 
+def get_dashboard_sessions(
+    conn: Connection,
+    workspace_id_or_uri: str,
+    limit: int = 30,
+    message_limit: int = 4,
+) -> dict[str, Any]:
+    workspace = resolve_dashboard_workspace(conn, workspace_id_or_uri)
+    if workspace is None:
+        return {
+            "workspace_id": workspace_id_or_uri,
+            "status": "not_found",
+            "sessions": [],
+        }
+    workspace_id, workspace_uri, workspace_name = workspace
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT s.id::text, s.source, s.external_id, s.title, s.metadata,
+                   s.started_at, s.ended_at, s.created_at, s.updated_at,
+                   count(m.id) AS message_count,
+                   max(m.created_at) AS latest_message_at
+            FROM sessions s
+            LEFT JOIN messages m ON m.session_id = s.id
+            WHERE s.workspace_id = %s
+            GROUP BY s.id
+            ORDER BY coalesce(max(m.created_at), s.updated_at, s.created_at) DESC
+            LIMIT %s
+            """,
+            (workspace_id, limit),
+        )
+        session_rows = cur.fetchall()
+
+        messages_by_session: dict[str, list[dict[str, Any]]] = {}
+        session_ids = [row[0] for row in session_rows]
+        if session_ids:
+            cur.execute(
+                """
+                SELECT session_id::text, id::text, role, ordinal,
+                       left(content, 700) AS content, metadata, created_at
+                FROM (
+                    SELECT m.*,
+                           row_number() OVER (
+                               PARTITION BY m.session_id
+                               ORDER BY m.ordinal DESC
+                           ) AS message_rank
+                    FROM messages m
+                    WHERE m.session_id = ANY(%s::uuid[])
+                ) ranked
+                WHERE message_rank <= %s
+                ORDER BY session_id, ordinal ASC
+                """,
+                (session_ids, message_limit),
+            )
+            for row in cur.fetchall():
+                messages_by_session.setdefault(row[0], []).append(
+                    {
+                        "message_id": row[1],
+                        "role": row[2],
+                        "ordinal": row[3],
+                        "content": row[4],
+                        "metadata": row[5],
+                        "created_at": row[6].isoformat() if row[6] else None,
+                    }
+                )
+
+    sessions = []
+    for row in session_rows:
+        metadata = row[4] or {}
+        sessions.append(
+            {
+                "session_id": row[0],
+                "source": row[1],
+                "external_id": row[2],
+                "title": row[3],
+                "agent_name": dashboard_session_agent(row[1], metadata),
+                "metadata": metadata,
+                "started_at": row[5].isoformat() if row[5] else None,
+                "ended_at": row[6].isoformat() if row[6] else None,
+                "created_at": row[7].isoformat() if row[7] else None,
+                "updated_at": row[8].isoformat() if row[8] else None,
+                "message_count": int(row[9] or 0),
+                "latest_message_at": row[10].isoformat() if row[10] else None,
+                "messages": messages_by_session.get(row[0], []),
+            }
+        )
+    return {
+        "workspace_id": workspace_id,
+        "workspace_uri": workspace_uri,
+        "workspace_name": workspace_name,
+        "status": "ok",
+        "sessions": sessions,
+    }
+
+
+def dashboard_session_agent(source: str, metadata: dict[str, Any]) -> str:
+    originator = str(metadata.get("originator") or "").lower()
+    normalized_source = source.lower()
+    if "codex" in normalized_source or "codex" in originator:
+        return "codex"
+    if "claude" in normalized_source or "claude" in originator:
+        return "claude"
+    if "copilot" in normalized_source or "vscode" in normalized_source:
+        return "copilot"
+    if originator:
+        return originator
+    return normalized_source or "unknown"
+
+
 def resolve_dashboard_workspace(
     conn: Connection,
     workspace_id_or_uri: str,

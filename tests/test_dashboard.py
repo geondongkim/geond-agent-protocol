@@ -9,7 +9,11 @@ import pytest
 from geond.config import get_settings
 from geond.db import connect, run_schema_file
 from geond.storage.benchmark import save_benchmark_run
-from geond.storage.dashboard import get_agent_activity_events, get_dashboard_overview
+from geond.storage.dashboard import (
+    get_agent_activity_events,
+    get_dashboard_overview,
+    get_dashboard_sessions,
+)
 from geond.storage.repository import (
     record_agent_action,
     record_changeset,
@@ -64,6 +68,25 @@ def test_dashboard_overview_and_activity_events() -> None:
                 action_type="review",
                 summary="Reviewed current dashboard slice.",
             )
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO sessions (workspace_id, source, external_id, title, metadata)
+                    VALUES (%s, 'codex', 'dashboard-session', 'Dashboard session', '{}')
+                    RETURNING id
+                    """,
+                    (workspace_id,),
+                )
+                session_id = cur.fetchone()[0]
+                cur.execute(
+                    """
+                    INSERT INTO messages (session_id, role, ordinal, content)
+                    VALUES
+                      (%s, 'user', 1, 'Can the dashboard show session context?'),
+                      (%s, 'assistant', 2, 'Yes, recent messages are shown per lane.')
+                    """,
+                    (session_id, session_id),
+                )
             record_handoff_summary(
                 conn,
                 workspace_id=workspace_id,
@@ -89,8 +112,10 @@ def test_dashboard_overview_and_activity_events() -> None:
 
             overview = get_dashboard_overview(conn, workspace_id, limit=10)
             activity = get_agent_activity_events(conn, workspace_uri, limit=20)
+            sessions = get_dashboard_sessions(conn, workspace_id, limit=10, message_limit=2)
 
             assert overview["status"] == "ok"
+            assert overview["counts"]["sessions"] >= 1
             assert overview["counts"]["active_file_reservations"] == 1
             assert overview["counts"]["active_symbol_reservations"] == 1
             assert overview["counts"]["open_handoffs"] == 1
@@ -110,6 +135,9 @@ def test_dashboard_overview_and_activity_events() -> None:
                 "benchmark_run",
             } <= kinds
             assert any(event["agent_name"] == "agent-a" for event in activity["events"])
+            assert sessions["status"] == "ok"
+            assert sessions["sessions"][0]["agent_name"] == "codex"
+            assert sessions["sessions"][0]["messages"][0]["role"] == "user"
         finally:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM workspaces WHERE id = %s", (workspace_id,))

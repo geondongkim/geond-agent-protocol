@@ -1,0 +1,19 @@
+﻿{
+    "tags":  {
+                 "delete_after":  "2026-05-15",
+                 "run_id":  "20260514-015902",
+                 "project":  "geond-agent-protocol",
+                 "purpose":  "team-collab-validation"
+             },
+    "run_id":  "20260514-015902",
+    "resources":  [
+                      {
+                          "storage_gb":  32,
+                          "notes":  "Stop/delete the resource group immediately after validation.",
+                          "sku":  "Burstable Standard_B1ms",
+                          "type":  "Microsoft.DBforPostgreSQL/flexibleServers",
+                          "location":  "koreacentral",
+                          "started_at":  "2026-05-14T02:08:14.8577992+09:00"
+                      }
+                  ]
+}

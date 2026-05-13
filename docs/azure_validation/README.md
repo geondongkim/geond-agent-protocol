@@ -31,3 +31,8 @@ For a cheaper partial pass, skip slow resources explicitly:
 For step-by-step Azure CLI commands, Azure Portal instructions, AWS/GCP resource
 analogues, and cost-signal guidance, see
 [docs/deployment_guide.md](../deployment_guide.md).
+
+For the two-client team collaboration scenario, see
+[team_collab_validation.md](team_collab_validation.md). That flow uses Azure
+Database for PostgreSQL Flexible Server as shared Geond memory while each
+developer still runs `geond-mcp`, CLI, and the dashboard locally.

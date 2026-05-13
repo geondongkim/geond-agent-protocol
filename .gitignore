@@ -44,6 +44,9 @@ migrate_chat_offline.py
 
 ref/
 repo/
+docs/azure_validation/**/connection.local.ps1
+docs/azure_validation/**/*.dump
+docs/azure_validation/**/*.sql
 
 # Local patent/private filing materials
 docs/patent/

@@ -16,6 +16,7 @@ def test_dashboard_route_matching_and_index() -> None:
         "file:///tmp/demo",
         "activity",
     )
+    assert match_workspace_route("/api/workspaces/abc-123/sessions") == ("abc-123", "sessions")
     assert match_workspace_route("/api/workspaces/abc/write") is None
     assert query_limit("limit=5") == 5
     assert query_limit("limit=9999") == 500
@@ -32,3 +33,5 @@ def test_dashboard_root_serves_html_without_database() -> None:
     assert content_type == "text/html; charset=utf-8"
     assert b"Geond Agent Activity" in body
     assert b"/api/workspaces/" in body
+    assert b"Mission Control" in body
+    assert b"agent-board" in body

@@ -324,8 +324,9 @@ Tasks:
   timeline, lineage, reservation, handoff, changeset, benchmark, and code-risk
   data.
 - [x] Add `geond dashboard serve` for local development and seeded demos.
-- [x] Build a compact operational UI with command center, agent fleet,
-  reservations, handoffs, lineage counts, and activity timeline.
+- [x] Build a compact operational UI with mission-control tabs, horizontally
+  expanding agent lanes, session/message cards, reservations, handoffs, lineage
+  counts, and activity timeline.
 - [ ] Expand the operational UI with richer handoff board, collaboration graph,
   and code-risk map views.
 - [x] Add a normalized activity projection so PM agents and orchestrators can
