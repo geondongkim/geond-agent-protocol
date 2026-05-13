@@ -308,7 +308,7 @@ Current status:
 
 ## 11.5. Phase 9: Agent Activity Dashboard
 
-Status: planned and documented in [agent_activity_dashboard.md](agent_activity_dashboard.md).
+Status: read-model started and documented in [agent_activity_dashboard.md](agent_activity_dashboard.md).
 
 This phase adds an optional local web app for observing multi-agent work. It is
 not an MCP feature and does not run agents. It reads Geond's database and
@@ -318,13 +318,15 @@ need review.
 
 Tasks:
 
-- [ ] Add a read-only localhost HTTP API over existing workspace overview,
+- [x] Add a read-only dashboard overview and normalized activity event read model
+  through CLI and MCP resources/tools.
+- [x] Add a read-only localhost HTTP API over existing workspace overview,
   timeline, lineage, reservation, handoff, changeset, benchmark, and code-risk
   data.
-- [ ] Add `geond dashboard serve` for local development and seeded demos.
+- [x] Add `geond dashboard serve` for local development and seeded demos.
 - [ ] Build a compact operational UI with command center, agent fleet, timeline,
   handoff board, collaboration graph, and code-risk map views.
-- [ ] Add a normalized activity projection so PM agents and orchestrators can
+- [x] Add a normalized activity projection so PM agents and orchestrators can
   consume one ordered event stream instead of many tables.
 - [ ] Add optional Codex and Claude Code hook examples that record activity
   events without exposing secrets.

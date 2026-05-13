@@ -59,9 +59,9 @@ observability, two-client cloud collaboration, and benchmark evidence.
 
 | Improvement | Why | Candidate implementation |
 | --- | --- | --- |
-| Local agent dashboard | Humans and PM agents need to see which agent is doing what without reading raw MCP JSON. | Add a localhost read-only dashboard with command center, agent fleet, timeline, handoff board, lineage graph, and code-risk map; see [agent_activity_dashboard.md](agent_activity_dashboard.md). |
-| Dashboard HTTP API | UI, PM agents, and orchestrators need a stable read model that is not tied to MCP resources. | Add `geond dashboard serve` with `/api/workspaces/{id}/overview`, `/timeline`, `/lineage`, `/reservations`, `/handoffs`, `/changesets`, and `/code-risk`. |
-| Normalized activity stream | `agent_actions`, reservations, handoffs, changesets, and benchmark runs currently require multiple queries. | Add an `agent_activity_events` projection or equivalent view that reduces existing evidence into one ordered event stream. |
+| Local agent dashboard | Humans and PM agents need to see which agent is doing what without reading raw MCP JSON. | The CLI/MCP read model and `geond dashboard serve` HTTP API now expose overview/activity/timeline/lineage/reservation/handoff payloads; next add a compact local UI. |
+| Dashboard HTTP API | UI, PM agents, and orchestrators need a stable read model that is not tied to MCP resources. | Implemented `geond dashboard serve` with `/health`, `/api/workspaces/{id}/overview`, `/activity`, `/timeline`, `/lineage`, `/reservations`, and `/handoffs`; next add `/changesets` and `/code-risk`. |
+| Normalized activity stream | `agent_actions`, reservations, handoffs, changesets, and benchmark runs currently require multiple queries. | Implemented as a read-only projection over existing tables for sessions, actions, reservations, reservation events, handoffs, changesets, and benchmark runs; next persist or cache only if dashboard polling needs it. |
 | Agent lifecycle adapters | Real-time views need consistent lifecycle events from Codex, Claude Code, Copilot, and CLI workflows. | Add optional hook examples for session start/end, pre/post tool use, validation, compaction, and stop events. |
 | PM/orchestrator read model | Future PM and orchestration agents need blocker, ownership, and readiness signals. | Provide prompts and dry-run CLI examples that summarize open handoffs, stale reservations, risky symbols, and latest validation evidence. |
 
@@ -107,10 +107,12 @@ sample benchmark artifacts; tag pushes create GitHub Releases from generated
 notes and attach source/wheel/checksum files with Sigstore keyless signing
 bundles; manual PyPI trusted publishing can publish a selected tag after the
 PyPI trusted publisher is configured; and `geond install` previews or writes
-common MCP/editor config files. The next product slice should be a read-only
-agent activity dashboard: first expose a localhost HTTP read model over existing
-timeline, lineage, reservation, handoff, changeset, and benchmark data, then
-build the UI and PM/orchestrator examples on top.
+common MCP/editor config files. The first dashboard read model is now available
+through CLI/MCP: `dashboard-overview`, `dashboard-events`,
+`get_dashboard_overview`, `get_agent_activity_events`, and
+`geond://workspaces/{id}/activity`, and `geond dashboard serve` exposes the
+same read model over localhost HTTP. The next product slice is a compact local
+UI plus PM/orchestrator examples on top of those payloads.
 Change narratives cite `code_edge` evidence when touched symbols have call
 impact. Changeset detail lookup rejects ambiguous git commit prefixes with
 explicit candidate matches. Reservation renewal is available for file and symbol

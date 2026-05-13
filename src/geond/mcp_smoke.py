@@ -44,6 +44,7 @@ async def _run_stdio_smoke(
     workspace_uri: str | None,
     limit: int,
     required_tools: list[str],
+    allow_empty_search: bool,
 ) -> dict[str, Any]:
     checks: list[dict[str, Any]] = []
     params = StdioServerParameters(command=command, args=args, cwd=cwd)
@@ -132,19 +133,29 @@ async def _run_stdio_smoke(
                 search_result = await session.call_tool("search_dev_memory", tool_args)
                 search_payloads = _extract_text_payloads(list(search_result.content))
                 search_count = len(search_payloads)
+                search_status = "ok" if search_count or allow_empty_search else "warning"
+                empty_message = (
+                    "search_dev_memory returned no results; allowed by --allow-empty-search."
+                    if allow_empty_search
+                    else (
+                        "search_dev_memory returned no results; run seed-sample, choose a "
+                        "query known to exist, or use --allow-empty-search for a structural smoke."
+                    )
+                )
                 checks.append(
                     {
                         "name": "call_search_dev_memory",
-                        "status": "ok" if search_count else "warning",
+                        "status": search_status,
                         "message": (
                             f"search_dev_memory returned {search_count} results."
                             if search_count
-                            else "search_dev_memory returned no results; run seed-sample first."
+                            else empty_message
                         ),
                         "metadata": {
                             "query": query,
                             "workspace_uri": workspace_uri,
                             "result_count": search_count,
+                            "allow_empty_search": allow_empty_search,
                         },
                     }
                 )
@@ -170,6 +181,7 @@ def run_stdio_smoke(
     workspace_uri: str | None = "file:///sample/geond",
     limit: int = 3,
     required_tools: list[str] | None = None,
+    allow_empty_search: bool = False,
 ) -> dict[str, Any]:
     root = cwd or Path.cwd()
     server_args = args if args is not None else ["--directory", str(root), "run", "geond-mcp"]
@@ -183,6 +195,7 @@ def run_stdio_smoke(
         workspace_uri=workspace_uri,
         limit=limit,
         required_tools=tools,
+        allow_empty_search=allow_empty_search,
     )
     return anyio.run(smoke)
 

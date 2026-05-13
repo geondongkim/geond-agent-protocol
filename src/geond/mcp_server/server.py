@@ -15,6 +15,8 @@ from geond.retrieval.simple import search_dev_memory as search_dev_memory_query
 from geond.retrieval.simple import vector_search_dev_memory as vector_search_dev_memory_query
 from geond.storage.code_graph import store_lsp_references as store_lsp_references_row
 from geond.storage.context_review import review_workspace_context as review_workspace_context_row
+from geond.storage.dashboard import get_agent_activity_events as get_agent_activity_events_row
+from geond.storage.dashboard import get_dashboard_overview as get_dashboard_overview_row
 from geond.storage.repository import close_handoff_summary as close_handoff_summary_row
 from geond.storage.repository import (
     get_workspace_coordination_policy as get_workspace_coordination_policy_row,
@@ -585,11 +587,39 @@ def get_workspace_lineage_graph(workspace_id: str, limit: int = 100) -> dict[str
         return get_workspace_lineage(conn, workspace_id, limit=limit)
 
 
+@mcp.tool()
+def get_agent_activity_events(workspace_id: str, limit: int = 100) -> dict[str, Any]:
+    """Return normalized activity events for dashboard, PM-agent, and orchestrator reads."""
+    with connect(get_settings()) as conn:
+        return get_agent_activity_events_row(conn, workspace_id, limit=limit)
+
+
+@mcp.tool()
+def get_dashboard_overview(workspace_id: str, limit: int = 25) -> dict[str, Any]:
+    """Return a read-only dashboard overview for one workspace."""
+    with connect(get_settings()) as conn:
+        return get_dashboard_overview_row(conn, workspace_id, limit=limit)
+
+
 @mcp.resource("geond://workspaces/{workspace_id}/lineage", mime_type="application/json")
 def workspace_lineage_resource(workspace_id: str) -> dict[str, Any]:
     """Read a workspace lineage graph linking major collaboration artifacts."""
     with connect(get_settings()) as conn:
         return get_workspace_lineage(conn, workspace_id)
+
+
+@mcp.resource("geond://workspaces/{workspace_id}/activity", mime_type="application/json")
+def workspace_activity_resource(workspace_id: str) -> dict[str, Any]:
+    """Read normalized dashboard activity events for a workspace."""
+    with connect(get_settings()) as conn:
+        return get_agent_activity_events_row(conn, workspace_id)
+
+
+@mcp.resource("geond://workspaces/{workspace_id}/overview", mime_type="application/json")
+def workspace_overview_resource(workspace_id: str) -> dict[str, Any]:
+    """Read a compact dashboard overview for a workspace."""
+    with connect(get_settings()) as conn:
+        return get_dashboard_overview_row(conn, workspace_id)
 
 
 @mcp.resource("geond://workspaces/{workspace_id}/reservations", mime_type="application/json")

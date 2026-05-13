@@ -13,6 +13,9 @@ uv run geond-mcp
 `mcp-smoke` uses the same stdio transport shape as external clients: it starts
 `geond-mcp`, performs `initialize`, lists tools/resources, reads
 `geond://sessions`, and calls `search_dev_memory`.
+For a structural transport smoke against a fresh database or a custom query
+that may not return messages, add `--allow-empty-search` so empty retrieval is
+reported as ok instead of a warning.
 
 ## One-Shot Installer
 
@@ -93,6 +96,11 @@ Use [examples/mcp_clients/continue_config.yaml](../examples/mcp_clients/continue
 - `list_handoff_summaries`: read open or closed handoffs.
 - `get_workspace_lineage_graph`: return a node/edge graph linking sessions,
   agent actions, handoffs, changesets, and benchmark runs.
+- `get_agent_activity_events`: return normalized activity events across
+  sessions, agent actions, reservations, handoffs, changesets, and benchmark
+  runs.
+- `get_dashboard_overview`: return a compact read-only overview for dashboard,
+  PM-agent, and orchestrator usage.
 - `review_workspace_context`: compare requested intent/files/symbols with active
     reservations, open handoffs, and lineage before starting an agent task.
 
@@ -103,6 +111,8 @@ Use [examples/mcp_clients/continue_config.yaml](../examples/mcp_clients/continue
 - `geond://symbols/{symbol}`
 - `geond://changesets`
 - `geond://workspaces/{workspace_id}/timeline`
+- `geond://workspaces/{workspace_id}/activity`
+- `geond://workspaces/{workspace_id}/overview`
 - `geond://workspaces/{workspace_id}/lineage`
 - `geond://workspaces/{workspace_id}/reservations`
 - `geond://workspaces/{workspace_id}/handoffs`

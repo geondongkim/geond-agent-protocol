@@ -75,6 +75,8 @@ flowchart LR
 | Search memory | `search --mode keyword`, `search --mode vector`, or `search --mode hybrid` |
 | Explain code changes | `record-changeset`, `explain-change`, `summarize-changeset` |
 | Coordinate agents | `reserve-files`, `reserve-symbols`, `record-handoff`, `review-context` |
+| Inspect agent activity | `dashboard-overview`, `dashboard-events` |
+| Serve dashboard API | `uv run geond dashboard serve` |
 | Measure retrieval quality | `benchmark-search`, `benchmark-report` |
 | Serve MCP | `uv run geond-mcp` |
 
@@ -192,6 +194,9 @@ reads `geond://sessions`, and calls `search_dev_memory`:
 ```bash
 uv run geond mcp-smoke --format text --strict
 ```
+
+For transport-only checks against a fresh database or a custom query that may
+not return seeded messages, add `--allow-empty-search`.
 
 Parse a VS Code Copilot Chat workspaceStorage folder without writing to the database:
 
@@ -439,6 +444,8 @@ Useful MCP resources:
 - `geond://symbols/{symbol}`
 - `geond://changesets`
 - `geond://workspaces/{workspace_id}/timeline`
+- `geond://workspaces/{workspace_id}/activity`
+- `geond://workspaces/{workspace_id}/overview`
 - `geond://workspaces/{workspace_id}/lineage`
 - `geond://workspaces/{workspace_id}/reservations`
 - `geond://workspaces/{workspace_id}/handoffs`
@@ -447,6 +454,16 @@ MCP clients can also call `record_changeset` with `workspace_id` or
 `workspace_uri` plus a `files` array. Each file entry supports `file_path`,
 `status`, `additions`, `deletions`, `patch`, and `metadata`, matching the CLI
 changeset model.
+
+The same dashboard-shaped read model is available locally over HTTP:
+
+```bash
+uv run geond dashboard serve --host 127.0.0.1 --port 8765
+```
+
+Read-only endpoints include `/health`,
+`/api/workspaces/{workspace_id}/overview`, and
+`/api/workspaces/{workspace_id}/activity`.
 
 Coordinate symbol-level work from CLI or MCP:
 

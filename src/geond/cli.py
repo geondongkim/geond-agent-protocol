@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from pathlib import Path
 
 from geond.adapters.claude_code import parse_storage as parse_claude_code_storage
@@ -20,6 +21,7 @@ from geond.code_graph.python_indexer import index_python_path
 from geond.code_graph.tree_sitter_indexer import index_tree_sitter_path
 from geond.code_graph.ts_js_indexer import index_ts_js_path
 from geond.config import get_settings
+from geond.dashboard_server import serve_dashboard
 from geond.db import connect, run_schema_file
 from geond.doctor import collect_doctor_report, format_doctor_report
 from geond.embeddings import get_embedding_provider
@@ -47,6 +49,7 @@ from geond.storage.benchmark import (
 )
 from geond.storage.code_graph import store_code_index, store_lsp_references
 from geond.storage.context_review import format_context_review_markdown, review_workspace_context
+from geond.storage.dashboard import get_agent_activity_events, get_dashboard_overview
 from geond.storage.embeddings import embed_pending_messages, embedding_stats
 from geond.storage.maintenance import purge_workspace, seed_sample_workspace
 from geond.storage.repository import (
@@ -161,6 +164,14 @@ def require_workspace_id(conn, workspace_id_or_uri: str) -> str:
     return workspace_id
 
 
+def configure_cli_output() -> None:
+    """Prefer UTF-8 output on Windows consoles that default to legacy code pages."""
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        return
+
+
 def fingerprint_from_arg(value: str) -> dict[str, object]:
     if "=" not in value:
         raise SystemExit("--fingerprint must use TYPE=VALUE")
@@ -173,6 +184,7 @@ def fingerprint_from_arg(value: str) -> dict[str, object]:
 
 
 def main() -> None:
+    configure_cli_output()
     parser = argparse.ArgumentParser(prog="geond")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -211,6 +223,11 @@ def main() -> None:
         action="store_true",
         help="Exit non-zero when the smoke status is warning or error",
     )
+    mcp_smoke.add_argument(
+        "--allow-empty-search",
+        action="store_true",
+        help="Treat an empty search result as ok; useful for structural MCP transport checks",
+    )
 
     install = subparsers.add_parser(
         "install",
@@ -241,6 +258,30 @@ def main() -> None:
         help="Allow replacing existing Continue YAML config instead of preview-only output",
     )
     install.add_argument("--format", choices=["json", "text"], default="json")
+
+    dashboard_overview = subparsers.add_parser(
+        "dashboard-overview",
+        help="Return a read-only dashboard overview for one workspace",
+    )
+    dashboard_overview.add_argument("workspace_id_or_uri")
+    dashboard_overview.add_argument("--limit", type=int, default=25)
+
+    dashboard_events = subparsers.add_parser(
+        "dashboard-events",
+        help="Return normalized agent activity events for one workspace",
+    )
+    dashboard_events.add_argument("workspace_id_or_uri")
+    dashboard_events.add_argument("--limit", type=int, default=100)
+
+    dashboard = subparsers.add_parser("dashboard", help="Run local dashboard commands")
+    dashboard_subparsers = dashboard.add_subparsers(dest="dashboard_command", required=True)
+    dashboard_serve = dashboard_subparsers.add_parser(
+        "serve",
+        help="Serve the read-only local dashboard API",
+    )
+    dashboard_serve.add_argument("--host", default="127.0.0.1")
+    dashboard_serve.add_argument("--port", type=int, default=8765)
+    dashboard_serve.add_argument("--open", action="store_true", help="Open the dashboard URL")
 
     parse_vscode = subparsers.add_parser(
         "parse-vscode", help="Parse VS Code Copilot Chat storage without writing to DB"
@@ -653,6 +694,7 @@ def main() -> None:
                 query=args.query,
                 workspace_uri=args.workspace_uri,
                 limit=args.limit,
+                allow_empty_search=args.allow_empty_search,
             )
         except Exception as exc:
             report = {
@@ -696,6 +738,35 @@ def main() -> None:
             print(format_install_result_text(result))
         else:
             print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "dashboard-overview":
+        with connect(get_settings()) as conn:
+            result = get_dashboard_overview(
+                conn,
+                args.workspace_id_or_uri,
+                limit=args.limit,
+            )
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        return
+
+    if args.command == "dashboard-events":
+        with connect(get_settings()) as conn:
+            result = get_agent_activity_events(
+                conn,
+                args.workspace_id_or_uri,
+                limit=args.limit,
+            )
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        return
+
+    if args.command == "dashboard" and args.dashboard_command == "serve":
+        serve_dashboard(
+            get_settings(),
+            host=args.host,
+            port=args.port,
+            open_url=args.open,
+        )
         return
 
     if args.command == "migrate":
