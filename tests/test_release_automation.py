@@ -151,6 +151,28 @@ def test_ci_workflow_signs_release_artifacts_with_sigstore() -> None:
     assert "dist/*.sigstore.json" in workflow
 
 
+def test_ci_workflow_has_optional_pypi_trusted_publishing() -> None:
+    workflow = (Path(__file__).parents[1] / ".github" / "workflows" / "publish-pypi.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "workflow_dispatch:" in workflow
+    assert "tag:" in workflow
+    assert "if: startsWith(inputs.tag, 'v')" in workflow
+    assert "ref: ${{ inputs.tag }}" in workflow
+    assert "build-dist:" in workflow
+    assert "publish-pypi:" in workflow
+    assert "needs: build-dist" in workflow
+    assert "pypa/gh-action-pypi-publish@release/v1" in workflow
+    assert "actions/upload-artifact@v4" in workflow
+    assert "actions/download-artifact@v4" in workflow
+    assert "name: pypi-package-dist" in workflow
+    assert "cp dist/*.tar.gz dist/*.whl publish-dist/" in workflow
+    assert "packages-dir: publish-dist/" in workflow
+    assert "print-hash: true" in workflow
+    assert "id-token: write" in workflow
+
+
 def test_write_dist_checksums_renders_sorted_sha256_lines(tmp_path: Path) -> None:
     dist = tmp_path / "dist"
     dist.mkdir()

@@ -1,0 +1,68 @@
+name: Publish to PyPI
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish, for example v0.1.0-alpha.0"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build-dist:
+    if: startsWith(inputs.tag, 'v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Build package artifacts
+        run: uv build
+
+      - name: Stage package distributions
+        shell: bash
+        run: |
+          mkdir -p publish-dist
+          cp dist/*.tar.gz dist/*.whl publish-dist/
+
+      - name: Upload package distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: pypi-package-dist
+          path: publish-dist/*
+          if-no-files-found: error
+
+  publish-pypi:
+    needs: build-dist
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Download package distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: pypi-package-dist
+          path: publish-dist
+
+      - name: Publish package distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: publish-dist/
+          print-hash: true

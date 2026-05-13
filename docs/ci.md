@@ -33,6 +33,28 @@ sigstore verify identity \
     geond_agent_protocol-0.1.0a0-py3-none-any.whl
 ```
 
+PyPI publishing is available as a manual trusted publishing workflow. Run the
+`Publish to PyPI` workflow from GitHub Actions with the `v*` release tag after
+the release workflow succeeds. The workflow checks out that tag, builds package
+artifacts in a restricted build job, stages only `*.tar.gz` and `*.whl` into
+`publish-dist/`, then publishes that directory from a separate `publish-pypi`
+job with `pypa/gh-action-pypi-publish@release/v1`. The checksum manifest and
+Sigstore bundles stay on the GitHub Release and are not sent to PyPI.
+
+Before running the workflow, configure a PyPI trusted publisher for the
+`geond-agent-protocol` project with these values:
+
+- Repository owner/name: `geondongkim/geond-agent-protocol`
+- Workflow name: `publish-pypi.yml`
+- Environment name: leave empty unless you deliberately add a GitHub environment
+  gate to the workflow
+- Package name: `geond-agent-protocol`
+
+The publish job grants `id-token: write` only in that job, relies on PyPI OIDC
+instead of API tokens, and prints upload hashes for release audit trails. If you
+later add a GitHub environment approval gate, configure the same environment
+name in the PyPI trusted publisher.
+
 The workflow intentionally sets `GEOND_EMBEDDING_PROVIDER=none` so tests cannot
 make external embedding calls. Do not set `GEOND_PRIVACY_MODE=local-only` as a
 global CI environment variable. That mode is a behavior under test; setting it

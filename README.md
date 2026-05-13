@@ -531,7 +531,9 @@ artifact. It also uploads the deterministic `release-notes-draft.md` preview as
 the `release-notes-draft` artifact and package distributions plus
 `dist/SHA256SUMS.txt` as `python-package-dist`. On `v*` tag pushes, the release
 workflow attaches the notes, source distribution, wheel, checksums, and Sigstore
-keyless signing bundles to the GitHub Release; see [docs/ci.md](docs/ci.md).
+keyless signing bundles to the GitHub Release. A manual `Publish to PyPI`
+trusted publishing workflow can publish a selected `v*` tag after the PyPI
+trusted publisher is configured; see [docs/ci.md](docs/ci.md).
 
 Local protocol demo asset:
 
