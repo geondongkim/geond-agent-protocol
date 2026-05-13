@@ -119,7 +119,9 @@ validation status, and improvement plan.
 
 ## Quick Start
 
-Prerequisites: Python 3.11+, uv, Docker with Compose, Git, and ripgrep. See
+Prerequisites: Python 3.11+, uv, Docker with Compose, Git, and ripgrep. Install
+PostgreSQL client tools too when you need `pg_dump`/`psql` export/import against
+a shared database. See
 [docs/developer_setup.md](docs/developer_setup.md) for Windows, macOS, Linux,
 and Apple Silicon install and verification commands.
 

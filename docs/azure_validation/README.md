@@ -36,3 +36,8 @@ For the two-client team collaboration scenario, see
 [team_collab_validation.md](team_collab_validation.md). That flow uses Azure
 Database for PostgreSQL Flexible Server as shared Geond memory while each
 developer still runs `geond-mcp`, CLI, and the dashboard locally.
+
+The `20260514-015902` run also validates `pg_dump`/`psql` data-only export from
+the local Docker Postgres database into Azure PostgreSQL. SQL dump files and
+connection files stay ignored by git; sanitized counts and follow-up prompts live
+under that run directory.

@@ -13,6 +13,12 @@ to verify an installation before running the demo, tests, or MCP server.
 | Git | Reads commits, diffs, and workspace fingerprints. | `git --version` |
 | ripgrep | Fast repository search for contributors and coding agents. | `rg --version` |
 
+Optional but useful for shared-database validation and migration:
+
+| Tool | Why Geond may need it | Verify |
+| --- | --- | --- |
+| PostgreSQL client tools | Export/import Geond data with `pg_dump` and `psql` when validating a shared PostgreSQL-compatible database. | `pg_dump --version` and `psql --version` |
+
 Optional but useful for LSP reference collection:
 
 | Language | Geond profile | Example server | Install check |
@@ -28,19 +34,20 @@ commands and install hints.
 
 ## Windows
 
-Install Git, Docker Desktop, Python, uv, and ripgrep. With `winget`, one common
-setup path is:
+Install Git, Docker Desktop, Python, uv, ripgrep, and optionally PostgreSQL
+client tools. With `winget`, one common setup path is:
 
 ```powershell
 winget install --id Git.Git -e
 winget install --id Docker.DockerDesktop -e
 winget install --id Python.Python.3.11 -e
 winget install --id BurntSushi.ripgrep.MSVC -e
+winget install --id PostgreSQL.PostgreSQL.16 -e
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-Restart the terminal after installing uv or ripgrep so PATH changes are loaded.
-Then verify the tools:
+Restart the terminal after installing uv, ripgrep, or PostgreSQL client tools so
+PATH changes are loaded. Then verify the tools:
 
 ```powershell
 python --version
@@ -49,6 +56,8 @@ git --version
 rg --version
 docker version
 docker compose version
+pg_dump --version
+psql --version
 ```
 
 Docker Desktop must be running before `docker compose up -d postgres`.
@@ -60,9 +69,12 @@ Install native Homebrew first. On Apple Silicon, Homebrew should live under
 multi-arch Docker notes.
 
 ```bash
-brew install python@3.11 uv git ripgrep
+brew install python@3.11 uv git ripgrep libpq
 brew install --cask docker
 ```
+
+If Homebrew does not link `pg_dump` and `psql`, add `libpq` to your shell path
+as printed by `brew info libpq`.
 
 Start Docker Desktop, then verify:
 
@@ -73,6 +85,8 @@ git --version
 rg --version
 docker version
 docker compose version
+pg_dump --version
+psql --version
 ```
 
 If Python packages fall back to source builds on a fresh Mac, install command
@@ -87,7 +101,7 @@ Ubuntu/Debian example:
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y python3.11 python3.11-venv git ripgrep docker.io docker-compose-plugin
+sudo apt-get install -y python3.11 python3.11-venv git ripgrep docker.io docker-compose-plugin postgresql-client
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
@@ -100,6 +114,8 @@ git --version
 rg --version
 docker version
 docker compose version
+pg_dump --version
+psql --version
 ```
 
 If Docker requires sudo, either run Docker commands with sudo or add your user to
