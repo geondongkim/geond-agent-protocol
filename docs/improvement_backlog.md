@@ -107,11 +107,10 @@ sample benchmark artifacts; tag pushes create GitHub Releases from generated
 notes and attach source/wheel/checksum files with Sigstore keyless signing
 bundles; manual PyPI trusted publishing can publish a selected tag after the
 PyPI trusted publisher is configured; and `geond install` previews or writes
-common MCP/editor config files. The latest `repo/` reference review points to a
-read-only agent activity dashboard as the next product slice: first expose a
-localhost HTTP read model over existing timeline, lineage, reservation, handoff,
-changeset, and benchmark data, then build the UI and PM/orchestrator examples on
-top.
+common MCP/editor config files. The next product slice should be a read-only
+agent activity dashboard: first expose a localhost HTTP read model over existing
+timeline, lineage, reservation, handoff, changeset, and benchmark data, then
+build the UI and PM/orchestrator examples on top.
 Change narratives cite `code_edge` evidence when touched symbols have call
 impact. Changeset detail lookup rejects ambiguous git commit prefixes with
 explicit candidate matches. Reservation renewal is available for file and symbol

@@ -1,9 +1,8 @@
 # Agent Activity Dashboard
 
-This note turns the `repo/` reference review into a concrete product direction
-for an optional Geond web app. The dashboard is not an MCP tool. It is a
-read-only, local-first observer that renders the same database evidence that
-MCP tools already expose to agents.
+This note defines a concrete product direction for an optional Geond web app.
+The dashboard is not an MCP tool. It is a read-only, local-first observer that
+renders the same database evidence that MCP tools already expose to agents.
 
 ## Product Thesis
 
@@ -19,18 +18,16 @@ runs, and redaction findings. The dashboard should first be a clear read model
 over those tables, then grow into a control surface only after the read path is
 boringly reliable.
 
-## Reference Repo Findings
+## Design Inputs
 
-| Reference | Useful pattern | Geond adaptation |
-| --- | --- | --- |
-| `repo/Agent-MCP` | Mission-control framing, agent fleet, task board, graph, right-side detail panels, server picker. | Use the same operating-room shape, but remove token exposure and make evidence, reservations, handoffs, and code impact the primary objects. |
-| `repo/codebase-memory-mcp` | Local graph UI, one-line setup story, strong trust/performance README, project cards, compact top navigation. | Add a localhost dashboard command and use graph/detail views for lineage and code impact, while keeping the first view dense and operational. |
-| `repo/mcp-handoff-server` | Simple handoff lifecycle language: create, read, update, complete, archive. | Render Geond handoffs as status lanes with next action, blockers, tested commands, remaining risks, and close/consume state later. |
-| `repo/codex/codex-rs/app-server` | Thread, turn, item primitives; streaming JSON-RPC notifications; health probes; backpressure semantics. | Model the Geond HTTP API around workspaces, agents, sessions, timeline items, and graph nodes; add SSE or WebSocket only after polling endpoints are stable. |
-| `repo/codex/codex-rs/rollout-trace` | Observe first, interpret later: raw event spine plus offline reducer into a graph. | Keep hot-path ingestion append-only. Build dashboard projections from events and existing tables instead of inferring live state in UI code. |
-| `repo/codex/codex-rs/otel` | Session-scoped telemetry, logs, traces, and metrics with explicit shutdown/flush semantics. | Add lightweight metrics cards for ingestion, search, benchmark, and validation health; keep telemetry local by default. |
-| `repo/everything-claude-code/hooks` | Tool lifecycle hooks: session start/end, pre/post tool use, stop, pre-compact, activity tracking. | Add optional adapters that write standardized Geond activity events from CLI hooks, editor tasks, and agent wrappers. |
-| `repo/mcp-agent-memory` and `repo/remembrallmcp` | Shared memory analytics, health checks, concurrency/trust claims, code graph value proposition. | Improve README and dashboard copy around local-first safety, graph speed, redaction, and why this is better than re-grepping every session. |
+The dashboard direction comes from three recurring needs in multi-agent coding
+workflows:
+
+- a mission-control view that makes agent ownership, blockers, and next actions
+  visible without reading raw JSON
+- a provenance graph that separates append-only evidence from reduced UI state
+- lifecycle hooks and adapters that can record explicit agent activity without
+  capturing every keystroke
 
 ## Non-Goals
 
@@ -303,24 +300,6 @@ awareness:
 
 This is the concrete version of Geond's collaboration thesis: not just shared
 memory, but visible work state.
-
-## README Improvements From The Review
-
-The README should evolve toward a stronger first-contact story:
-
-- Add a short "Observe your agents" section with the dashboard direction.
-- Add a screenshot or GIF once the read-only dashboard exists.
-- Keep the local-first trust promise near the top.
-- Add a compact "Why not just git?" table linking git, Geond memory, and the
-  dashboard.
-- Add a command matrix: import, index, search, reserve, handoff, benchmark,
-  dashboard.
-- Keep OS-specific prerequisites in [developer_setup.md](developer_setup.md)
-  and link them from Quick Start.
-- Add a "works today / planned next" split so users do not confuse the dashboard
-  plan with shipped MCP behavior.
-- Add benchmark and release badges after the first public release flow is
-  exercised.
 
 ## Execution Ideas
 

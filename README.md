@@ -1,10 +1,16 @@
 # geond-agent-protocol
 
-A shared memory and code-graph protocol for coding agents.
+Local-first development memory, evidence, code graphs, and coordination for
+coding agents.
 
 > **About the name:** Geond is inspired by the Old English root of "beyond". We pronounce it modernly as `/dʒiːɒnd/` ("Jee-ond"). The project helps coding agents go geond their stateless prompt limits by connecting LLMs to local, inspectable development memory, code graphs, and handoff context.
 
-`geond-agent-protocol` is an early-stage open source project for making coding agents share durable development context: chat history, code changes, symbol graphs, decisions, and handoff notes. The goal is not to replace Copilot, Codex, Continue, Cursor, or CLI agents. The goal is to give them a common memory layer they can read from and write to through MCP and lightweight adapters.
+`geond-agent-protocol` is an alpha MCP/CLI package for making coding agents
+share durable development context: chat history, code changes, symbol graphs,
+decisions, reservations, benchmarks, and handoff notes. The goal is not to
+replace Copilot, Codex, Continue, Cursor, Claude Code, or CLI agents. The goal
+is to give them a common local memory layer they can read from and write to
+through MCP and lightweight adapters.
 
 ## Why
 
@@ -15,7 +21,8 @@ Coding agents are getting better, but their memory is fragmented.
 - A test agent may not know the design intent behind a change.
 - A future session may lose the debugging path that solved the same problem last week.
 
-This project explores a durable local-first context layer where agents can share the same development memory without depending on one specific editor or model provider.
+Geond gives those agents a durable, inspectable context layer without depending
+on one editor, one model provider, or one chat transcript format.
 
 ## Core Idea
 
@@ -36,15 +43,40 @@ flowchart LR
     R --> M
 ```
 
-## Planned Capabilities
+## What Works Today
 
-- Ingest chat sessions, code diffs, file snapshots, and agent actions.
-- Parse source files with tree-sitter and store code entities and relationships.
-- Retrieve context by semantic similarity, symbol neighborhood, timeline, and change intent.
-- Expose shared memory through MCP tools such as `search_dev_memory`, `get_symbol_context`, and `record_agent_action`.
-- Help agents coordinate by recording file reservations, active tasks, and handoff notes.
-- Provide an optional local dashboard for agent activity, reservations, handoffs, lineage, and review status.
-- Provide a local-first Docker setup using Postgres and pgvector.
+- Import and redact VS Code Copilot Chat, Codex JSONL, and Claude Code sessions.
+- Store sessions, messages, raw events, file snapshots, changesets, redaction findings, agent actions, reservations, handoffs, benchmark runs, and workspace aliases in Postgres + pgvector.
+- Search memory with keyword, vector, hybrid, and optional local or HTTP reranking.
+- Return canonical `geond.evidence.v1` refs and deterministic narratives for retrieved messages, changesets, symbols, files, and call-impact edges.
+- Index Python, TypeScript, and JavaScript with AST, tree-sitter, and conservative fallback parsers.
+- Resolve same-file calls, cross-file imports, TypeScript/JavaScript default imports, re-export barrels, and editor-provided LSP reference edges.
+- Link unified diff hunks to touched symbols, including deletion-only hunks.
+- Coordinate agent work with file/symbol reservations, renewals, release, conflict policies, audit events, structured handoffs, context review, and workspace lineage graphs.
+- Generate benchmark reports, public demo GIFs, package artifacts, checksums, GitHub Releases, Sigstore bundles, and manual PyPI trusted publishing workflows.
+- Preview or write common MCP/editor configuration with `geond install`, and verify real MCP stdio behavior with `geond mcp-smoke`.
+
+## Planned Next
+
+- Add a read-only localhost dashboard API and UI for agent activity, reservations, handoffs, lineage, code risk, and PM/orchestrator read models.
+- Add normalized activity events so agent lifecycle hooks, CLI workflows, and future orchestrators can read one ordered stream.
+- Continue improving adoption paths with editor commands, TestPyPI/release observation, and smaller local setup options.
+
+## Command Map
+
+| Goal | Command or surface |
+| --- | --- |
+| Check setup | `uv run geond doctor --format text` |
+| Install editor/MCP config | `uv run geond install --write` |
+| Smoke-test the MCP server | `uv run geond mcp-smoke --format text --strict` |
+| Import agent memory | `import-vscode`, `import-codex`, `import-claude-code` |
+| Index source code | `index-tree-sitter`, `index-python`, `index-ts-js` |
+| Import editor references | `collect-lsp-references`, `import-lsp-references` |
+| Search memory | `search --mode keyword`, `search --mode vector`, or `search --mode hybrid` |
+| Explain code changes | `record-changeset`, `explain-change`, `summarize-changeset` |
+| Coordinate agents | `reserve-files`, `reserve-symbols`, `record-handoff`, `review-context` |
+| Measure retrieval quality | `benchmark-search`, `benchmark-report` |
+| Serve MCP | `uv run geond-mcp` |
 
 ## Test Beds
 
@@ -88,7 +120,11 @@ Create local configuration:
 cp .env.example .env
 ```
 
-Set `GEOND_EMBEDDING_API_KEY` in `.env`. For the MVP, Geond uses OpenAI `text-embedding-3-small` with 1536-dimensional vectors.
+For keyword-only local demos, no external embedding key is required. Set
+`GEOND_EMBEDDING_API_KEY` or provider-specific Azure/OpenAI-compatible values
+only when you want `embed-messages`, vector search, or hybrid search with real
+embeddings. The default OpenAI model is `text-embedding-3-small` with
+1536-dimensional vectors.
 
 Install dependencies with uv:
 
@@ -543,7 +579,7 @@ Local protocol demo asset:
 
 ## Status
 
-Early MVP stage. The repository contains research notes, architecture, implementation plans, a local Postgres/pgvector schema, VS Code Copilot Chat, Codex, and Claude Code importers, OpenAI/Azure/gateway/local embedding provider modes, keyword/vector/hybrid retrieval with optional local or API reranking, workspace aliases with git and manifest fingerprint suggestions, AST/regex/tree-sitter code graph indexing, Python and TypeScript/JavaScript cross-file/default-import/re-export call edges, changeset-to-symbol evidence links, call-impact narratives, reservation renewal, conflict policies, audit events, structured handoff templates, workspace lineage graphs, benchmark quality metrics, coordination tools, demo assets, Azure samples, and an MCP server.
+Alpha MVP. The repository contains research notes, architecture, implementation plans, a local Postgres/pgvector schema, VS Code Copilot Chat, Codex, and Claude Code importers, OpenAI/Azure/gateway/local embedding provider modes, keyword/vector/hybrid retrieval with optional local or API reranking, workspace aliases with git and manifest fingerprint suggestions, AST/regex/tree-sitter code graph indexing, Python and TypeScript/JavaScript cross-file/default-import/re-export call edges, editor-provided LSP reference imports, changeset-to-symbol evidence links, call-impact narratives, reservation renewal, conflict policies, audit events, structured handoff templates, workspace lineage graphs, context review, benchmark quality metrics, coordination tools, demo assets, Azure samples, release automation, and an MCP server. The local agent activity dashboard is planned next and documented as a read-only observer, not as an agent runner.
 
 ## Design Principles
 
