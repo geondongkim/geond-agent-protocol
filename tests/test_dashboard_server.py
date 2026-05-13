@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from geond.config import Settings
 from geond.dashboard_server import (
     dashboard_index,
+    dashboard_response,
     match_workspace_route,
     query_limit,
     status_for_payload,
@@ -21,3 +23,12 @@ def test_dashboard_route_matching_and_index() -> None:
     assert dashboard_index()["read_only"] is True
     assert status_for_payload({"status": "not_found"}) == 404
     assert status_for_payload({"status": "ok"}) == 200
+
+
+def test_dashboard_root_serves_html_without_database() -> None:
+    status, content_type, body = dashboard_response(Settings(), "/")
+
+    assert status == 200
+    assert content_type == "text/html; charset=utf-8"
+    assert b"Geond Agent Activity" in body
+    assert b"/api/workspaces/" in body

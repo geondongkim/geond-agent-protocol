@@ -323,7 +323,7 @@ memory, but visible work state.
 | 0. Product docs | Align on dashboard shape. | This document, README link, backlog entry, and demo-script note exist. |
 | 1. Read model | Expose dashboard-shaped JSON from existing repository functions. | Implemented through `dashboard-overview`, `dashboard-events`, `get_dashboard_overview`, `get_agent_activity_events`, `geond://workspaces/{id}/overview`, and `geond://workspaces/{id}/activity`. |
 | 1.5. Local HTTP API | Serve the same read model over localhost. | Implemented as `geond dashboard serve` with `/health`, `/api/workspaces/{id}/overview`, `/activity`, `/timeline`, `/lineage`, `/reservations`, and `/handoffs`. |
-| 2. Local UI MVP | Render command center, timeline, agent fleet, handoffs, and lineage graph. | `geond dashboard serve` launches a localhost dashboard with seeded demo data. |
+| 2. Local UI MVP | Render command center, timeline, agent fleet, handoffs, and lineage graph. | Command Center, Agent Fleet, reservations, handoffs, lineage counts, and Activity Timeline are served at `/?workspace=<workspace-id>`; next add richer code-risk views. |
 | 3. Activity projection | Normalize agent activity events for UI and orchestrators. | Agent actions, reservations, handoffs, changesets, and benchmark runs reduce into one ordered event stream. |
 | 4. Hook adapters | Capture real agent lifecycle events. | Codex/Claude Code hook examples record session/tool/stop events without exposing secrets. |
 | 5. PM/orchestrator loop | Use the read model to guide work assignment. | A PM prompt and CLI dry-run can recommend next work, detect blockers, and cite evidence. |
@@ -331,6 +331,6 @@ memory, but visible work state.
 
 ## Recommended Next Slice
 
-Build the compact local UI next. The CLI/MCP read model and localhost HTTP API
-now exist, so the next useful slice is the command center plus activity
-timeline view over the same read-only payloads.
+Add richer code-risk views next. The first local UI now renders the Command
+Center, Agent Fleet, reservations, handoffs, lineage counts, and Activity
+Timeline over the same read-only payloads.

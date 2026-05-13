@@ -463,7 +463,9 @@ uv run geond dashboard serve --host 127.0.0.1 --port 8765
 
 Read-only endpoints include `/health`,
 `/api/workspaces/{workspace_id}/overview`, and
-`/api/workspaces/{workspace_id}/activity`.
+`/api/workspaces/{workspace_id}/activity`. Open
+`http://127.0.0.1:8765/?workspace=<workspace-id>` for the local Command Center,
+Agent Fleet, reservations, handoffs, lineage counts, and timeline.
 
 Coordinate symbol-level work from CLI or MCP:
 
