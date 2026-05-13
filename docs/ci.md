@@ -1,8 +1,14 @@
 # CI Notes
 
 GitHub Actions runs lint, compile, docs link checks, release notes preview,
-pytest, and package build against a fresh `pgvector/pgvector:pg16` Postgres
-service.
+pytest, a keyword benchmark smoke, and package build against a fresh
+`pgvector/pgvector:pg16` Postgres service.
+
+The workflow uploads two small artifacts on successful generation:
+
+- `release-notes-draft`: the deterministic `release-notes-draft.md` preview.
+- `geond-ci-benchmark`: `benchmark-smoke.md` and `benchmark-report.md` from a
+	seeded sample workspace.
 
 The workflow intentionally sets `GEOND_EMBEDDING_PROVIDER=none` so tests cannot
 make external embedding calls. Do not set `GEOND_PRIVACY_MODE=local-only` as a
@@ -19,12 +25,31 @@ Before editing `.github/workflows/ci.yml`, run the local checks below:
 
 ```bash
 uv run pre-commit run --all-files
-uv run python -m compileall src
+uv run python -m compileall src scripts
 uv run python scripts/check_docs_links.py
 uv run python scripts/generate_release_notes.py --limit 20 --output release-notes-draft.md
 uv run pytest
+uv run geond seed-sample
+uv run geond benchmark-search \
+	--mode keyword \
+	--repeat 3 \
+	--limit 5 \
+	--workspace-uri "file:///sample/geond" \
+	--save \
+	--label ci-smoke \
+	--format markdown \
+	--include-results \
+	"service.py database initialization" > benchmark-smoke.md
+uv run geond benchmark-report \
+	--workspace-uri "file:///sample/geond" \
+	--mode keyword \
+	--format markdown > benchmark-report.md
 uv build
 ```
+
+On Windows PowerShell 5.1, `>` writes UTF-16LE. If you need to inspect or
+publish the generated markdown locally, pipe to `Out-File -Encoding utf8` or run
+the commands under Git Bash/WSL for closer CI parity.
 
 If CI fails only on GitHub, inspect the failed step first. A failure in `Run tests`
 with all setup steps passing usually means the runner environment changed test

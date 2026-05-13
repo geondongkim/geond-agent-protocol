@@ -53,7 +53,7 @@ jobs:
         run: uv run pre-commit run --all-files
 
       - name: Compile Python sources
-        run: uv run python -m compileall src
+        run: uv run python -m compileall src scripts
 
       - name: Check documentation links
         run: uv run python scripts/check_docs_links.py
@@ -61,8 +61,42 @@ jobs:
       - name: Generate release notes preview
         run: uv run python scripts/generate_release_notes.py --limit 20 --output release-notes-draft.md
 
+      - name: Upload release notes preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-notes-draft
+          path: release-notes-draft.md
+          if-no-files-found: error
+
       - name: Run tests
         run: uv run pytest
+
+      - name: Run benchmark smoke
+        run: |
+          uv run geond seed-sample
+          uv run geond benchmark-search \
+            --mode keyword \
+            --repeat 3 \
+            --limit 5 \
+            --workspace-uri "file:///sample/geond" \
+            --save \
+            --label ci-smoke \
+            --format markdown \
+            --include-results \
+            "service.py database initialization" > benchmark-smoke.md
+          uv run geond benchmark-report \
+            --workspace-uri "file:///sample/geond" \
+            --mode keyword \
+            --format markdown > benchmark-report.md
+
+      - name: Upload benchmark reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: geond-ci-benchmark
+          path: |
+            benchmark-smoke.md
+            benchmark-report.md
+          if-no-files-found: error
 
       - name: Build package
         run: uv build

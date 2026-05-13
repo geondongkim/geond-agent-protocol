@@ -390,7 +390,7 @@ Completed locally:
 - `index-tree-sitter` indexes mixed Python/TypeScript/JavaScript paths and merges syntax-derived structure with AST/regex call-edge fallback.
 - Editor-provided LSP references can be imported through CLI/MCP, normalized from VS Code/LSP `Location[]` fixture payloads, and exposed as `references` in symbol context.
 - `collect-lsp-references` can call a supplied stdio language server, auto-select built-in Python/TypeScript profiles, collect live `textDocument/references` results, write the Location payload, and optionally import normalized references into Geond.
-- CI runs documentation link checks and generates a release notes preview with repository-local scripts.
+- CI runs documentation link checks, generates and uploads a release notes preview, runs a seeded keyword benchmark smoke, and uploads benchmark markdown reports.
 - Changesets can be recorded from the CLI and linked to indexed code entities by touched file path.
 - `explain_change` and `get_symbol_context` now return evidence objects and related changeset links for touched symbols.
 - Changesets with unified diff patches now prefer `line_range` symbol links over broad file-path links.

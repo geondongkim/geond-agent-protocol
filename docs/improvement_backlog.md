@@ -61,8 +61,8 @@ cloud collaboration, and benchmark evidence.
 | --- | --- | --- |
 | SQLite prototype | Postgres is powerful but heavy for first contact. | Provide a limited local SQLite mode for keyword search, imports, and MCP basics. |
 | TypeScript SDK | Many MCP and editor integrations are TypeScript-first. | Add a thin client package for writing memories and querying evidence refs. |
-| Release automation | Public OSS needs predictable artifacts. | GitHub Actions now runs lint, compile, docs link checks, release notes preview, tests, and package build with isolated embedding/CI env notes; next publish release notes as an artifact or attach them to GitHub releases. |
-| Example integrations | Users learn faster from concrete adapters. | Claude Desktop, Continue, VS Code MCP, VS Code LSP collection task, and Continue LSP pre-query workflow examples are documented; next add a simple CI benchmark job. |
+| Release automation | Public OSS needs predictable artifacts. | GitHub Actions now runs lint, compile, docs link checks, release notes preview, tests, benchmark smoke, and package build, then uploads release notes and benchmark artifacts; next attach generated notes to GitHub releases. |
+| Example integrations | Users learn faster from concrete adapters. | Claude Desktop, Continue, VS Code MCP, VS Code LSP collection task, Continue LSP pre-query workflow, and CI benchmark smoke examples are documented; next add one-shot installer/editor extension commands. |
 | Apple Silicon onboarding | Contributors may clone on M-series MacBooks. | Native arm64 setup notes are documented; next validate on real hardware and add macOS CI if needed. |
 | One-shot installer for coding agents | `examples/mcp_clients/*` exists but each agent must be wired manually. | Add `geond install` that detects Claude Code, VS Code MCP, Continue, Codex, etc. and writes MCP entries plus optional pre-tool hooks. |
 | Graph query DSL | `get_symbol_context` answers one symbol at a time; transitive/structural questions still require multiple tool calls. | Add a constrained, safe graph query (e.g. a typed predicate API) returning canonical `geond.evidence.v1` refs. |
@@ -92,8 +92,9 @@ auto-select `pyright` or `typescript` profiles, write the live
 `textDocument/references` Location payload, and optionally import the normalized
 references in one step. VS Code task and Continue pre-query workflow examples
 show how editors can prefill the target file, line, character, and server
-profile. A good next slice is adding a simple CI benchmark job and publishing
-release notes artifacts.
+profile. CI now uploads release notes and sample benchmark artifacts, so a good
+next slice is one-shot installer/editor extension commands plus GitHub Release
+attachment automation.
 Change narratives cite `code_edge` evidence when touched symbols have call
 impact. Changeset detail lookup rejects ambiguous git commit prefixes with
 explicit candidate matches. Reservation renewal is available for file and symbol

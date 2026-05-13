@@ -71,3 +71,16 @@ def test_format_release_notes_renders_commit_table() -> None:
     assert "# Release Notes Draft" in notes
     assert "- Range: `v0.1.0-alpha..HEAD`" in notes
     assert "| `abcdef1` | 2026-05-13 | Add docs link checks |" in notes
+
+
+def test_ci_workflow_uploads_release_and_benchmark_artifacts() -> None:
+    workflow = (Path(__file__).parents[1] / ".github" / "workflows" / "ci.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "actions/upload-artifact@v4" in workflow
+    assert "release-notes-draft.md" in workflow
+    assert "geond-ci-benchmark" in workflow
+    assert "benchmark-smoke.md" in workflow
+    assert "benchmark-report.md" in workflow
+    assert "geond benchmark-search" in workflow
