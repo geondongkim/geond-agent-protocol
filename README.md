@@ -475,8 +475,11 @@ Read-only endpoints include `/health`,
 `/api/workspaces/{workspace_id}/activity`, and
 `/api/workspaces/{workspace_id}/sessions`. Open
 `http://127.0.0.1:8765/?workspace=<workspace-id>` for the local Command Center,
-horizontal Agent Fleet lanes, session/message cards, reservations, handoffs,
-lineage counts, and timeline.
+database source badge, horizontal Agent Fleet lanes, agent switchboard,
+session/message cards, reservations, handoffs, lineage counts, and timeline.
+The `/health` and `/api` responses include safe database metadata so a local
+browser can distinguish Local PostgreSQL from Azure PostgreSQL without exposing
+credentials.
 
 Coordinate symbol-level work from CLI or MCP:
 

@@ -178,6 +178,20 @@ Existing schema tables cover the MVP read model:
 Existing MCP/resource functions already provide useful dashboard-shaped
 payloads:
 
+## Current Local UI Slice
+
+The local dashboard now exposes the active database source in both `/health` and
+`/api`, then renders it as a header badge. The badge intentionally reports only
+safe metadata: source classification, host, database name, and `sslmode`. It is
+designed to make local Docker PostgreSQL and Azure PostgreSQL runs obvious to a
+human reviewer without leaking the connection password.
+
+The Mission Control view also includes an agent switchboard above the horizontal
+lanes. Each chip summarizes an agent's event count, session count, and active
+work, then scrolls the board to that agent. This keeps the dashboard usable as
+Azure-backed shared memory starts showing multiple agents from different
+machines.
+
 - `geond://sessions`
 - `geond://workspaces/{workspace_id}/timeline`
 - `geond://workspaces/{workspace_id}/lineage`

@@ -4,6 +4,7 @@ from geond.config import Settings
 from geond.dashboard_server import (
     dashboard_index,
     dashboard_response,
+    database_connection_info,
     match_workspace_route,
     query_limit,
     status_for_payload,
@@ -35,3 +36,51 @@ def test_dashboard_root_serves_html_without_database() -> None:
     assert b"/api/workspaces/" in body
     assert b"Mission Control" in body
     assert b"agent-board" in body
+    assert b"database-badge" in body
+    assert b"agent-switchboard" in body
+
+
+def test_dashboard_database_info_classifies_local_and_azure() -> None:
+    local = database_connection_info(
+        Settings(database_url="postgresql://user:secret@localhost:55432/geond")
+    )
+    azure = database_connection_info(
+        Settings(
+            database_url=(
+                "postgresql://geondadmin:secret@"
+                "pg-geond-team.postgres.database.azure.com:5432/geond?sslmode=require"
+            )
+        )
+    )
+
+    assert local == {
+        "source": "local",
+        "label": "Local PostgreSQL",
+        "host": "localhost",
+        "database": "geond",
+        "sslmode": None,
+    }
+    assert azure == {
+        "source": "azure-postgresql",
+        "label": "Azure PostgreSQL",
+        "host": "pg-geond-team.postgres.database.azure.com",
+        "database": "geond",
+        "sslmode": "require",
+    }
+    assert "secret" not in str(local)
+    assert "secret" not in str(azure)
+
+
+def test_dashboard_index_includes_safe_database_metadata() -> None:
+    index = dashboard_index(
+        Settings(
+            database_url=(
+                "postgresql://geondadmin:secret@"
+                "pg-geond-team.postgres.database.azure.com:5432/geond?sslmode=require"
+            )
+        )
+    )
+
+    assert index["database"]["source"] == "azure-postgresql"
+    assert index["database"]["host"] == "pg-geond-team.postgres.database.azure.com"
+    assert "secret" not in str(index)

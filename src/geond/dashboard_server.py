@@ -75,9 +75,13 @@ def dashboard_response(settings: Settings, path: str) -> tuple[int, str, bytes]:
 def dashboard_payload(settings: Settings, path: str) -> tuple[int, dict[str, Any]]:
     parsed = urlparse(path)
     if parsed.path == "/api":
-        return 200, dashboard_index()
+        return 200, dashboard_index(settings)
     if parsed.path == "/health":
-        return 200, {"status": "ok", "service": "geond-dashboard"}
+        return 200, {
+            "status": "ok",
+            "service": "geond-dashboard",
+            "database": database_connection_info(settings),
+        }
 
     route = match_workspace_route(parsed.path)
     if route is None:
@@ -118,11 +122,12 @@ def dashboard_payload(settings: Settings, path: str) -> tuple[int, dict[str, Any
     return 404, {"status": "not_found", "workspace_id": workspace_id, "endpoint": endpoint}
 
 
-def dashboard_index() -> dict[str, Any]:
+def dashboard_index(settings: Settings | None = None) -> dict[str, Any]:
     return {
         "status": "ok",
         "service": "geond-dashboard",
         "read_only": True,
+        "database": database_connection_info(settings or Settings()),
         "endpoints": [
             "/health",
             "/api/workspaces/{workspace_id}/overview",
@@ -133,6 +138,32 @@ def dashboard_index() -> dict[str, Any]:
             "/api/workspaces/{workspace_id}/handoffs",
             "/api/workspaces/{workspace_id}/sessions",
         ],
+    }
+
+
+def database_connection_info(settings: Settings) -> dict[str, Any]:
+    parsed = urlparse(settings.database_url)
+    host = parsed.hostname or ""
+    database = parsed.path.lstrip("/") or ""
+    sslmode = parse_qs(parsed.query).get("sslmode", [None])[0]
+    if host in {"localhost", "127.0.0.1", "::1"}:
+        source = "local"
+        label = "Local PostgreSQL"
+    elif host.endswith(".postgres.database.azure.com"):
+        source = "azure-postgresql"
+        label = "Azure PostgreSQL"
+    elif host:
+        source = "remote-postgresql"
+        label = "Remote PostgreSQL"
+    else:
+        source = "unknown"
+        label = "Unknown database"
+    return {
+        "source": source,
+        "label": label,
+        "host": host,
+        "database": database,
+        "sslmode": sslmode,
     }
 
 
@@ -191,6 +222,20 @@ def mission_control_html() -> str:
       margin: 0;
       font-size: 18px;
       font-weight: 680;
+    }
+    .runtime {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 220px;
+      justify-content: flex-end;
+    }
+    .runtime .meta {
+      max-width: 320px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      margin-top: 0;
     }
     main {
       height: calc(100vh - 64px);
@@ -291,6 +336,47 @@ def mission_control_html() -> str:
       overflow-x: auto;
       overflow-y: hidden;
       padding-bottom: 8px;
+    }
+    .agent-workspace {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      gap: 8px;
+      min-height: 0;
+      height: 100%;
+    }
+    .agent-switchboard {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding: 2px 0 4px;
+    }
+    .agent-chip {
+      min-width: 150px;
+      height: auto;
+      display: grid;
+      gap: 3px;
+      justify-items: start;
+      padding: 7px 10px;
+      border-color: var(--line);
+      background: var(--surface);
+      color: var(--text);
+      text-align: left;
+    }
+    .agent-chip strong,
+    .agent-chip span {
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .agent-chip span {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .agent-chip.active {
+      border-color: var(--accent);
+      background: var(--accent-soft);
     }
     .agent-lane, .session-lane {
       display: grid;
@@ -535,6 +621,10 @@ def mission_control_html() -> str:
       </label>
       <button type="submit">Refresh</button>
     </form>
+    <div class="runtime" aria-label="Database runtime">
+      <span class="badge" id="database-badge">database</span>
+      <span class="meta" id="database-meta">Loading runtime</span>
+    </div>
   </header>
   <main>
     <div class="status-line" id="status">Enter a workspace id or URI to load dashboard data.</div>
@@ -570,7 +660,11 @@ def mission_control_html() -> str:
             </div>
           </details>
         </aside>
-        <div class="agent-board" id="agent-board"></div>
+        <div class="agent-workspace">
+          <div class="agent-switchboard" id="agent-switchboard"
+            aria-label="Agent switchboard"></div>
+          <div class="agent-board" id="agent-board"></div>
+        </div>
       </div>
     </section>
     <section class="view" data-view-panel="sessions">
@@ -639,6 +733,9 @@ def mission_control_html() -> str:
     const metrics = document.querySelector("#metrics");
     const reservations = document.querySelector("#reservations");
     const handoffs = document.querySelector("#handoffs");
+    const databaseBadge = document.querySelector("#database-badge");
+    const databaseMeta = document.querySelector("#database-meta");
+    const agentSwitchboard = document.querySelector("#agent-switchboard");
     const agentBoard = document.querySelector("#agent-board");
     const sessionBoard = document.querySelector("#session-board");
     const timeline = document.querySelector("#timeline");
@@ -664,6 +761,23 @@ def mission_control_html() -> str:
       await navigator.clipboard.writeText(url);
       setStatus(`Copied ${url}`);
     });
+
+    async function loadRuntimeInfo() {
+      try {
+        const response = await fetch("/api");
+        const payload = await response.json();
+        const database = payload.database || {};
+        databaseBadge.textContent = database.label || "Database";
+        databaseBadge.className = `badge ${database.source === "local" ? "ok" : "warn"}`;
+        databaseMeta.textContent = [database.host, database.database, database.sslmode]
+          .filter(Boolean)
+          .join(" | ");
+      } catch (error) {
+        databaseBadge.textContent = "Database unknown";
+        databaseBadge.className = "badge danger";
+        databaseMeta.textContent = String(error);
+      }
+    }
 
     function setStatus(message, error = false) {
       statusLine.textContent = message;
@@ -809,6 +923,7 @@ def mission_control_html() -> str:
     function laneShell(name, summary) {
       const lane = document.createElement("section");
       lane.className = "agent-lane";
+      lane.dataset.agentKey = agentKey(name);
       lane.innerHTML = `
         <div class="lane-head">
           <div>
@@ -822,6 +937,41 @@ def mission_control_html() -> str:
       lane.querySelector(".meta").textContent = summary || "";
       lane.querySelector(".badge").textContent = "agent";
       return lane;
+    }
+
+    function renderAgentSwitchboard(ordered) {
+      agentSwitchboard.replaceChildren();
+      if (!ordered.length) {
+        const chip = document.createElement("button");
+        chip.className = "agent-chip";
+        chip.type = "button";
+        chip.innerHTML = `<strong>No agents</strong><span>Waiting for activity</span>`;
+        agentSwitchboard.append(chip);
+        return;
+      }
+      for (const [name, laneData] of ordered) {
+        const chip = document.createElement("button");
+        chip.className = "agent-chip";
+        chip.type = "button";
+        chip.dataset.agentKey = agentKey(name);
+        const activeWork = laneData.reservations.length + laneData.handoffs.length;
+        chip.innerHTML = `<strong></strong><span></span>`;
+        chip.querySelector("strong").textContent = name;
+        chip.querySelector("span").textContent = [
+          `${laneData.events.length} events`,
+          `${laneData.sessions.length} sessions`,
+          activeWork ? `${activeWork} active` : "idle",
+        ].join(" | ");
+        chip.addEventListener("click", () => {
+          for (const item of agentSwitchboard.querySelectorAll(".agent-chip")) {
+            item.classList.toggle("active", item === chip);
+          }
+          agentBoard
+            .querySelector(`[data-agent-key="${CSS.escape(agentKey(name))}"]`)
+            ?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "start" });
+        });
+        agentSwitchboard.append(chip);
+      }
     }
 
     function appendDetails(target, title, items, emptyText, mapper, open = false) {
@@ -869,6 +1019,7 @@ def mission_control_html() -> str:
         const leftTime = left[1].events[0]?.occurred_at || "";
         return rightTime.localeCompare(leftTime);
       });
+      renderAgentSwitchboard(ordered);
       if (!ordered.length) {
         const lane = laneShell("No agents", "No activity recorded yet.");
         agentBoard.append(lane);
@@ -1010,6 +1161,7 @@ def mission_control_html() -> str:
     }
 
     if (workspaceInput.value.trim()) loadDashboard();
+    loadRuntimeInfo();
   </script>
 </body>
 </html>"""
