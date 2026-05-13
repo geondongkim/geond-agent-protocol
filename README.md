@@ -121,6 +121,13 @@ Insert a small sample workspace and session:
 uv run geond seed-sample
 ```
 
+Check the local setup, including `.env`, Postgres, pgvector, Docker, and MCP
+registration:
+
+```bash
+uv run geond doctor --format text
+```
+
 Parse a VS Code Copilot Chat workspaceStorage folder without writing to the database:
 
 ```bash

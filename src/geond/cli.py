@@ -16,6 +16,7 @@ from geond.code_graph.tree_sitter_indexer import index_tree_sitter_path
 from geond.code_graph.ts_js_indexer import index_ts_js_path
 from geond.config import get_settings
 from geond.db import connect, run_schema_file
+from geond.doctor import collect_doctor_report, format_doctor_report
 from geond.embeddings import get_embedding_provider
 from geond.retrieval.simple import (
     explain_change,
@@ -166,6 +167,12 @@ def main() -> None:
 
     migrate = subparsers.add_parser("migrate", help="Apply a SQL schema file")
     migrate.add_argument("--schema", type=Path, default=Path("schemas/001_initial.sql"))
+
+    doctor = subparsers.add_parser("doctor", help="Check local Geond setup")
+    doctor.add_argument("--format", choices=["json", "text"], default="json")
+    doctor.add_argument("--skip-db", action="store_true", help="Skip live Postgres checks")
+    doctor.add_argument("--skip-mcp", action="store_true", help="Skip MCP registration checks")
+    doctor.add_argument("--strict", action="store_true", help="Exit non-zero when errors are found")
 
     parse_vscode = subparsers.add_parser(
         "parse-vscode", help="Parse VS Code Copilot Chat storage without writing to DB"
@@ -513,6 +520,20 @@ def main() -> None:
     )
 
     args = parser.parse_args()
+
+    if args.command == "doctor":
+        report = collect_doctor_report(
+            Path.cwd(),
+            check_database=not args.skip_db,
+            check_mcp=not args.skip_mcp,
+        )
+        if args.format == "text":
+            print(format_doctor_report(report))
+        else:
+            print(json.dumps(report, ensure_ascii=False, indent=2))
+        if args.strict and report["status"] == "error":
+            raise SystemExit(1)
+        return
 
     if args.command == "migrate":
         with connect(get_settings()) as conn:
