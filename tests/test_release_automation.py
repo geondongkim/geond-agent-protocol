@@ -139,6 +139,18 @@ def test_ci_workflow_creates_release_for_tags() -> None:
     assert "dist/SHA256SUMS.txt" in workflow
 
 
+def test_ci_workflow_signs_release_artifacts_with_sigstore() -> None:
+    workflow = (Path(__file__).parents[1] / ".github" / "workflows" / "ci.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "id-token: write" in workflow
+    assert "sigstore/gh-action-sigstore-python@v3.3.0" in workflow
+    assert "upload-signing-artifacts: true" in workflow
+    assert "release-signing-artifacts: false" in workflow
+    assert "dist/*.sigstore.json" in workflow
+
+
 def test_write_dist_checksums_renders_sorted_sha256_lines(tmp_path: Path) -> None:
     dist = tmp_path / "dist"
     dist.mkdir()

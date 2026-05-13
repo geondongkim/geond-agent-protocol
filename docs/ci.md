@@ -15,8 +15,23 @@ The workflow uploads three small artifacts on successful generation:
 For `v*` tag pushes, the `release` job waits for the test job, regenerates
 release notes with `--since-previous-tag`, and creates or updates the matching
 GitHub Release with `release-notes-draft.md` as both the release body and an
-attached file. It also rebuilds the package, generates checksums, and attaches
-the source distribution, wheel, and `SHA256SUMS.txt` to the release.
+attached file. It also rebuilds the package, generates checksums, signs the
+source distribution, wheel, and checksum manifest with Sigstore keyless signing,
+and attaches the source distribution, wheel, `SHA256SUMS.txt`, and
+`*.sigstore.json` bundles to the release. The release job grants `id-token:
+write` only for this signing step and uploads the signing bundle set as a
+workflow artifact for auditability.
+
+To verify a downloaded artifact, install `sigstore` and use the tag-specific
+GitHub Actions identity. For example, replace the version and filename below:
+
+```bash
+sigstore verify identity \
+    --cert-identity "https://github.com/geondongkim/geond-agent-protocol/.github/workflows/ci.yml@refs/tags/v0.1.0-alpha" \
+    --cert-oidc-issuer "https://token.actions.githubusercontent.com" \
+    --bundle geond_agent_protocol-0.1.0a0-py3-none-any.whl.sigstore.json \
+    geond_agent_protocol-0.1.0a0-py3-none-any.whl
+```
 
 The workflow intentionally sets `GEOND_EMBEDDING_PROVIDER=none` so tests cannot
 make external embedding calls. Do not set `GEOND_PRIVACY_MODE=local-only` as a

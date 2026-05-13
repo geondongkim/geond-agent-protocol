@@ -134,6 +134,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -164,6 +165,16 @@ jobs:
       - name: Generate package checksums
         run: uv run python scripts/write_dist_checksums.py
 
+      - name: Sign release artifacts
+        uses: sigstore/gh-action-sigstore-python@v3.3.0
+        with:
+          inputs: |
+            dist/*.tar.gz
+            dist/*.whl
+            dist/SHA256SUMS.txt
+          upload-signing-artifacts: true
+          release-signing-artifacts: false
+
       - name: Create or update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -174,3 +185,4 @@ jobs:
             dist/*.tar.gz
             dist/*.whl
             dist/SHA256SUMS.txt
+            dist/*.sigstore.json

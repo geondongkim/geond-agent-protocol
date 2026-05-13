@@ -391,7 +391,7 @@ Completed locally:
 - Editor-provided LSP references can be imported through CLI/MCP, normalized from VS Code/LSP `Location[]` fixture payloads, and exposed as `references` in symbol context.
 - `collect-lsp-references` can call a supplied stdio language server, auto-select built-in Python/TypeScript profiles, collect live `textDocument/references` results, write the Location payload, and optionally import normalized references into Geond.
 - `geond install` previews or writes VS Code MCP, VS Code LSP task, Claude Desktop, and Continue integration config with local-first defaults.
-- CI runs documentation link checks, generates and uploads a release notes preview, runs a seeded keyword benchmark smoke, uploads benchmark markdown reports and package dist artifacts, and creates GitHub Releases with notes, source distribution, wheel, and SHA256 checksums on `v*` tag pushes.
+- CI runs documentation link checks, generates and uploads a release notes preview, runs a seeded keyword benchmark smoke, uploads benchmark markdown reports and package dist artifacts, and creates GitHub Releases with notes, source distribution, wheel, SHA256 checksums, and Sigstore keyless signing bundles on `v*` tag pushes.
 - Changesets can be recorded from the CLI and linked to indexed code entities by touched file path.
 - `explain_change` and `get_symbol_context` now return evidence objects and related changeset links for touched symbols.
 - Changesets with unified diff patches now prefer `line_range` symbol links over broad file-path links.
