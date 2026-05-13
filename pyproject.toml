@@ -11,6 +11,7 @@ requires-python = ">=3.11"
 license = "Apache-2.0"
 authors = [{ name = "geond-agent-protocol contributors" }]
 dependencies = [
+    "anyio>=4.0.0",
     "azure-identity>=1.17.0",
     "mcp>=1.9.0",
     "openai>=1.40.0",

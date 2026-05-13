@@ -44,6 +44,7 @@ inconsistently.
 
    ```bash
    uv run geond doctor --format text
+   uv run geond mcp-smoke --format text --strict
    ```
 
 7. Run the local checks:
@@ -77,8 +78,10 @@ uv run geond doctor --format json --strict
 
 MCP clients should launch the server with `uv --directory <repo> run geond-mcp`.
 The doctor command imports the MCP server and verifies that the expected tool
-registry is populated; a full client smoke test can then call
-`search_dev_memory` in keyword mode against the seeded workspace.
+registry is populated. `geond mcp-smoke` goes one step further: it starts the
+stdio server as a subprocess, initializes it with the MCP client SDK, lists
+tools/resources, reads `geond://sessions`, and calls `search_dev_memory` in
+keyword mode against the seeded workspace.
 
 ## Cautions
 

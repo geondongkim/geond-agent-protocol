@@ -5,8 +5,14 @@ Geond runs as a stdio MCP server. Start Postgres first, run the schema, then poi
 ```bash
 docker compose up -d postgres
 docker compose --profile tools run --rm geond-migrate
+uv run geond seed-sample
+uv run geond mcp-smoke --format text --strict
 uv run geond-mcp
 ```
+
+`mcp-smoke` uses the same stdio transport shape as external clients: it starts
+`geond-mcp`, performs `initialize`, lists tools/resources, reads
+`geond://sessions`, and calls `search_dev_memory`.
 
 ## Claude Desktop
 

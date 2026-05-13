@@ -96,6 +96,30 @@ def test_format_doctor_report() -> None:
     assert "[WARNING] postgres" in output
 
 
+def test_doctor_counts_fastmcp_resource_templates(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr("geond.doctor.platform.system", lambda: "Linux")
+    monkeypatch.setattr("geond.doctor.platform.machine", lambda: "x86_64")
+    monkeypatch.delenv("DOCKER_DEFAULT_PLATFORM", raising=False)
+
+    report = collect_doctor_report(
+        tmp_path,
+        check_database=False,
+        check_mcp=True,
+        runner=fake_runner,
+        which=lambda command: f"/usr/bin/{command}",
+    )
+
+    checks = {check["name"]: check for check in report["checks"]}
+    mcp_check = checks["mcp_registration"]
+    assert mcp_check["status"] == "ok"
+    assert mcp_check["metadata"]["tool_count"] >= 20
+    assert mcp_check["metadata"]["resource_count"] >= 2
+    assert mcp_check["metadata"]["resource_template_count"] >= 1
+
+
 def test_summarize_checks() -> None:
     summary = summarize_checks(
         [

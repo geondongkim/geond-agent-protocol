@@ -18,6 +18,7 @@ from geond.config import get_settings
 from geond.db import connect, run_schema_file
 from geond.doctor import collect_doctor_report, format_doctor_report
 from geond.embeddings import get_embedding_provider
+from geond.mcp_smoke import format_smoke_report, run_stdio_smoke
 from geond.retrieval.simple import (
     explain_change,
     get_changeset_detail,
@@ -173,6 +174,33 @@ def main() -> None:
     doctor.add_argument("--skip-db", action="store_true", help="Skip live Postgres checks")
     doctor.add_argument("--skip-mcp", action="store_true", help="Skip MCP registration checks")
     doctor.add_argument("--strict", action="store_true", help="Exit non-zero when errors are found")
+
+    mcp_smoke = subparsers.add_parser(
+        "mcp-smoke",
+        help="Start geond-mcp as a stdio server and exercise it with a real MCP client",
+    )
+    mcp_smoke.add_argument("--format", choices=["json", "text"], default="json")
+    mcp_smoke.add_argument("--query", default="app_context")
+    mcp_smoke.add_argument("--workspace-uri", default="file:///sample/geond")
+    mcp_smoke.add_argument("--limit", type=int, default=3)
+    mcp_smoke.add_argument(
+        "--server-command",
+        default="uv",
+        help="Command used to start the MCP server",
+    )
+    mcp_smoke.add_argument(
+        "--server-arg",
+        action="append",
+        help=(
+            "Argument for the MCP server command; repeat to override the default "
+            "`--directory <repo> run geond-mcp` args"
+        ),
+    )
+    mcp_smoke.add_argument(
+        "--strict",
+        action="store_true",
+        help="Exit non-zero when the smoke status is warning or error",
+    )
 
     parse_vscode = subparsers.add_parser(
         "parse-vscode", help="Parse VS Code Copilot Chat storage without writing to DB"
@@ -532,6 +560,40 @@ def main() -> None:
         else:
             print(json.dumps(report, ensure_ascii=False, indent=2))
         if args.strict and report["status"] == "error":
+            raise SystemExit(1)
+        return
+
+    if args.command == "mcp-smoke":
+        try:
+            report = run_stdio_smoke(
+                command=args.server_command,
+                args=args.server_arg,
+                cwd=Path.cwd(),
+                query=args.query,
+                workspace_uri=args.workspace_uri,
+                limit=args.limit,
+            )
+        except Exception as exc:
+            report = {
+                "status": "error",
+                "server_command": args.server_command,
+                "server_args": args.server_arg,
+                "workspace_root": str(Path.cwd()),
+                "checks": [
+                    {
+                        "name": "mcp_stdio_smoke",
+                        "status": "error",
+                        "message": f"MCP stdio smoke failed: {exc}",
+                        "metadata": {"exception_type": type(exc).__name__},
+                    }
+                ],
+                "server_log": "",
+            }
+        if args.format == "text":
+            print(format_smoke_report(report))
+        else:
+            print(json.dumps(report, ensure_ascii=False, indent=2))
+        if args.strict and report["status"] != "ok":
             raise SystemExit(1)
         return
 

@@ -99,6 +99,120 @@ def seed_sample_workspace(conn: Connection) -> dict[str, Any]:
                 Jsonb({"source": "seed"}),
             ),
         )
+        cur.execute(
+            """
+            SELECT id::text
+            FROM changesets
+            WHERE workspace_id = %s
+              AND git_commit = %s
+            LIMIT 1
+            """,
+            (workspace_id, "sample-service-change"),
+        )
+        changeset_row = cur.fetchone()
+        if changeset_row:
+            changeset_id = changeset_row[0]
+            cur.execute(
+                """
+                UPDATE changesets
+                SET session_id = %s,
+                    branch = %s,
+                    intent = %s,
+                    summary = %s,
+                    metadata = changesets.metadata || %s
+                WHERE id = %s::uuid
+                """,
+                (
+                    session_id,
+                    "main",
+                    "explain sample service.py change",
+                    "Kept database initialization inside app_context.",
+                    Jsonb({"source": "seed"}),
+                    changeset_id,
+                ),
+            )
+        else:
+            cur.execute(
+                """
+                INSERT INTO changesets (
+                    workspace_id,
+                    session_id,
+                    git_commit,
+                    branch,
+                    intent,
+                    summary,
+                    metadata
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING id::text
+                """,
+                (
+                    workspace_id,
+                    session_id,
+                    "sample-service-change",
+                    "main",
+                    "explain sample service.py change",
+                    "Kept database initialization inside app_context.",
+                    Jsonb({"source": "seed"}),
+                ),
+            )
+            changeset_id = cur.fetchone()[0]
+
+        cur.execute(
+            """
+            SELECT id::text
+            FROM change_files
+            WHERE changeset_id = %s::uuid
+              AND file_path = %s
+            LIMIT 1
+            """,
+            (changeset_id, "service.py"),
+        )
+        change_file_row = cur.fetchone()
+        if change_file_row:
+            cur.execute(
+                """
+                UPDATE change_files
+                SET status = %s,
+                    additions = %s,
+                    deletions = %s,
+                    patch = %s,
+                    metadata = change_files.metadata || %s
+                WHERE id = %s::uuid
+                """,
+                (
+                    "modified",
+                    2,
+                    1,
+                    SAMPLE_SERVICE_PATCH,
+                    Jsonb({"source": "seed"}),
+                    change_file_row[0],
+                ),
+            )
+        else:
+            cur.execute(
+                """
+                INSERT INTO change_files (
+                    changeset_id,
+                    file_path,
+                    status,
+                    additions,
+                    deletions,
+                    patch,
+                    metadata
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    changeset_id,
+                    "service.py",
+                    "modified",
+                    2,
+                    1,
+                    SAMPLE_SERVICE_PATCH,
+                    Jsonb({"source": "seed"}),
+                ),
+            )
     conn.commit()
     return {
         "workspace_id": workspace_id,
@@ -106,6 +220,18 @@ def seed_sample_workspace(conn: Connection) -> dict[str, Any]:
         "session_id": session_id,
         "messages": len(messages),
     }
+
+
+SAMPLE_SERVICE_PATCH = """diff --git a/service.py b/service.py
+--- a/service.py
++++ b/service.py
+@@ -1,3 +1,4 @@
+ def create_app():
+-    init_db()
++    with app.app_context():
++        init_db()
+     return app
+"""
 
 
 def purge_workspace(conn: Connection, workspace_id_or_uri: str) -> dict[str, Any]:

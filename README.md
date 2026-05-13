@@ -130,6 +130,14 @@ registration:
 uv run geond doctor --format text
 ```
 
+Run a real MCP stdio smoke check after seeding sample data. This starts
+`geond-mcp`, initializes it through the MCP client SDK, lists tools/resources,
+reads `geond://sessions`, and calls `search_dev_memory`:
+
+```bash
+uv run geond mcp-smoke --format text --strict
+```
+
 Parse a VS Code Copilot Chat workspaceStorage folder without writing to the database:
 
 ```bash
@@ -338,6 +346,12 @@ Run the MCP server:
 
 ```bash
 uv run geond-mcp
+```
+
+Or verify the stdio server end-to-end without opening a separate client:
+
+```bash
+uv run geond mcp-smoke --format text --strict
 ```
 
 Useful MCP resources:

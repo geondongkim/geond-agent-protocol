@@ -13,7 +13,7 @@ from geond.embeddings import (
     OpenAICompatibleEmbeddingProvider,
     get_embedding_provider,
 )
-from geond.retrieval.simple import search_dev_memory
+from geond.retrieval.simple import explain_change, search_dev_memory
 from geond.storage.benchmark import benchmark_search
 from geond.storage.maintenance import purge_workspace, seed_sample_workspace
 
@@ -84,6 +84,7 @@ def test_seed_sample_and_purge_workspace() -> None:
         conn.commit()
 
         results = search_dev_memory(conn, "app_context", workspace_uri=unique_uri)
+        change_context = explain_change(conn, "service.py", limit=3)
         benchmark = benchmark_search(
             conn,
             ["app_context"],
@@ -95,6 +96,11 @@ def test_seed_sample_and_purge_workspace() -> None:
         missing = purge_workspace(conn, unique_uri)
 
         assert results
+        assert any(
+            changeset["workspace_id"] == seeded["workspace_id"]
+            and changeset["file_path"] == "service.py"
+            for changeset in change_context["changesets"]
+        )
         assert benchmark["queries"][0]["result_count"] >= 1
         assert purged["status"] == "deleted"
         assert purged["deleted"]["messages"] >= 2
