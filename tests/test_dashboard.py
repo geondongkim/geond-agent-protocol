@@ -13,6 +13,7 @@ from geond.storage.dashboard import (
     get_agent_activity_events,
     get_dashboard_overview,
     get_dashboard_sessions,
+    is_readable_dashboard_message,
 )
 from geond.storage.repository import (
     record_agent_action,
@@ -78,15 +79,19 @@ def test_dashboard_overview_and_activity_events() -> None:
                     (workspace_id,),
                 )
                 session_id = cur.fetchone()[0]
-                cur.execute(
-                    """
-                    INSERT INTO messages (session_id, role, ordinal, content)
-                    VALUES
-                      (%s, 'user', 1, 'Can the dashboard show session context?'),
-                      (%s, 'assistant', 2, 'Yes, recent messages are shown per lane.')
-                    """,
-                    (session_id, session_id),
-                )
+                for role, ordinal, content in [
+                    ("user", 1, "Can the dashboard show context?"),
+                    ("assistant", 2, "Yes, readable excerpts are shown."),
+                    ("assistant_or_tool", 3, "toolInvocationSerialized"),
+                    ("metadata", 4, "1234"),
+                ]:
+                    cur.execute(
+                        """
+                        INSERT INTO messages (session_id, role, ordinal, content)
+                        VALUES (%s, %s, %s, %s)
+                        """,
+                        (session_id, role, ordinal, content),
+                    )
             record_handoff_summary(
                 conn,
                 workspace_id=workspace_id,
@@ -137,8 +142,19 @@ def test_dashboard_overview_and_activity_events() -> None:
             assert any(event["agent_name"] == "agent-a" for event in activity["events"])
             assert sessions["status"] == "ok"
             assert sessions["sessions"][0]["agent_name"] == "codex"
-            assert sessions["sessions"][0]["messages"][0]["role"] == "user"
+            assert sessions["sessions"][0]["messages"][0]["role"] == "assistant_or_tool"
+            assert sessions["sessions"][0]["readable_messages"][0]["role"] == "user"
+            assert sessions["sessions"][0]["readable_excerpt_count"] == 2
         finally:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM workspaces WHERE id = %s", (workspace_id,))
             conn.commit()
+
+
+def test_dashboard_readable_message_filter_skips_numeric_metadata() -> None:
+    assert not is_readable_dashboard_message(
+        {"role": "metadata_or_text", "content": "3\n78\n3\n101"}
+    )
+    assert is_readable_dashboard_message(
+        {"role": "metadata_or_text", "content": "Please inspect the dashboard."}
+    )

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from psycopg import Connection
+from psycopg import Connection, Error
 
 from geond.storage.repository import (
     list_active_file_reservations,
@@ -284,6 +284,7 @@ def get_dashboard_sessions(
         session_rows = cur.fetchall()
 
         messages_by_session: dict[str, list[dict[str, Any]]] = {}
+        readable_by_session: dict[str, list[dict[str, Any]]] = {}
         session_ids = [row[0] for row in session_rows]
         if session_ids:
             cur.execute(
@@ -305,20 +306,54 @@ def get_dashboard_sessions(
                 (session_ids, message_limit),
             )
             for row in cur.fetchall():
-                messages_by_session.setdefault(row[0], []).append(
-                    {
-                        "message_id": row[1],
-                        "role": row[2],
-                        "ordinal": row[3],
-                        "content": row[4],
-                        "metadata": row[5],
-                        "created_at": row[6].isoformat() if row[6] else None,
-                    }
-                )
+                message = {
+                    "message_id": row[1],
+                    "role": row[2],
+                    "ordinal": row[3],
+                    "content": row[4],
+                    "metadata": row[5],
+                    "created_at": row[6].isoformat() if row[6] else None,
+                }
+                messages_by_session.setdefault(row[0], []).append(message)
+
+            candidate_limit = min(max(message_limit * 4, 20), 80)
+            cur.execute(
+                """
+                SELECT session_id::text, id::text, role, ordinal, metadata, created_at
+                FROM (
+                    SELECT m.*,
+                           row_number() OVER (
+                               PARTITION BY m.session_id
+                               ORDER BY m.ordinal DESC
+                           ) AS message_rank
+                    FROM messages m
+                    WHERE m.session_id = ANY(%s::uuid[])
+                      AND m.role NOT IN ('metadata', 'assistant_or_tool')
+                ) ranked
+                WHERE message_rank <= %s
+                ORDER BY session_id, ordinal ASC
+                """,
+                (session_ids, candidate_limit),
+            )
+            for row in cur.fetchall():
+                content, content_unavailable = fetch_dashboard_message_content(conn, row[1])
+                message = {
+                    "message_id": row[1],
+                    "role": row[2],
+                    "ordinal": row[3],
+                    "content": content,
+                    "metadata": row[4],
+                    "created_at": row[5].isoformat() if row[5] else None,
+                    "content_unavailable": content_unavailable,
+                }
+                if is_readable_dashboard_message(message):
+                    readable_by_session.setdefault(row[0], []).append(message)
 
     sessions = []
     for row in session_rows:
         metadata = row[4] or {}
+        session_messages = messages_by_session.get(row[0], [])
+        readable_messages = readable_by_session.get(row[0], [])
         sessions.append(
             {
                 "session_id": row[0],
@@ -333,7 +368,10 @@ def get_dashboard_sessions(
                 "updated_at": row[8].isoformat() if row[8] else None,
                 "message_count": int(row[9] or 0),
                 "latest_message_at": row[10].isoformat() if row[10] else None,
-                "messages": messages_by_session.get(row[0], []),
+                "messages": session_messages[-message_limit:],
+                "readable_messages": readable_messages[-message_limit:],
+                "readable_excerpt_count": len(readable_messages),
+                "inspected_message_count": len(session_messages),
             }
         )
     return {
@@ -343,6 +381,48 @@ def get_dashboard_sessions(
         "status": "ok",
         "sessions": sessions,
     }
+
+
+def is_readable_dashboard_message(message: dict[str, Any]) -> bool:
+    if message.get("content_unavailable"):
+        return False
+    role = str(message.get("role") or "").lower()
+    content = str(message.get("content") or "").strip()
+    if not content or role == "metadata":
+        return False
+    if content.startswith("toolInvocationSerialized"):
+        return False
+    if content.startswith("thinking"):
+        return False
+    if "toolInvocationSerialized" in content:
+        return False
+    if "".join(content.split()).isdigit():
+        return False
+    context_prefixes = (
+        "<attachments>",
+        "<context>",
+        "<environment_info>",
+        "<workspace_info>",
+        "<todoList>",
+        "<reminderInstructions>",
+    )
+    if content.startswith(context_prefixes):
+        return False
+    return "The following browser pages are currently shared with you" not in content
+
+
+def fetch_dashboard_message_content(conn: Connection, message_id: str) -> tuple[str, bool]:
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT left(content, 700) FROM messages WHERE id::text = %s",
+                (message_id,),
+            )
+            row = cur.fetchone()
+    except Error:
+        conn.rollback()
+        return "[stored content unavailable]", True
+    return (row[0] if row else ""), False
 
 
 def dashboard_session_agent(source: str, metadata: dict[str, Any]) -> str:

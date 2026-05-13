@@ -95,13 +95,25 @@ uv run geond benchmark-search --workspace-uri file:///sample/geond --mode keywor
 uv run geond dashboard serve --host 127.0.0.1 --port 8879
 ```
 
+When keeping both local and Azure URLs in one `.env`, prefer the profile form:
+
+```bash
+export GEOND_DATABASE_PROFILE=azure
+export AZURE_GEOND_DATABASE_URL='postgresql://geondadmin:<password>@<server>.postgres.database.azure.com:5432/geond?sslmode=require'
+```
+
+`GEOND_DATABASE_URL` can remain pointed at local Docker PostgreSQL for normal
+offline development.
+
 Expected result:
 
 - MacBook sees Windows-created sessions, messages, reservations, conflicts,
   handoffs, dashboard overview, and events from the same database.
 - Keyword search and benchmark work without cloud embedding calls.
 - The dashboard opens locally on the MacBook, but reads shared Azure PostgreSQL
-  state.
+  state and shows safe database source metadata.
+- The Sessions view reports readable captured prompts separately from raw stored
+  messages, so tool-heavy recent windows still expose human conversation context.
 
 ## Optional APIM / Embedding Gateway Validation
 

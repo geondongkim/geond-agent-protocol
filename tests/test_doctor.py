@@ -58,6 +58,36 @@ def test_collect_doctor_report_for_native_macos_tooling(
     assert statuses["database_url"] == "ok"
 
 
+def test_collect_doctor_report_accepts_profile_database_url(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    (tmp_path / ".env").write_text(
+        "GEOND_DATABASE_PROFILE=azure\n"
+        "AZURE_GEOND_DATABASE_URL=postgresql://example/geond?sslmode=require\n"
+        "GEOND_EMBEDDING_PROVIDER=none\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr("geond.doctor.platform.system", lambda: "Linux")
+    monkeypatch.setattr("geond.doctor.platform.machine", lambda: "x86_64")
+    monkeypatch.setenv("GEOND_DATABASE_PROFILE", "azure")
+    monkeypatch.setenv("AZURE_GEOND_DATABASE_URL", "postgresql://example/geond?sslmode=require")
+
+    report = collect_doctor_report(
+        tmp_path,
+        check_database=False,
+        check_mcp=False,
+        runner=fake_runner,
+        which=lambda command: f"/usr/bin/{command}",
+    )
+
+    checks = {check["name"]: check for check in report["checks"]}
+    assert checks["database_url"]["status"] == "ok"
+    assert checks["database_url"]["metadata"]["profile"] == "azure"
+    assert "AZURE_GEOND_DATABASE_URL" in checks["database_url"]["metadata"]["configured_keys"]
+
+
 def test_collect_doctor_report_warns_on_amd64_emulation(
     tmp_path: Path,
     monkeypatch,

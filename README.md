@@ -131,6 +131,11 @@ Create local configuration:
 cp .env.example .env
 ```
 
+`GEOND_DATABASE_URL` remains the default active database. For shared validation,
+put the Azure connection string in `AZURE_GEOND_DATABASE_URL` and set
+`GEOND_DATABASE_PROFILE=azure`; Geond also accepts profile-specific names such as
+`GEOND_DATABASE_URL_TEAM_BLUE` for additional shared databases.
+
 For keyword-only local demos, no external embedding key is required. Set
 `GEOND_EMBEDDING_API_KEY` or provider-specific Azure/OpenAI-compatible values
 only when you want `embed-messages`, vector search, or hybrid search with real
@@ -480,6 +485,8 @@ session/message cards, reservations, handoffs, lineage counts, and timeline.
 The `/health` and `/api` responses include safe database metadata so a local
 browser can distinguish Local PostgreSQL from Azure PostgreSQL without exposing
 credentials.
+Sessions separate raw stored messages from readable captured prompts so recent
+tool traces do not hide the human conversation context.
 
 ![Azure-backed Geond dashboard](docs/assets/geond_dashboard_azure_collaboration.gif)
 

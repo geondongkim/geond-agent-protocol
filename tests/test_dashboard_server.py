@@ -45,20 +45,22 @@ def test_dashboard_root_serves_html_without_database() -> None:
 
 def test_dashboard_database_info_classifies_local_and_azure() -> None:
     local = database_connection_info(
-        Settings(database_url="postgresql://user:secret@localhost:55432/geond")
+        Settings(database_profile="", database_url="postgresql://user:secret@localhost:55432/geond")
     )
     azure = database_connection_info(
         Settings(
+            database_profile="",
             database_url=(
                 "postgresql://geondadmin:secret@"
                 "pg-geond-team.postgres.database.azure.com:5432/geond?sslmode=require"
-            )
+            ),
         )
     )
 
     assert local == {
         "source": "local",
         "label": "Local PostgreSQL",
+        "profile": None,
         "host": "localhost",
         "database": "geond",
         "sslmode": None,
@@ -66,6 +68,7 @@ def test_dashboard_database_info_classifies_local_and_azure() -> None:
     assert azure == {
         "source": "azure-postgresql",
         "label": "Azure PostgreSQL",
+        "profile": None,
         "host": "pg-geond-team.postgres.database.azure.com",
         "database": "geond",
         "sslmode": "require",
@@ -77,10 +80,11 @@ def test_dashboard_database_info_classifies_local_and_azure() -> None:
 def test_dashboard_index_includes_safe_database_metadata() -> None:
     index = dashboard_index(
         Settings(
+            database_profile="",
             database_url=(
                 "postgresql://geondadmin:secret@"
                 "pg-geond-team.postgres.database.azure.com:5432/geond?sslmode=require"
-            )
+            ),
         )
     )
 

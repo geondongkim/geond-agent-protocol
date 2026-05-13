@@ -11,7 +11,7 @@ from typing import Any
 
 import psycopg
 
-from geond.config import get_settings
+from geond.config import database_url_env_names, get_settings
 
 Runner = Callable[[Sequence[str], int], subprocess.CompletedProcess[str]]
 Which = Callable[[str], str | None]
@@ -71,6 +71,11 @@ def read_env_keys(env_path: Path) -> set[str]:
         key, _ = stripped.split("=", 1)
         keys.add(key.strip())
     return keys
+
+
+def configured_database_env_keys(env_keys: set[str], profile: str) -> list[str]:
+    candidates = set(database_url_env_names(profile)) | {"GEOND_DATABASE_URL"}
+    return sorted(key for key in candidates if key in env_keys or os.getenv(key))
 
 
 def collect_doctor_report(
@@ -253,11 +258,26 @@ def collect_doctor_report(
             )
         )
 
-    if "GEOND_DATABASE_URL" in env_keys or os.getenv("GEOND_DATABASE_URL"):
-        checks.append(make_check("database_url", "ok", "GEOND_DATABASE_URL is configured."))
+    settings = get_settings()
+    database_keys = configured_database_env_keys(env_keys, settings.database_profile)
+    if database_keys:
+        profile_label = settings.database_profile or "default"
+        checks.append(
+            make_check(
+                "database_url",
+                "ok",
+                f"Database URL is configured for the {profile_label} profile.",
+                profile=settings.database_profile or None,
+                configured_keys=database_keys,
+            )
+        )
     else:
         checks.append(
-            make_check("database_url", "warning", "GEOND_DATABASE_URL is not configured.")
+            make_check(
+                "database_url",
+                "warning",
+                "No database URL environment variable is configured.",
+            )
         )
 
     embedding_provider = os.getenv("GEOND_EMBEDDING_PROVIDER") or get_settings().embedding_provider
@@ -277,7 +297,6 @@ def collect_doctor_report(
     )
 
     if check_database:
-        settings = get_settings()
         try:
             with psycopg.connect(settings.database_url, connect_timeout=3) as conn:
                 with conn.cursor() as cur:

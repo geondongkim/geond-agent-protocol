@@ -135,3 +135,24 @@ uv run pytest
 
 `geond doctor` verifies `.env`, Docker, Compose, Postgres, pgvector, embedding
 configuration, and MCP tool/resource registration.
+
+## Database Profiles
+
+Geond reads `.env` automatically. `GEOND_DATABASE_URL` is the default active
+database URL, and `GEOND_DATABASE_PROFILE` can switch to profile-specific URLs
+without editing the default local value.
+
+```bash
+GEOND_DATABASE_PROFILE=local
+GEOND_DATABASE_URL=postgresql://geond:geond_dev_password@localhost:55432/geond
+AZURE_GEOND_DATABASE_URL=postgresql://geondadmin:<password>@<server>.postgres.database.azure.com:5432/geond?sslmode=require
+```
+
+Set `GEOND_DATABASE_PROFILE=azure` to use `AZURE_GEOND_DATABASE_URL`. Additional
+profiles can use either `GEOND_DATABASE_URL_<PROFILE>` or
+`GEOND_<PROFILE>_DATABASE_URL`, for example `GEOND_DATABASE_URL_TEAM_BLUE`.
+
+The dashboard uses the same active profile and shows safe source metadata in
+`/health` and `/api`. Its Sessions view also keeps raw stored messages separate
+from readable captured prompts, which helps older imported VS Code/Copilot
+sessions stay useful even when the latest window is mostly tool traces.

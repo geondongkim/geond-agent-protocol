@@ -161,6 +161,7 @@ def database_connection_info(settings: Settings) -> dict[str, Any]:
     return {
         "source": source,
         "label": label,
+        "profile": settings.database_profile or None,
         "host": host,
         "database": database,
         "sslmode": sslmode,
@@ -959,6 +960,20 @@ def mission_control_html() -> str:
       return role;
     }
 
+    function sessionReadableMessages(session) {
+      if (Array.isArray(session.readable_messages) && session.readable_messages.length) {
+        return session.readable_messages;
+      }
+      return readableMessages(session.messages);
+    }
+
+    function sessionReadableCount(session) {
+      if (Number.isFinite(session.readable_excerpt_count)) {
+        return session.readable_excerpt_count;
+      }
+      return sessionReadableMessages(session).length;
+    }
+
     function sessionMetadata(session) {
       const metadata = session.metadata || {};
       return metadata.metadata || metadata;
@@ -969,7 +984,7 @@ def mission_control_html() -> str:
     }
 
     function sessionCard(session) {
-      const allReadableMessages = readableMessages(session.messages);
+      const allReadableMessages = sessionReadableMessages(session);
       const visibleMessages = allReadableMessages.slice(-6);
       const metadata = sessionMetadata(session);
       const card = document.createElement("article");
@@ -992,7 +1007,7 @@ def mission_control_html() -> str:
       ].filter(Boolean).join(" | ");
       const facts = [
         ["stored", `${session.message_count || 0}`],
-        ["readable", `${allReadableMessages.length}`],
+        ["readable", `${sessionReadableCount(session)}`],
         ["source", session.source || "unknown"],
       ];
       if (metadata.has_editing_context) facts.push(["editing", "yes"]);
@@ -1008,8 +1023,9 @@ def mission_control_html() -> str:
       if (!visibleMessages.length) {
         const empty = document.createElement("div");
         empty.className = "empty";
+        const inspected = session.inspected_message_count || (session.messages || []).length;
         empty.textContent = (session.messages || []).length
-          ? `Technical-only recent window (${(session.messages || []).length} inspected).`
+          ? `Technical-only recent window (${inspected} inspected).`
           : "No stored messages.";
         messages.append(empty);
         return card;
@@ -1031,7 +1047,7 @@ def mission_control_html() -> str:
         0
       );
       const readableTotal = sessions.reduce(
-        (total, session) => total + readableMessages(session.messages).length,
+        (total, session) => total + sessionReadableCount(session),
         0
       );
       const sources = new Set(sessions.map((session) => session.source).filter(Boolean));

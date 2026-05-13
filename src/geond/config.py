@@ -1,19 +1,50 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, field
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
+DEFAULT_DATABASE_URL = "postgresql://geond:geond_dev_password@localhost:55432/geond"
+
+
+def normalize_database_profile(value: str | None) -> str:
+    normalized = re.sub(r"[^A-Za-z0-9]+", "_", (value or "").strip()).strip("_")
+    return normalized.lower()
+
+
+def database_url_env_names(profile: str | None = None) -> tuple[str, ...]:
+    normalized = normalize_database_profile(profile)
+    if not normalized:
+        return ("GEOND_DATABASE_URL",)
+    upper = normalized.upper()
+    return (
+        f"{upper}_GEOND_DATABASE_URL",
+        f"GEOND_DATABASE_URL_{upper}",
+        f"GEOND_{upper}_DATABASE_URL",
+    )
+
+
+def database_profile_from_env() -> str:
+    return normalize_database_profile(os.getenv("GEOND_DATABASE_PROFILE"))
+
+
+def database_url_from_env() -> str:
+    profile = database_profile_from_env()
+    for name in database_url_env_names(profile):
+        value = os.getenv(name, "").strip()
+        if value:
+            return value
+    return os.getenv("GEOND_DATABASE_URL", "").strip() or DEFAULT_DATABASE_URL
+
 
 @dataclass(frozen=True)
 class Settings:
-    database_url: str = os.getenv(
-        "GEOND_DATABASE_URL",
-        "postgresql://geond:geond_dev_password@localhost:55432/geond",
-    )
+    database_profile: str = field(default_factory=database_profile_from_env)
+    database_url: str = field(default_factory=database_url_from_env)
     embedding_provider: str = (os.getenv("GEOND_EMBEDDING_PROVIDER") or "openai").lower()
     embedding_model: str = os.getenv("GEOND_EMBEDDING_MODEL") or "text-embedding-3-small"
     embedding_base_url: str = os.getenv("GEOND_EMBEDDING_BASE_URL", "")
