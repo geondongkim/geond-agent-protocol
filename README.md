@@ -63,6 +63,7 @@ validation status, and improvement plan.
 - [docs/mcp_client_config.md](docs/mcp_client_config.md) provides Claude Desktop, Continue, and VS Code MCP client examples.
 - [docs/workspace_identity_and_search.md](docs/workspace_identity_and_search.md) explains folder move tracking, workspace aliases, multilingual search, and when Elasticsearch/CDC may be worth it.
 - [docs/benchmarking.md](docs/benchmarking.md) shows the current retrieval benchmark command.
+- [docs/ci.md](docs/ci.md) records CI environment rules and the local validation checklist.
 - [docs/azure_validation/README.md](docs/azure_validation/README.md) records the temporary Azure OpenAI, APIM, and VM validation workflow and sanitized evidence.
 - [docs/improvement_backlog.md](docs/improvement_backlog.md) lists prioritized next improvements for evidence quality, deployment, retrieval, and adoption.
 - [docs/agent_testbeds.md](docs/agent_testbeds.md) compares the Copilot Chat, Codex, and Claude Code test beds.
@@ -97,7 +98,8 @@ uv run pre-commit run --all-files
 
 GitHub Actions runs the same pre-commit, compile, pytest, and package build
 checks on pushes and pull requests using a `pgvector/pgvector:pg16` Postgres
-service.
+service. CI disables external embedding calls with `GEOND_EMBEDDING_PROVIDER=none`
+but leaves privacy-mode behavior to the tests; see [docs/ci.md](docs/ci.md).
 
 Start Postgres with pgvector:
 

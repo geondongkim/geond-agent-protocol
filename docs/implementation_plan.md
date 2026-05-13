@@ -391,6 +391,7 @@ Completed locally:
 - Expired file and symbol reservations are marked released automatically on conflict paths and manually through `cleanup-reservations`.
 - `examples/python_service` and `docs/demo.md` provide a runnable local demo path.
 - `docs/apple_silicon.md` documents native arm64 setup and Apple Silicon Docker/Python cautions.
+- GitHub Actions CI isolates external embeddings with `GEOND_EMBEDDING_PROVIDER=none` and avoids global privacy-mode overrides that change provider unit-test semantics.
 - `docs/assets/geond_demo.gif` and Azure Foundry/APIM samples provide public demo and deployment starting points.
 
 Known implementation notes:

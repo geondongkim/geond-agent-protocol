@@ -51,6 +51,7 @@ def test_azure_openai_provider_uses_deployment_name() -> None:
         azure_openai_endpoint="https://example.openai.azure.com",
         azure_openai_api_key="dummy",
         azure_openai_embedding_deployment="text-embedding-small-prod",
+        privacy_mode="redacted-cloud",
     )
 
     provider = get_embedding_provider(settings)
