@@ -8,6 +8,7 @@ import time
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeout
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, BinaryIO
 
@@ -29,9 +30,114 @@ LANGUAGE_IDS_BY_SUFFIX = {
 }
 
 
+@dataclass(frozen=True)
+class LspServerProfile:
+    name: str
+    command: tuple[str, ...]
+    file_suffixes: tuple[str, ...]
+    language_ids: tuple[str, ...]
+    install_hint: str
+
+
+LSP_SERVER_PROFILES = {
+    "pyright": LspServerProfile(
+        name="pyright",
+        command=("pyright-langserver", "--stdio"),
+        file_suffixes=(".py",),
+        language_ids=("python",),
+        install_hint="Install with `npm install -g pyright` or provide --server-command.",
+    ),
+    "typescript": LspServerProfile(
+        name="typescript",
+        command=("typescript-language-server", "--stdio"),
+        file_suffixes=(".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts"),
+        language_ids=("javascript", "javascriptreact", "typescript", "typescriptreact"),
+        install_hint=(
+            "Install with `npm install -g typescript typescript-language-server` "
+            "or provide --server-command."
+        ),
+    ),
+}
+
+
 def split_server_command(command: str) -> list[str]:
     parts = shlex.split(command, posix=os.name != "nt")
     return [part.strip('"') for part in parts if part.strip('"')]
+
+
+def lsp_server_profile_names() -> list[str]:
+    return sorted(LSP_SERVER_PROFILES)
+
+
+def list_lsp_server_profiles() -> list[dict[str, Any]]:
+    profiles = [
+        {
+            "name": profile.name,
+            "command": list(profile.command),
+            "file_suffixes": list(profile.file_suffixes),
+            "language_ids": list(profile.language_ids),
+            "install_hint": profile.install_hint,
+        }
+        for profile in LSP_SERVER_PROFILES.values()
+    ]
+    profiles.append(
+        {
+            "name": "auto",
+            "command": None,
+            "file_suffixes": sorted(
+                {
+                    suffix
+                    for profile in LSP_SERVER_PROFILES.values()
+                    for suffix in profile.file_suffixes
+                }
+            ),
+            "language_ids": sorted(
+                {
+                    language_id
+                    for profile in LSP_SERVER_PROFILES.values()
+                    for language_id in profile.language_ids
+                }
+            ),
+            "install_hint": "Selects pyright for Python and typescript for JS/TS paths.",
+        }
+    )
+    return sorted(profiles, key=lambda item: str(item["name"]))
+
+
+def detect_lsp_server_profile(path: Path) -> str | None:
+    suffix = path.suffix.lower()
+    for profile in LSP_SERVER_PROFILES.values():
+        if suffix in profile.file_suffixes:
+            return profile.name
+    return None
+
+
+def resolve_lsp_server_command(
+    server_command: str | None,
+    server_profile: str | None,
+    path: Path,
+) -> tuple[list[str], str | None]:
+    if server_command:
+        command = split_server_command(server_command)
+        if not command:
+            raise LspCollectorError("--server-command did not contain an executable")
+        return command, server_profile if server_profile not in {None, "auto"} else None
+
+    profile_name = server_profile or "auto"
+    if profile_name == "auto":
+        profile_name = detect_lsp_server_profile(path)
+        if profile_name is None:
+            supported = ", ".join(lsp_server_profile_names())
+            raise LspCollectorError(
+                "Could not infer an LSP server profile for "
+                f"{path}; use --server-command or --server-profile ({supported})."
+            )
+
+    profile = LSP_SERVER_PROFILES.get(profile_name)
+    if profile is None:
+        supported = ", ".join(["auto", *lsp_server_profile_names()])
+        raise LspCollectorError(f"Unknown LSP server profile {profile_name!r}; choose {supported}.")
+    return list(profile.command), profile.name
 
 
 def detect_language_id(path: Path, override: str | None = None) -> str:
@@ -54,6 +160,7 @@ def collect_lsp_references(
     target_qualified_name: str | None = None,
     provider: str | None = None,
     language_id: str | None = None,
+    server_profile: str | None = None,
     timeout_seconds: float = 10.0,
     include_declaration: bool = True,
 ) -> dict[str, Any]:
@@ -133,6 +240,8 @@ def collect_lsp_references(
         },
         "locations": locations,
     }
+    if server_profile:
+        payload["server_profile"] = server_profile
     if target_qualified_name:
         payload["target_qualified_name"] = target_qualified_name
     return payload

@@ -1,0 +1,61 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Geond: collect LSP references",
+      "type": "shell",
+      "command": "uv",
+      "args": [
+        "--directory",
+        "${workspaceFolder}",
+        "run",
+        "geond",
+        "collect-lsp-references",
+        "${input:targetFile}",
+        "--line",
+        "${input:targetLine}",
+        "--character",
+        "${input:targetCharacter}",
+        "--workspace-root",
+        "${workspaceFolder}",
+        "--server-profile",
+        "${input:serverProfile}",
+        "--target-qualified-name",
+        "${input:targetQualifiedName}",
+        "--output",
+        "${workspaceFolder}/references.json"
+      ],
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "targetFile",
+      "type": "promptString",
+      "description": "File containing the target symbol, relative to the workspace root"
+    },
+    {
+      "id": "targetLine",
+      "type": "promptString",
+      "description": "1-based target line"
+    },
+    {
+      "id": "targetCharacter",
+      "type": "promptString",
+      "description": "0-based target character",
+      "default": "0"
+    },
+    {
+      "id": "targetQualifiedName",
+      "type": "promptString",
+      "description": "Geond qualified name, for example service.build_answer"
+    },
+    {
+      "id": "serverProfile",
+      "type": "pickString",
+      "description": "Built-in stdio language-server profile",
+      "options": ["auto", "pyright", "typescript"],
+      "default": "auto"
+    }
+  ]
+}

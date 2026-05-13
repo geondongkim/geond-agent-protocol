@@ -3,7 +3,16 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from geond.code_graph.lsp_collector import collect_lsp_references, split_server_command
+import pytest
+
+from geond.code_graph.lsp_collector import (
+    LspCollectorError,
+    collect_lsp_references,
+    detect_lsp_server_profile,
+    list_lsp_server_profiles,
+    resolve_lsp_server_command,
+    split_server_command,
+)
 from geond.code_graph.lsp_references import normalize_lsp_references
 
 FAKE_LSP_SERVER = r"""
@@ -94,10 +103,12 @@ def use_answer(prompt):
         character=11,
         target_qualified_name="service.build_answer",
         provider="fake-lsp",
+        server_profile="pyright",
         timeout_seconds=5,
     )
 
     assert payload["provider"] == "fake-lsp"
+    assert payload["server_profile"] == "pyright"
     assert payload["target_qualified_name"] == "service.build_answer"
     assert payload["target"]["file_path"] == "service.py"
     assert len(payload["locations"]) == 1
@@ -131,3 +142,30 @@ def test_split_server_command_strips_windows_style_quotes() -> None:
     command = f'"{sys.executable}" "some server.py" --stdio'
 
     assert split_server_command(command) == [sys.executable, "some server.py", "--stdio"]
+
+
+def test_lsp_server_profile_resolution() -> None:
+    assert detect_lsp_server_profile(Path("service.py")) == "pyright"
+    assert detect_lsp_server_profile(Path("client.tsx")) == "typescript"
+
+    command, profile = resolve_lsp_server_command(None, "auto", Path("service.py"))
+    assert command == ["pyright-langserver", "--stdio"]
+    assert profile == "pyright"
+
+    command, profile = resolve_lsp_server_command(None, "typescript", Path("service.py"))
+    assert command == ["typescript-language-server", "--stdio"]
+    assert profile == "typescript"
+
+    command, profile = resolve_lsp_server_command("custom-lsp --stdio", "auto", Path("x.txt"))
+    assert command == ["custom-lsp", "--stdio"]
+    assert profile is None
+
+    with pytest.raises(LspCollectorError, match="Could not infer"):
+        resolve_lsp_server_command(None, "auto", Path("README.md"))
+
+
+def test_list_lsp_server_profiles_includes_auto() -> None:
+    profiles = {item["name"]: item for item in list_lsp_server_profiles()}
+
+    assert {"auto", "pyright", "typescript"}.issubset(profiles)
+    assert profiles["pyright"]["command"] == ["pyright-langserver", "--stdio"]

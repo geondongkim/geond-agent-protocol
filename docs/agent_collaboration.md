@@ -133,11 +133,12 @@ The two flows reinforce each other.
 
 ## Open follow-ups
 
-- **Editor-specific LSP-backed collectors** for VS Code and Continue. Geond now
-  has a storage/API boundary, a VS Code/LSP `Location[]` fixture normalizer, and
-  a generic stdio `collect-lsp-references` CLI for CI or manually supplied
-  language servers. Follow-up work should add editor wrappers that prefill the
-  target file, line, character, and server command.
+- **First-class editor reference workflows** for VS Code and Continue. Geond now
+  has a storage/API boundary, a VS Code/LSP `Location[]` fixture normalizer, a
+  generic stdio `collect-lsp-references` CLI with `auto`, `pyright`, and
+  `typescript` profiles, plus VS Code task and Continue pre-query examples.
+  Follow-up work should turn those examples into one-shot installer output or
+  editor-extension commands.
 - **Agent-side conventions** documented per testbed (Copilot Chat,
   Codex, Claude Code) so each agent records changesets and handoffs
   consistently. See [`docs/agent_testbeds.md`](agent_testbeds.md).

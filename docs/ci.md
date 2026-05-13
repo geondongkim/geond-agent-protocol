@@ -1,7 +1,8 @@
 # CI Notes
 
-GitHub Actions runs lint, compile, pytest, and package build against a fresh
-`pgvector/pgvector:pg16` Postgres service.
+GitHub Actions runs lint, compile, docs link checks, release notes preview,
+pytest, and package build against a fresh `pgvector/pgvector:pg16` Postgres
+service.
 
 The workflow intentionally sets `GEOND_EMBEDDING_PROVIDER=none` so tests cannot
 make external embedding calls. Do not set `GEOND_PRIVACY_MODE=local-only` as a
@@ -19,6 +20,8 @@ Before editing `.github/workflows/ci.yml`, run the local checks below:
 ```bash
 uv run pre-commit run --all-files
 uv run python -m compileall src
+uv run python scripts/check_docs_links.py
+uv run python scripts/generate_release_notes.py --limit 20 --output release-notes-draft.md
 uv run pytest
 uv build
 ```

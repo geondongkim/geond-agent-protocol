@@ -10,7 +10,11 @@ from geond.adapters.claude_code import to_summary as claude_code_to_summary
 from geond.adapters.codex import parse_storage as parse_codex_storage
 from geond.adapters.codex import to_summary as codex_to_summary
 from geond.adapters.vscode_copilot import parse_storage, to_summary
-from geond.code_graph.lsp_collector import collect_lsp_references, split_server_command
+from geond.code_graph.lsp_collector import (
+    collect_lsp_references,
+    list_lsp_server_profiles,
+    resolve_lsp_server_command,
+)
 from geond.code_graph.lsp_references import normalize_lsp_references
 from geond.code_graph.python_indexer import index_python_path
 from geond.code_graph.tree_sitter_indexer import index_tree_sitter_path
@@ -315,7 +319,13 @@ def main() -> None:
     collect_lsp.add_argument("path", type=Path, help="File containing the target symbol")
     collect_lsp.add_argument("--line", type=int, required=True, help="1-based target line")
     collect_lsp.add_argument("--character", type=int, default=0, help="0-based target character")
-    collect_lsp.add_argument("--server-command", required=True, help="Quoted stdio LSP command")
+    collect_lsp.add_argument("--server-command", help="Quoted stdio LSP command")
+    collect_lsp.add_argument(
+        "--server-profile",
+        default="auto",
+        choices=["auto", "pyright", "typescript"],
+        help="Built-in stdio LSP command profile used when --server-command is omitted",
+    )
     collect_lsp.add_argument("--workspace-root", type=Path)
     collect_lsp.add_argument("--language-id")
     collect_lsp.add_argument("--target-qualified-name")
@@ -336,6 +346,11 @@ def main() -> None:
         "--append",
         action="store_true",
         help="Append instead of replacing LSP edges",
+    )
+
+    subparsers.add_parser(
+        "lsp-server-profiles",
+        help="List built-in stdio LSP server profiles for collect-lsp-references",
     )
 
     seed_sample = subparsers.add_parser(
@@ -968,8 +983,13 @@ def main() -> None:
         return
 
     if args.command == "collect-lsp-references":
+        server_command, server_profile = resolve_lsp_server_command(
+            args.server_command,
+            args.server_profile,
+            args.path,
+        )
         payload = collect_lsp_references(
-            split_server_command(args.server_command),
+            server_command,
             workspace_root=(args.workspace_root or Path.cwd()),
             file_path=args.path,
             line=args.line,
@@ -977,6 +997,7 @@ def main() -> None:
             target_qualified_name=args.target_qualified_name,
             provider=args.provider,
             language_id=args.language_id,
+            server_profile=server_profile,
             timeout_seconds=args.timeout_seconds,
             include_declaration=args.include_declaration,
         )
@@ -1022,6 +1043,10 @@ def main() -> None:
             )
         else:
             print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "lsp-server-profiles":
+        print(json.dumps(list_lsp_server_profiles(), ensure_ascii=False, indent=2))
         return
 
     if args.command == "seed-sample":

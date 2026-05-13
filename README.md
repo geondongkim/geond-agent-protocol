@@ -330,7 +330,7 @@ uv run geond collect-lsp-references examples/python_service/service.py \
     --character 5 \
     --workspace-root examples/python_service \
     --target-qualified-name service.build_answer \
-    --server-command "pyright-langserver --stdio" \
+    --server-profile auto \
     --output references.json
 
 uv run geond import-lsp-references <workspace-id> references.json
@@ -338,8 +338,10 @@ uv run geond import-lsp-references <workspace-id> references.json
 
 Add `--import-workspace-id <workspace-id-or-uri>` to collect and import in one
 step. The command works with any stdio language server that implements
-`textDocument/references`, so CI can use Pyright, `typescript-language-server`,
-or another language-specific server without Geond hosting a language server.
+`textDocument/references`, so CI can use the built-in `pyright` and `typescript`
+profiles, or another language-specific server through `--server-command`,
+without Geond hosting a language server. Run `uv run geond lsp-server-profiles`
+to list the built-in profile commands and install hints.
 
 Record a changeset and link it to indexed code entities:
 

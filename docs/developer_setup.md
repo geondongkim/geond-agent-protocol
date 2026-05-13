@@ -15,14 +15,16 @@ to verify an installation before running the demo, tests, or MCP server.
 
 Optional but useful for LSP reference collection:
 
-| Language | Example server | Install check |
+| Language | Geond profile | Example server | Install check |
 | --- | --- | --- |
-| Python | `pyright-langserver --stdio` | `pyright-langserver --version` |
-| TypeScript/JavaScript | `typescript-language-server --stdio` | `typescript-language-server --version` |
+| Python | `pyright` | `pyright-langserver --stdio` | `pyright-langserver --version` |
+| TypeScript/JavaScript | `typescript` | `typescript-language-server --stdio` | `typescript-language-server --version` |
 
 Geond's `collect-lsp-references` command works with any stdio language server
-that implements `textDocument/references`; the server command is supplied at
-runtime, so the project does not require a specific language server package.
+that implements `textDocument/references`. Use `--server-profile auto` for
+Python, TypeScript, and JavaScript paths, or pass `--server-command` for another
+language server. Run `uv run geond lsp-server-profiles` to list built-in profile
+commands and install hints.
 
 ## Windows
 

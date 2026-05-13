@@ -61,8 +61,8 @@ cloud collaboration, and benchmark evidence.
 | --- | --- | --- |
 | SQLite prototype | Postgres is powerful but heavy for first contact. | Provide a limited local SQLite mode for keyword search, imports, and MCP basics. |
 | TypeScript SDK | Many MCP and editor integrations are TypeScript-first. | Add a thin client package for writing memories and querying evidence refs. |
-| Release automation | Public OSS needs predictable artifacts. | GitHub Actions now runs lint, compile, tests, and package build with isolated embedding/CI env notes; next add docs link checks and release notes. |
-| Example integrations | Users learn faster from concrete adapters. | Add examples for Continue, Claude Desktop, VS Code MCP, and a simple CI benchmark job. |
+| Release automation | Public OSS needs predictable artifacts. | GitHub Actions now runs lint, compile, docs link checks, release notes preview, tests, and package build with isolated embedding/CI env notes; next publish release notes as an artifact or attach them to GitHub releases. |
+| Example integrations | Users learn faster from concrete adapters. | Claude Desktop, Continue, VS Code MCP, VS Code LSP collection task, and Continue LSP pre-query workflow examples are documented; next add a simple CI benchmark job. |
 | Apple Silicon onboarding | Contributors may clone on M-series MacBooks. | Native arm64 setup notes are documented; next validate on real hardware and add macOS CI if needed. |
 | One-shot installer for coding agents | `examples/mcp_clients/*` exists but each agent must be wired manually. | Add `geond install` that detects Claude Code, VS Code MCP, Continue, Codex, etc. and writes MCP entries plus optional pre-tool hooks. |
 | Graph query DSL | `get_symbol_context` answers one symbol at a time; transitive/structural questions still require multiple tool calls. | Add a constrained, safe graph query (e.g. a typed predicate API) returning canonical `geond.evidence.v1` refs. |
@@ -88,10 +88,12 @@ CLI now normalizes VS Code/LSP `Location[]` payloads into that import schema,
 with `normalize-lsp-references` for dry runs and
 `examples/lsp_references/vscode_locations.json` covering the fixture contract.
 The `collect-lsp-references` CLI can now call a supplied stdio language server,
-write the live `textDocument/references` Location payload, and optionally import
-the normalized references in one step. A good next slice is adding editor-specific
-wrappers for VS Code or Continue that prefill the target file, line, character,
-and language server command.
+auto-select `pyright` or `typescript` profiles, write the live
+`textDocument/references` Location payload, and optionally import the normalized
+references in one step. VS Code task and Continue pre-query workflow examples
+show how editors can prefill the target file, line, character, and server
+profile. A good next slice is adding a simple CI benchmark job and publishing
+release notes artifacts.
 Change narratives cite `code_edge` evidence when touched symbols have call
 impact. Changeset detail lookup rejects ambiguous git commit prefixes with
 explicit candidate matches. Reservation renewal is available for file and symbol
@@ -115,6 +117,6 @@ tested commands, remaining risks, and next action metadata, workspace lineage
 graphs link sessions, actions, handoffs, changesets, and benchmark runs,
 `review_workspace_context` compares upcoming work with loaded coordination context,
 and reranked benchmarks now report top-result changes, rank movement, rerank
-scores, and missing API scores. The next slice should add editor-specific **LSP-backed reference wrappers** where available and continue the
+scores, and missing API scores. The next slice should add a **CI benchmark job** and continue the
 **agent-collaboration ergonomics** work described in
 [`docs/agent_collaboration.md`](agent_collaboration.md).
