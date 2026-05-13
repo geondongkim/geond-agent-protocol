@@ -528,7 +528,10 @@ Use [examples/benchmarks/multilingual_search_judgments.json](examples/benchmarks
 CI seeds the sample workspace, saves a keyword benchmark smoke run, renders a
 markdown benchmark report, and uploads both files as the `geond-ci-benchmark`
 artifact. It also uploads the deterministic `release-notes-draft.md` preview as
-the `release-notes-draft` artifact; see [docs/ci.md](docs/ci.md).
+the `release-notes-draft` artifact and package distributions plus
+`dist/SHA256SUMS.txt` as `python-package-dist`. On `v*` tag pushes, the release
+workflow attaches the notes, source distribution, wheel, and checksums to the
+GitHub Release; see [docs/ci.md](docs/ci.md).
 
 Local protocol demo asset:
 

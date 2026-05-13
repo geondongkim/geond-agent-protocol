@@ -4,16 +4,19 @@ GitHub Actions runs lint, compile, docs link checks, release notes preview,
 pytest, a keyword benchmark smoke, and package build against a fresh
 `pgvector/pgvector:pg16` Postgres service.
 
-The workflow uploads two small artifacts on successful generation:
+The workflow uploads three small artifacts on successful generation:
 
 - `release-notes-draft`: the deterministic `release-notes-draft.md` preview.
 - `geond-ci-benchmark`: `benchmark-smoke.md` and `benchmark-report.md` from a
   seeded sample workspace.
+- `python-package-dist`: `uv build` source/wheel artifacts plus
+    `dist/SHA256SUMS.txt`.
 
 For `v*` tag pushes, the `release` job waits for the test job, regenerates
 release notes with `--since-previous-tag`, and creates or updates the matching
 GitHub Release with `release-notes-draft.md` as both the release body and an
-attached file.
+attached file. It also rebuilds the package, generates checksums, and attaches
+the source distribution, wheel, and `SHA256SUMS.txt` to the release.
 
 The workflow intentionally sets `GEOND_EMBEDDING_PROVIDER=none` so tests cannot
 make external embedding calls. Do not set `GEOND_PRIVACY_MODE=local-only` as a
@@ -50,6 +53,7 @@ uv run geond benchmark-report \
     --mode keyword \
     --format markdown > benchmark-report.md
 uv build
+uv run python scripts/write_dist_checksums.py
 ```
 
 For release tags, validate the notes range locally with:

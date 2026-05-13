@@ -22,10 +22,15 @@ release_notes_module = load_script_module(
     "generate_release_notes",
     "scripts/generate_release_notes.py",
 )
+checksums_module = load_script_module(
+    "write_dist_checksums",
+    "scripts/write_dist_checksums.py",
+)
 check_docs_links = check_docs_links_module.check_docs_links
 Commit = release_notes_module.Commit
 format_release_notes = release_notes_module.format_release_notes
 previous_tag = release_notes_module.previous_tag
+write_checksums = checksums_module.write_checksums
 
 
 def test_check_docs_links_reports_missing_local_targets(tmp_path: Path) -> None:
@@ -85,6 +90,8 @@ def test_ci_workflow_uploads_release_and_benchmark_artifacts() -> None:
     assert "benchmark-smoke.md" in workflow
     assert "benchmark-report.md" in workflow
     assert "geond benchmark-search" in workflow
+    assert "python-package-dist" in workflow
+    assert "dist/SHA256SUMS.txt" in workflow
 
 
 def test_previous_tag_excludes_current_exact_tag(monkeypatch) -> None:
@@ -127,3 +134,26 @@ def test_ci_workflow_creates_release_for_tags() -> None:
     assert "--since-previous-tag" in workflow
     assert "softprops/action-gh-release@v2" in workflow
     assert "body_path: release-notes-draft.md" in workflow
+    assert "dist/*.tar.gz" in workflow
+    assert "dist/*.whl" in workflow
+    assert "dist/SHA256SUMS.txt" in workflow
+
+
+def test_write_dist_checksums_renders_sorted_sha256_lines(tmp_path: Path) -> None:
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    wheel = dist / "package-0.1-py3-none-any.whl"
+    sdist = dist / "package-0.1.tar.gz"
+    ignored = dist / "notes.txt"
+    wheel.write_bytes(b"wheel")
+    sdist.write_bytes(b"sdist")
+    ignored.write_text("ignore", encoding="utf-8")
+
+    entries = write_checksums(dist)
+
+    assert [entry.path.name for entry in entries] == sorted([sdist.name, wheel.name])
+    output = (dist / "SHA256SUMS.txt").read_text(encoding="utf-8")
+    assert "package-0.1.tar.gz" in output
+    assert "package-0.1-py3-none-any.whl" in output
+    assert "notes.txt" not in output
+    assert all(len(line.split("  ")[0]) == 64 for line in output.splitlines())
