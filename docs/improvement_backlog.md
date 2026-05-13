@@ -87,8 +87,11 @@ the CLI/MCP surface and exposes those `references` edges in symbol context. The
 CLI now normalizes VS Code/LSP `Location[]` payloads into that import schema,
 with `normalize-lsp-references` for dry runs and
 `examples/lsp_references/vscode_locations.json` covering the fixture contract.
-A good next slice is wiring a live VS Code or CI collector that calls the
-editor/language-server reference provider and writes this payload.
+The `collect-lsp-references` CLI can now call a supplied stdio language server,
+write the live `textDocument/references` Location payload, and optionally import
+the normalized references in one step. A good next slice is adding editor-specific
+wrappers for VS Code or Continue that prefill the target file, line, character,
+and language server command.
 Change narratives cite `code_edge` evidence when touched symbols have call
 impact. Changeset detail lookup rejects ambiguous git commit prefixes with
 explicit candidate matches. Reservation renewal is available for file and symbol
@@ -112,6 +115,6 @@ tested commands, remaining risks, and next action metadata, workspace lineage
 graphs link sessions, actions, handoffs, changesets, and benchmark runs,
 `review_workspace_context` compares upcoming work with loaded coordination context,
 and reranked benchmarks now report top-result changes, rank movement, rerank
-scores, and missing API scores. The next slice should add **LSP-backed references** where available and continue the
+scores, and missing API scores. The next slice should add editor-specific **LSP-backed reference wrappers** where available and continue the
 **agent-collaboration ergonomics** work described in
 [`docs/agent_collaboration.md`](agent_collaboration.md).

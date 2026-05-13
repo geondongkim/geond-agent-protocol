@@ -60,6 +60,7 @@ validation status, and improvement plan.
 - [docs/model_provider_strategy.md](docs/model_provider_strategy.md) compares OpenAI, Azure OpenAI, and local SLM embedding options.
 - [docs/provider_extensions.md](docs/provider_extensions.md) covers OpenAI, Azure OpenAI, gateway, and local embedding modes.
 - [docs/deployment_guide.md](docs/deployment_guide.md) explains Azure CLI and Azure Portal deployment flows with AWS/GCP resource analogues.
+- [docs/developer_setup.md](docs/developer_setup.md) lists prerequisites, OS-specific install notes, and verification commands.
 - [docs/mcp_client_config.md](docs/mcp_client_config.md) provides Claude Desktop, Continue, and VS Code MCP client examples.
 - [docs/workspace_identity_and_search.md](docs/workspace_identity_and_search.md) explains folder move tracking, workspace aliases, multilingual search, and when Elasticsearch/CDC may be worth it.
 - [docs/benchmarking.md](docs/benchmarking.md) shows the current retrieval benchmark command.
@@ -74,6 +75,10 @@ validation status, and improvement plan.
 - [docs/public_demo_script.md](docs/public_demo_script.md) provides a ready-to-record public demo/GIF script.
 
 ## Quick Start
+
+Prerequisites: Python 3.11+, uv, Docker with Compose, Git, and ripgrep. See
+[docs/developer_setup.md](docs/developer_setup.md) for Windows, macOS, Linux,
+and Apple Silicon install and verification commands.
 
 Create local configuration:
 
@@ -314,6 +319,27 @@ JSON before importing:
 ```bash
 uv run geond normalize-lsp-references examples/lsp_references/vscode_locations.json
 ```
+
+Geond can also call a stdio language server directly and write the live
+`Location[]` payload before importing it. Lines are 1-based and characters are
+0-based:
+
+```bash
+uv run geond collect-lsp-references examples/python_service/service.py \
+    --line 4 \
+    --character 5 \
+    --workspace-root examples/python_service \
+    --target-qualified-name service.build_answer \
+    --server-command "pyright-langserver --stdio" \
+    --output references.json
+
+uv run geond import-lsp-references <workspace-id> references.json
+```
+
+Add `--import-workspace-id <workspace-id-or-uri>` to collect and import in one
+step. The command works with any stdio language server that implements
+`textDocument/references`, so CI can use Pyright, `typescript-language-server`,
+or another language-specific server without Geond hosting a language server.
 
 Record a changeset and link it to indexed code entities:
 

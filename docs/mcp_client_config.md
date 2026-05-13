@@ -39,6 +39,7 @@ Use [examples/mcp_clients/continue_config.yaml](../examples/mcp_clients/continue
 - `get_symbol_context`: inspect indexed code graph entities, related changesets, caller/callee `calls` edges, and imported LSP-backed `references` edges.
 - `record_lsp_references`: import editor-provided reference edges into the code graph. Pass `replace=false` to append instead of replacing prior LSP reference imports for the workspace.
 - CLI LSP import: `normalize-lsp-references` previews VS Code/LSP `Location[]` conversion, and `import-lsp-references` accepts either Geond reference JSON or Location JSON; pass `--target-qualified-name`, `--workspace-root`, and `--provider` for bare location arrays.
+- CLI LSP collection: `collect-lsp-references` starts a supplied stdio language server, calls `textDocument/references`, writes a live Location payload, and can import the normalized references with `--import-workspace-id`.
 - `register_workspace_alias`: attach a moved or renamed folder URI to an existing workspace.
 - `list_workspace_aliases`: inspect registered workspace aliases.
 - `record_workspace_fingerprints`: store durable workspace identity hints such as sanitized git remote, first commit, manifest hashes, and hashed package names.

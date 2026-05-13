@@ -10,6 +10,7 @@ from geond.adapters.claude_code import to_summary as claude_code_to_summary
 from geond.adapters.codex import parse_storage as parse_codex_storage
 from geond.adapters.codex import to_summary as codex_to_summary
 from geond.adapters.vscode_copilot import parse_storage, to_summary
+from geond.code_graph.lsp_collector import collect_lsp_references, split_server_command
 from geond.code_graph.lsp_references import normalize_lsp_references
 from geond.code_graph.python_indexer import index_python_path
 from geond.code_graph.tree_sitter_indexer import index_tree_sitter_path
@@ -306,6 +307,36 @@ def main() -> None:
     normalize_lsp.add_argument("--target-qualified-name")
     normalize_lsp.add_argument("--provider")
     normalize_lsp.add_argument("--output", type=Path)
+
+    collect_lsp = subparsers.add_parser(
+        "collect-lsp-references",
+        help="Call a stdio language server and write VS Code/LSP Location reference payloads",
+    )
+    collect_lsp.add_argument("path", type=Path, help="File containing the target symbol")
+    collect_lsp.add_argument("--line", type=int, required=True, help="1-based target line")
+    collect_lsp.add_argument("--character", type=int, default=0, help="0-based target character")
+    collect_lsp.add_argument("--server-command", required=True, help="Quoted stdio LSP command")
+    collect_lsp.add_argument("--workspace-root", type=Path)
+    collect_lsp.add_argument("--language-id")
+    collect_lsp.add_argument("--target-qualified-name")
+    collect_lsp.add_argument("--provider")
+    collect_lsp.add_argument("--timeout-seconds", type=float, default=10.0)
+    collect_lsp.add_argument(
+        "--no-include-declaration",
+        dest="include_declaration",
+        action="store_false",
+        default=True,
+    )
+    collect_lsp.add_argument("--output", type=Path, help="Write collected Location payload JSON")
+    collect_lsp.add_argument(
+        "--import-workspace-id",
+        help="Import normalized references into this workspace id or URI after collection",
+    )
+    collect_lsp.add_argument(
+        "--append",
+        action="store_true",
+        help="Append instead of replacing LSP edges",
+    )
 
     seed_sample = subparsers.add_parser(
         "seed-sample", help="Insert a small sample workspace and session"
@@ -934,6 +965,63 @@ def main() -> None:
             args.output.write_text(output + "\n", encoding="utf-8")
         else:
             print(output)
+        return
+
+    if args.command == "collect-lsp-references":
+        payload = collect_lsp_references(
+            split_server_command(args.server_command),
+            workspace_root=(args.workspace_root or Path.cwd()),
+            file_path=args.path,
+            line=args.line,
+            character=args.character,
+            target_qualified_name=args.target_qualified_name,
+            provider=args.provider,
+            language_id=args.language_id,
+            timeout_seconds=args.timeout_seconds,
+            include_declaration=args.include_declaration,
+        )
+        if args.output:
+            args.output.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+        if args.import_workspace_id:
+            references = normalize_lsp_references(payload)
+            with connect(get_settings()) as conn:
+                workspace_id = require_workspace_id(conn, args.import_workspace_id)
+                import_result = store_lsp_references(
+                    conn,
+                    workspace_id=workspace_id,
+                    references=references,
+                    replace=not args.append,
+                )
+            print(
+                json.dumps(
+                    {
+                        "status": "ok",
+                        "workspace_id": workspace_id,
+                        "locations": len(payload.get("locations", [])),
+                        "import_result": import_result,
+                        "output": str(args.output) if args.output else None,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+        elif args.output:
+            print(
+                json.dumps(
+                    {
+                        "status": "ok",
+                        "locations": len(payload.get("locations", [])),
+                        "output": str(args.output),
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+        else:
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
         return
 
     if args.command == "seed-sample":
