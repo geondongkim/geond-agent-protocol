@@ -192,6 +192,17 @@ work, then scrolls the board to that agent. This keeps the dashboard usable as
 Azure-backed shared memory starts showing multiple agents from different
 machines.
 
+![Azure-backed dashboard walkthrough](assets/geond_dashboard_azure_collaboration.gif)
+
+The Azure validation slice exercises all four dashboard views against shared
+PostgreSQL memory. Mission Control shows cloud-backed agent lanes and handoffs,
+Sessions filters VS Code/Copilot technical metadata so recent human-readable
+prompts remain visible, Timeline shows normalized evidence, and Trace Model
+summarizes shared-memory source, evidence coverage, and coordination readiness.
+The readiness panel intentionally warns when a workspace has sessions but no
+active handoffs or reservations, because that state is readable but weak for
+multi-agent collaboration.
+
 - `geond://sessions`
 - `geond://workspaces/{workspace_id}/timeline`
 - `geond://workspaces/{workspace_id}/lineage`

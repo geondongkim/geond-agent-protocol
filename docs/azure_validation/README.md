@@ -41,3 +41,10 @@ The `20260514-015902` run also validates `pg_dump`/`psql` data-only export from
 the local Docker Postgres database into Azure PostgreSQL. SQL dump files and
 connection files stay ignored by git; sanitized counts and follow-up prompts live
 under that run directory.
+
+The follow-up MacBook validation imported the active VS Code Copilot Chat session
+through `.env`-loaded `GEOND_DATABASE_URL`, served the dashboard locally against
+Azure PostgreSQL, and captured all four UI views for both the current Mac session
+workspace and the shared collaboration workspace:
+
+![Azure-backed dashboard walkthrough](../assets/geond_dashboard_azure_collaboration.gif)

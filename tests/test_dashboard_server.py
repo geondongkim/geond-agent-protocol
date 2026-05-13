@@ -38,6 +38,9 @@ def test_dashboard_root_serves_html_without_database() -> None:
     assert b"agent-board" in body
     assert b"database-badge" in body
     assert b"agent-switchboard" in body
+    assert b"session-summary" in body
+    assert b"Readable Excerpts" in body
+    assert b"Coordination Readiness" in body
 
 
 def test_dashboard_database_info_classifies_local_and_azure() -> None:

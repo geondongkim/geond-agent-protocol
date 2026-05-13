@@ -481,6 +481,13 @@ The `/health` and `/api` responses include safe database metadata so a local
 browser can distinguish Local PostgreSQL from Azure PostgreSQL without exposing
 credentials.
 
+![Azure-backed Geond dashboard](docs/assets/geond_dashboard_azure_collaboration.gif)
+
+When `GEOND_DATABASE_URL` points at Azure PostgreSQL through `.env`, the same
+localhost dashboard shows the shared cloud memory source, current imported
+Copilot sessions, collaboration handoffs, timeline evidence, and coordination
+readiness without moving the dashboard service off the developer machine.
+
 Coordinate symbol-level work from CLI or MCP:
 
 ```bash

@@ -329,13 +329,43 @@ def mission_control_html() -> str:
     .agent-board, .session-board {
       display: grid;
       grid-auto-flow: column;
-      grid-auto-columns: minmax(330px, 380px);
+      grid-auto-columns: minmax(360px, 1fr);
       gap: 12px;
       height: 100%;
       min-width: 0;
       overflow-x: auto;
       overflow-y: hidden;
       padding-bottom: 8px;
+    }
+    .session-workspace {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      gap: 8px;
+      height: 100%;
+      min-height: 0;
+    }
+    .session-summary {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .session-stat {
+      min-height: 58px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+    }
+    .session-stat span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 650;
+      margin-bottom: 5px;
+    }
+    .session-stat strong {
+      font-size: 20px;
+      line-height: 1;
     }
     .agent-workspace {
       display: grid;
@@ -438,6 +468,11 @@ def mission_control_html() -> str:
       display: grid;
       gap: 8px;
     }
+    .session-facts {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
     .message {
       background: var(--surface-2);
     }
@@ -481,13 +516,13 @@ def mission_control_html() -> str:
     }
     .metrics {
       display: grid;
-      grid-template-columns: repeat(4, minmax(96px, 1fr));
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       border-bottom: 1px solid var(--line);
     }
     .metric {
-      padding: 14px;
+      padding: 12px 14px;
       border-right: 1px solid var(--line);
-      min-height: 78px;
+      min-height: 68px;
     }
     .metric:last-child { border-right: 0; }
     .metric span {
@@ -497,7 +532,7 @@ def mission_control_html() -> str:
       margin-bottom: 6px;
     }
     .metric strong {
-      font-size: 24px;
+      font-size: 22px;
       line-height: 1;
     }
     .split {
@@ -595,6 +630,7 @@ def mission_control_html() -> str:
       .toolbar { grid-template-columns: 1fr; width: 100%; }
       main { height: calc(100vh - 145px); padding: 10px; }
       .overview-shell, .split, .lineage, .trace-grid { grid-template-columns: 1fr; }
+      .session-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .panel + .panel, .lineage div + div { border-left: 0; border-top: 1px solid var(--line); }
       .event { grid-template-columns: 1fr; }
@@ -668,7 +704,10 @@ def mission_control_html() -> str:
       </div>
     </section>
     <section class="view" data-view-panel="sessions">
-      <div class="session-board" id="session-board"></div>
+      <div class="session-workspace">
+        <div class="session-summary" id="session-summary"></div>
+        <div class="session-board" id="session-board"></div>
+      </div>
     </section>
     <section class="view" data-view-panel="timeline">
       <section>
@@ -680,7 +719,7 @@ def mission_control_html() -> str:
       </section>
     </section>
     <section class="view" data-view-panel="trace">
-      <div class="trace-grid">
+      <div class="trace-grid" id="trace-grid">
         <section>
           <header><h2>Graph UI Pattern</h2></header>
           <div class="panel">
@@ -725,7 +764,7 @@ def mission_control_html() -> str:
     </section>
   </main>
   <script>
-    const state = { workspace: "", limit: 50 };
+    const state = { workspace: "", limit: 50, overview: null, events: [], sessions: [] };
     const qs = new URLSearchParams(location.search);
     const workspaceInput = document.querySelector("#workspace");
     const limitInput = document.querySelector("#limit");
@@ -737,6 +776,7 @@ def mission_control_html() -> str:
     const databaseMeta = document.querySelector("#database-meta");
     const agentSwitchboard = document.querySelector("#agent-switchboard");
     const agentBoard = document.querySelector("#agent-board");
+    const sessionSummary = document.querySelector("#session-summary");
     const sessionBoard = document.querySelector("#session-board");
     const timeline = document.querySelector("#timeline");
     const countBadge = document.querySelector("#activity-count");
@@ -772,10 +812,12 @@ def mission_control_html() -> str:
         databaseMeta.textContent = [database.host, database.database, database.sslmode]
           .filter(Boolean)
           .join(" | ");
+        if (state.overview) renderTraceModel(state.overview, state.events, state.sessions);
       } catch (error) {
         databaseBadge.textContent = "Database unknown";
         databaseBadge.className = "badge danger";
         databaseMeta.textContent = String(error);
+        if (state.overview) renderTraceModel(state.overview, state.events, state.sessions);
       }
     }
 
@@ -824,9 +866,9 @@ def mission_control_html() -> str:
       for (const item of items) target.append(mapper(item));
     }
 
-    function renderMetrics(counts) {
+    function renderMetrics(counts, agentLaneCount) {
       const entries = [
-        ["Agents", counts.agents],
+        ["Agent Lanes", agentLaneCount],
         ["Open Handoffs", counts.open_handoffs],
         ["File Claims", counts.active_file_reservations],
         ["Symbol Claims", counts.active_symbol_reservations],
@@ -879,11 +921,57 @@ def mission_control_html() -> str:
       return name || "system";
     }
 
+    function readableMessages(messages) {
+      const seen = new Set();
+      return (messages || []).filter((message) => {
+        const role = String(message.role || "").toLowerCase();
+        const content = String(message.content || "").trim();
+        if (!content || role === "metadata") return false;
+        if (content.startsWith("toolInvocationSerialized")) return false;
+        if (content.startsWith("thinking ")) return false;
+        if (content.includes("toolInvocationSerialized")) return false;
+        if (/^\\d+(\\s+\\d+){3,}$/.test(content)) return false;
+        const contextPrefixes = [
+          "<attachments>",
+          "<context>",
+          "<environment_info>",
+          "<workspace_info>",
+          "<todoList>",
+          "<reminderInstructions>",
+        ];
+        if (contextPrefixes.some((prefix) => content.startsWith(prefix))) {
+          return false;
+        }
+        if (content.includes("The following browser pages are currently shared with you")) {
+          return false;
+        }
+        const fingerprint = content.replace(/\\s+/g, " ").slice(0, 500);
+        if (seen.has(fingerprint)) return false;
+        seen.add(fingerprint);
+        return true;
+      });
+    }
+
+    function messageRole(message) {
+      const role = String(message.role || "message");
+      if (role === "metadata_or_text") return "captured prompt";
+      if (role === "assistant_or_tool") return "assistant/tool";
+      return role;
+    }
+
+    function sessionMetadata(session) {
+      const metadata = session.metadata || {};
+      return metadata.metadata || metadata;
+    }
+
     function eventAgentName(event) {
       return agentKey(event.agent_name);
     }
 
     function sessionCard(session) {
+      const allReadableMessages = readableMessages(session.messages);
+      const visibleMessages = allReadableMessages.slice(-6);
+      const metadata = sessionMetadata(session);
       const card = document.createElement("article");
       card.className = "session-card";
       card.innerHTML = `
@@ -891,6 +979,7 @@ def mission_control_html() -> str:
           <div class="title"></div>
           <div class="meta"></div>
         </div>
+        <div class="session-facts"></div>
         <details class="collapsible" open>
           <summary>Recent messages</summary>
           <div class="mini-list"></div>
@@ -901,23 +990,82 @@ def mission_control_html() -> str:
         `${session.message_count || 0} messages`,
         session.external_id
       ].filter(Boolean).join(" | ");
+      const facts = [
+        ["stored", `${session.message_count || 0}`],
+        ["readable", `${allReadableMessages.length}`],
+        ["source", session.source || "unknown"],
+      ];
+      if (metadata.has_editing_context) facts.push(["editing", "yes"]);
+      card.querySelector(".session-facts").replaceChildren(
+        ...facts.map(([label, value]) => {
+          const item = document.createElement("span");
+          item.className = "badge";
+          item.textContent = `${label}: ${value}`;
+          return item;
+        })
+      );
       const messages = card.querySelector(".mini-list");
-      if (!(session.messages || []).length) {
+      if (!visibleMessages.length) {
         const empty = document.createElement("div");
         empty.className = "empty";
-        empty.textContent = "No stored messages.";
+        empty.textContent = (session.messages || []).length
+          ? `Technical-only recent window (${(session.messages || []).length} inspected).`
+          : "No stored messages.";
         messages.append(empty);
         return card;
       }
-      for (const message of session.messages || []) {
+      for (const message of visibleMessages) {
         const item = document.createElement("div");
         item.className = "message";
         item.innerHTML = `<div class="role"></div><div class="content"></div>`;
-        item.querySelector(".role").textContent = `${message.role} #${message.ordinal}`;
+        item.querySelector(".role").textContent = `${messageRole(message)} #${message.ordinal}`;
         item.querySelector(".content").textContent = message.content || "";
         messages.append(item);
       }
       return card;
+    }
+
+    function renderSessionSummary(sessions) {
+      const totalMessages = sessions.reduce(
+        (total, session) => total + (session.message_count || 0),
+        0
+      );
+      const readableTotal = sessions.reduce(
+        (total, session) => total + readableMessages(session.messages).length,
+        0
+      );
+      const sources = new Set(sessions.map((session) => session.source).filter(Boolean));
+      const agents = new Set(sessions.map((session) => agentKey(session.agent_name)));
+      const entries = [
+        ["Sessions", sessions.length],
+        ["Stored Messages", totalMessages],
+        ["Readable Excerpts", readableTotal],
+        ["Sources", sources.size || agents.size],
+      ];
+      sessionSummary.replaceChildren(
+        ...entries.map(([label, value]) => {
+          const item = document.createElement("div");
+          item.className = "session-stat";
+          item.innerHTML = `<span></span><strong></strong>`;
+          item.querySelector("span").textContent = label;
+          item.querySelector("strong").textContent = value;
+          return item;
+        })
+      );
+    }
+
+    function collectAgentKeys(events, sessions, overview) {
+      const names = new Set();
+      for (const event of events) names.add(eventAgentName(event));
+      for (const session of sessions) names.add(agentKey(session.agent_name));
+      for (const item of [
+        ...(overview.active_reservations?.files || []),
+        ...(overview.active_reservations?.symbols || []),
+      ]) names.add(agentKey(item.agent_name));
+      for (const handoff of overview.open_handoffs || []) {
+        names.add(agentKey(handoff.from_agent_name));
+      }
+      return [...names].filter(Boolean);
     }
 
     function laneShell(name, summary) {
@@ -949,11 +1097,13 @@ def mission_control_html() -> str:
         agentSwitchboard.append(chip);
         return;
       }
-      for (const [name, laneData] of ordered) {
+      ordered.forEach(([name, laneData], index) => {
         const chip = document.createElement("button");
         chip.className = "agent-chip";
         chip.type = "button";
         chip.dataset.agentKey = agentKey(name);
+        chip.setAttribute("aria-label", `Show ${name} lane`);
+        if (index === 0) chip.classList.add("active");
         const activeWork = laneData.reservations.length + laneData.handoffs.length;
         chip.innerHTML = `<strong></strong><span></span>`;
         chip.querySelector("strong").textContent = name;
@@ -971,7 +1121,7 @@ def mission_control_html() -> str:
             ?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "start" });
         });
         agentSwitchboard.append(chip);
-      }
+      });
     }
 
     function appendDetails(target, title, items, emptyText, mapper, open = false) {
@@ -1064,6 +1214,7 @@ def mission_control_html() -> str:
     }
 
     function renderSessionBoard(sessions) {
+      renderSessionSummary(sessions);
       sessionBoard.replaceChildren();
       if (!sessions.length) {
         const lane = document.createElement("section");
@@ -1094,6 +1245,61 @@ def mission_control_html() -> str:
       }
     }
 
+    function tracePanel(title, description, status, meta = "") {
+      const panel = document.createElement("section");
+      panel.innerHTML = `
+        <header><h2></h2></header>
+        <div class="panel">
+          <div class="row">
+            <div>
+              <div class="title"></div>
+              <div class="meta"></div>
+            </div>
+            <span class="badge ${badgeClass(status)}"></span>
+          </div>
+        </div>`;
+      panel.querySelector("h2").textContent = title;
+      panel.querySelector(".title").textContent = description;
+      panel.querySelector(".meta").textContent = meta;
+      panel.querySelector(".badge").textContent = status;
+      return panel;
+    }
+
+    function renderTraceModel(overview, events, sessions) {
+      const traceGrid = document.querySelector("#trace-grid");
+      const handoffCount = (overview.open_handoffs || []).length;
+      const reservationCount = [
+        ...(overview.active_reservations?.files || []),
+        ...(overview.active_reservations?.symbols || []),
+      ].length;
+      const coordinationStatus = handoffCount || reservationCount ? "ok" : "warning";
+      traceGrid.replaceChildren(
+        tracePanel(
+          "Shared Memory Source",
+          databaseBadge.textContent || "Database runtime unknown",
+          databaseBadge.classList.contains("danger") ? "warning" : "ok",
+          databaseMeta.textContent || "No database metadata"
+        ),
+        tracePanel(
+          "Evidence Coverage",
+          `${sessions.length} sessions, ${events.length} timeline events`,
+          events.length || sessions.length ? "ok" : "warning",
+          [
+            `${overview.lineage?.node_count ?? 0} lineage nodes`,
+            `${overview.lineage?.edge_count ?? 0} edges`,
+          ].join(" | ")
+        ),
+        tracePanel(
+          "Coordination Readiness",
+          handoffCount || reservationCount
+            ? `${handoffCount} open handoffs and ${reservationCount} active claims`
+            : "No active ownership signals for the next collaborator",
+          coordinationStatus,
+          "Use handoffs and reservations when work splits across agents or machines."
+        )
+      );
+    }
+
     async function loadDashboard() {
       const workspace = workspaceInput.value.trim();
       const limit = limitInput.value;
@@ -1109,7 +1315,7 @@ def mission_control_html() -> str:
       const activityUrl = `/api/workspaces/${encoded}/activity?limit=${encodeURIComponent(limit)}`;
       const sessionsUrl = [
         `/api/workspaces/${encoded}/sessions?limit=${encodeURIComponent(limit)}`,
-        "message_limit=5"
+        "message_limit=30"
       ].join("&");
       const [overviewResponse, activityResponse, sessionsResponse] = await Promise.all([
         fetch(overviewUrl),
@@ -1123,7 +1329,6 @@ def mission_control_html() -> str:
         setStatus(`Workspace not found: ${workspace}`, true);
         return;
       }
-      renderMetrics(overview.counts || {});
       const files = overview.active_reservations?.files || [];
       const symbols = overview.active_reservations?.symbols || [];
       renderList(
@@ -1150,9 +1355,14 @@ def mission_control_html() -> str:
       lineageEdges.textContent = overview.lineage?.edge_count ?? 0;
       const events = activity.events || overview.recent_activity || [];
       const sessions = sessionPayload.sessions || [];
+      state.overview = overview;
+      state.events = events;
+      state.sessions = sessions;
+      renderMetrics(overview.counts || {}, collectAgentKeys(events, sessions, overview).length);
       renderAgentBoard(events, sessions, overview);
       renderSessionBoard(sessions);
       renderTimeline(events);
+      renderTraceModel(overview, events, sessions);
       const url = new URL(location.href);
       url.searchParams.set("workspace", workspace);
       url.searchParams.set("limit", limit);
