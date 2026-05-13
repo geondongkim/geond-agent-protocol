@@ -46,13 +46,35 @@ def collect_commits(
     return commits
 
 
-def latest_tag() -> str | None:
+def exact_tag(ref: str = "HEAD") -> str | None:
     completed = subprocess.run(
-        ["git", "describe", "--tags", "--abbrev=0"],
+        ["git", "describe", "--tags", "--exact-match", ref],
         check=False,
         capture_output=True,
         text=True,
     )
+    tag = completed.stdout.strip()
+    return tag or None
+
+
+def latest_tag(until: str = "HEAD") -> str | None:
+    completed = subprocess.run(
+        ["git", "describe", "--tags", "--abbrev=0", until],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    tag = completed.stdout.strip()
+    return tag or None
+
+
+def previous_tag(until: str = "HEAD") -> str | None:
+    command = ["git", "describe", "--tags", "--abbrev=0"]
+    current_tag = exact_tag(until)
+    if current_tag:
+        command.extend(["--exclude", current_tag])
+    command.append(until)
+    completed = subprocess.run(command, check=False, capture_output=True, text=True)
     tag = completed.stdout.strip()
     return tag or None
 
@@ -93,9 +115,15 @@ def format_release_notes(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate deterministic release notes markdown.")
-    parser.add_argument(
+    since_group = parser.add_mutually_exclusive_group()
+    since_group.add_argument(
         "--since",
         help="Start ref, exclusive. Defaults to latest tag when present.",
+    )
+    since_group.add_argument(
+        "--since-previous-tag",
+        action="store_true",
+        help="Use the latest reachable tag before --until, useful for tag releases.",
     )
     parser.add_argument("--until", default="HEAD", help="End ref, inclusive")
     parser.add_argument("--limit", type=int, default=50)
@@ -103,7 +131,10 @@ def main() -> None:
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
-    since = args.since if args.since is not None else latest_tag()
+    if args.since_previous_tag:
+        since = previous_tag(args.until)
+    else:
+        since = args.since if args.since is not None else latest_tag(args.until)
     notes = format_release_notes(
         collect_commits(since=since, until=args.until, limit=args.limit),
         title=args.title,

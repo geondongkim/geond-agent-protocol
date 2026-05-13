@@ -128,6 +128,18 @@ Insert a small sample workspace and session:
 uv run geond seed-sample
 ```
 
+Preview workspace MCP and VS Code LSP task configuration:
+
+```bash
+uv run geond install --format text
+```
+
+Write the default workspace files, `.vscode/mcp.json` and `.vscode/tasks.json`:
+
+```bash
+uv run geond install --write
+```
+
 Check the local setup, including `.env`, Postgres, pgvector, Docker, and MCP
 registration:
 

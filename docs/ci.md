@@ -8,7 +8,12 @@ The workflow uploads two small artifacts on successful generation:
 
 - `release-notes-draft`: the deterministic `release-notes-draft.md` preview.
 - `geond-ci-benchmark`: `benchmark-smoke.md` and `benchmark-report.md` from a
-	seeded sample workspace.
+  seeded sample workspace.
+
+For `v*` tag pushes, the `release` job waits for the test job, regenerates
+release notes with `--since-previous-tag`, and creates or updates the matching
+GitHub Release with `release-notes-draft.md` as both the release body and an
+attached file.
 
 The workflow intentionally sets `GEOND_EMBEDDING_PROVIDER=none` so tests cannot
 make external embedding calls. Do not set `GEOND_PRIVACY_MODE=local-only` as a
@@ -31,20 +36,30 @@ uv run python scripts/generate_release_notes.py --limit 20 --output release-note
 uv run pytest
 uv run geond seed-sample
 uv run geond benchmark-search \
-	--mode keyword \
-	--repeat 3 \
-	--limit 5 \
-	--workspace-uri "file:///sample/geond" \
-	--save \
-	--label ci-smoke \
-	--format markdown \
-	--include-results \
-	"service.py database initialization" > benchmark-smoke.md
+    --mode keyword \
+    --repeat 3 \
+    --limit 5 \
+    --workspace-uri "file:///sample/geond" \
+    --save \
+    --label ci-smoke \
+    --format markdown \
+    --include-results \
+    "service.py database initialization" > benchmark-smoke.md
 uv run geond benchmark-report \
-	--workspace-uri "file:///sample/geond" \
-	--mode keyword \
-	--format markdown > benchmark-report.md
+    --workspace-uri "file:///sample/geond" \
+    --mode keyword \
+    --format markdown > benchmark-report.md
 uv build
+```
+
+For release tags, validate the notes range locally with:
+
+```bash
+uv run python scripts/generate_release_notes.py \
+    --since-previous-tag \
+    --until v0.1.0-alpha \
+    --title "Release v0.1.0-alpha" \
+    --output release-notes-draft.md
 ```
 
 On Windows PowerShell 5.1, `>` writes UTF-16LE. If you need to inspect or

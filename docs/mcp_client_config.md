@@ -14,6 +14,36 @@ uv run geond-mcp
 `geond-mcp`, performs `initialize`, lists tools/resources, reads
 `geond://sessions`, and calls `search_dev_memory`.
 
+## One-Shot Installer
+
+Preview default workspace integration files before writing anything:
+
+```bash
+uv run geond install --format text
+```
+
+The default preview targets VS Code MCP and the VS Code LSP collection task. It
+uses local-first defaults: `GEOND_PRIVACY_MODE=local-only` and
+`GEOND_EMBEDDING_PROVIDER=none`. Write those workspace files with:
+
+```bash
+uv run geond install --write
+```
+
+Install or preview specific clients with repeated `--client` values:
+
+```bash
+uv run geond install --client vscode-mcp --write
+uv run geond install --client vscode-lsp-task --write
+uv run geond install --client claude-desktop --format text
+uv run geond install --client continue --format text
+uv run geond install --client all --format text
+```
+
+JSON-based clients are merged conservatively by server name or task label.
+Continue YAML is previewed by default; if the target config already exists,
+`--write` skips it unless `--overwrite` is also provided.
+
 ## Claude Desktop
 
 Use [examples/mcp_clients/claude_desktop_config.json](../examples/mcp_clients/claude_desktop_config.json) as the shape for the `mcpServers` entry. Replace `C:/path/to/geond-agent-protocol` with this repository path and add embedding credentials through environment variables or your shell.

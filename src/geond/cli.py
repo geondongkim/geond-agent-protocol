@@ -23,6 +23,11 @@ from geond.config import get_settings
 from geond.db import connect, run_schema_file
 from geond.doctor import collect_doctor_report, format_doctor_report
 from geond.embeddings import get_embedding_provider
+from geond.install import (
+    SUPPORTED_INSTALL_CLIENTS,
+    format_install_result_text,
+    install_clients,
+)
 from geond.mcp_smoke import format_smoke_report, run_stdio_smoke
 from geond.retrieval.simple import (
     explain_change,
@@ -206,6 +211,36 @@ def main() -> None:
         action="store_true",
         help="Exit non-zero when the smoke status is warning or error",
     )
+
+    install = subparsers.add_parser(
+        "install",
+        help="Preview or write MCP/editor client configuration for Geond",
+    )
+    install.add_argument(
+        "--client",
+        dest="clients",
+        choices=["all", *SUPPORTED_INSTALL_CLIENTS],
+        action="append",
+        help="Client config to install; repeatable. Defaults to vscode-mcp and vscode-lsp-task.",
+    )
+    install.add_argument("--repo-root", type=Path, default=Path.cwd())
+    install.add_argument("--workspace-root", type=Path, default=Path.cwd())
+    install.add_argument("--config-path", type=Path)
+    install.add_argument("--server-name", default="geond")
+    install.add_argument(
+        "--database-url",
+        default="postgresql://geond:geond_dev_password@localhost:55432/geond",
+    )
+    install.add_argument("--privacy-mode", default="local-only")
+    install.add_argument("--embedding-provider", default="none")
+    install.add_argument("--embedding-model")
+    install.add_argument("--write", action="store_true", help="Write changes to config files")
+    install.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Allow replacing existing Continue YAML config instead of preview-only output",
+    )
+    install.add_argument("--format", choices=["json", "text"], default="json")
 
     parse_vscode = subparsers.add_parser(
         "parse-vscode", help="Parse VS Code Copilot Chat storage without writing to DB"
@@ -641,6 +676,26 @@ def main() -> None:
             print(json.dumps(report, ensure_ascii=False, indent=2))
         if args.strict and report["status"] != "ok":
             raise SystemExit(1)
+        return
+
+    if args.command == "install":
+        result = install_clients(
+            args.clients,
+            repo_root=args.repo_root,
+            workspace_root=args.workspace_root,
+            config_path=args.config_path,
+            server_name=args.server_name,
+            database_url=args.database_url,
+            privacy_mode=args.privacy_mode,
+            embedding_provider=args.embedding_provider,
+            embedding_model=args.embedding_model,
+            write=args.write,
+            overwrite=args.overwrite,
+        )
+        if args.format == "text":
+            print(format_install_result_text(result))
+        else:
+            print(json.dumps(result, ensure_ascii=False, indent=2))
         return
 
     if args.command == "migrate":

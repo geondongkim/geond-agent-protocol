@@ -25,6 +25,7 @@ release_notes_module = load_script_module(
 check_docs_links = check_docs_links_module.check_docs_links
 Commit = release_notes_module.Commit
 format_release_notes = release_notes_module.format_release_notes
+previous_tag = release_notes_module.previous_tag
 
 
 def test_check_docs_links_reports_missing_local_targets(tmp_path: Path) -> None:
@@ -84,3 +85,45 @@ def test_ci_workflow_uploads_release_and_benchmark_artifacts() -> None:
     assert "benchmark-smoke.md" in workflow
     assert "benchmark-report.md" in workflow
     assert "geond benchmark-search" in workflow
+
+
+def test_previous_tag_excludes_current_exact_tag(monkeypatch) -> None:
+    calls: list[list[str]] = []
+
+    class Completed:
+        def __init__(self, stdout: str) -> None:
+            self.stdout = stdout
+
+    def fake_run(command, check, capture_output, text):
+        calls.append(command)
+        assert check is False
+        assert capture_output is True
+        assert text is True
+        if "--exact-match" in command:
+            return Completed("v0.2.0\n")
+        return Completed("v0.1.0\n")
+
+    monkeypatch.setattr(release_notes_module.subprocess, "run", fake_run)
+
+    assert previous_tag("v0.2.0") == "v0.1.0"
+    assert calls[1] == [
+        "git",
+        "describe",
+        "--tags",
+        "--abbrev=0",
+        "--exclude",
+        "v0.2.0",
+        "v0.2.0",
+    ]
+
+
+def test_ci_workflow_creates_release_for_tags() -> None:
+    workflow = (Path(__file__).parents[1] / ".github" / "workflows" / "ci.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "tags:" in workflow
+    assert '"v*"' in workflow
+    assert "--since-previous-tag" in workflow
+    assert "softprops/action-gh-release@v2" in workflow
+    assert "body_path: release-notes-draft.md" in workflow

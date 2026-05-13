@@ -61,10 +61,10 @@ cloud collaboration, and benchmark evidence.
 | --- | --- | --- |
 | SQLite prototype | Postgres is powerful but heavy for first contact. | Provide a limited local SQLite mode for keyword search, imports, and MCP basics. |
 | TypeScript SDK | Many MCP and editor integrations are TypeScript-first. | Add a thin client package for writing memories and querying evidence refs. |
-| Release automation | Public OSS needs predictable artifacts. | GitHub Actions now runs lint, compile, docs link checks, release notes preview, tests, benchmark smoke, and package build, then uploads release notes and benchmark artifacts; next attach generated notes to GitHub releases. |
-| Example integrations | Users learn faster from concrete adapters. | Claude Desktop, Continue, VS Code MCP, VS Code LSP collection task, Continue LSP pre-query workflow, and CI benchmark smoke examples are documented; next add one-shot installer/editor extension commands. |
+| Release automation | Public OSS needs predictable artifacts. | GitHub Actions now runs lint, compile, docs link checks, release notes preview, tests, benchmark smoke, package build, artifact uploads, and tag-triggered GitHub Release creation using generated notes; next add package artifact upload/signing. |
+| Example integrations | Users learn faster from concrete adapters. | Claude Desktop, Continue, VS Code MCP, VS Code LSP collection task, Continue LSP pre-query workflow, CI benchmark smoke, and `geond install` preview/write flows are documented; next add editor extension commands. |
 | Apple Silicon onboarding | Contributors may clone on M-series MacBooks. | Native arm64 setup notes are documented; next validate on real hardware and add macOS CI if needed. |
-| One-shot installer for coding agents | `examples/mcp_clients/*` exists but each agent must be wired manually. | Add `geond install` that detects Claude Code, VS Code MCP, Continue, Codex, etc. and writes MCP entries plus optional pre-tool hooks. |
+| One-shot installer for coding agents | `examples/mcp_clients/*` exists but each agent must be wired manually. | Implemented `geond install` for VS Code MCP, VS Code LSP task, Claude Desktop, and Continue preview/write flows. Next: client detection, Codex/Claude Code hooks, and editor-extension commands. |
 | Graph query DSL | `get_symbol_context` answers one symbol at a time; transitive/structural questions still require multiple tool calls. | Add a constrained, safe graph query (e.g. a typed predicate API) returning canonical `geond.evidence.v1` refs. |
 | IaC and HTTP route nodes | Patch evidence often crosses code and deploy boundaries (Dockerfile, Kubernetes, route handlers). | Add IaC parsers (Docker/K8s/Kustomize) and cross-service HTTP route edges as new code graph node/edge types. |
 | Trace and dead-code analyses | GEOND stores call edges but does not expose transitive call paths or reachability-based dead-code detection. | Add `trace_call_path` and reachability-based dead-symbol reports as MCP/CLI tools. |
@@ -92,9 +92,10 @@ auto-select `pyright` or `typescript` profiles, write the live
 `textDocument/references` Location payload, and optionally import the normalized
 references in one step. VS Code task and Continue pre-query workflow examples
 show how editors can prefill the target file, line, character, and server
-profile. CI now uploads release notes and sample benchmark artifacts, so a good
-next slice is one-shot installer/editor extension commands plus GitHub Release
-attachment automation.
+profile. CI now uploads release notes and sample benchmark artifacts, tag pushes
+create GitHub Releases from generated notes, and `geond install` previews or
+writes common MCP/editor config files. A good next slice is package artifact
+publishing plus editor-extension commands.
 Change narratives cite `code_edge` evidence when touched symbols have call
 impact. Changeset detail lookup rejects ambiguous git commit prefixes with
 explicit candidate matches. Reservation renewal is available for file and symbol
