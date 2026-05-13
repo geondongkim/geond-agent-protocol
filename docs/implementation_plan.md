@@ -331,14 +331,12 @@ Current status:
 The patent drafting pass clarified the strongest next product slice:
 GEOND should focus on the coupled pipeline of AST-derived symbol dependency
 scope, diff hunk evidence, reservations, structured handoff packages, and
-follow-up agent verification. See
-[docs/patent_driven_next_steps.md](patent_driven_next_steps.md) for the
-track-level plan.
+follow-up agent verification.
 
 1. Add MCP contract tests that count static resources and resource templates separately.
 2. Implement dependency-aware reservation scopes with caller/callee/import/export expansion.
 3. Upgrade handoff summaries into consumable handoff packages that bind intent, patch, evidence refs, reservation ids, tests, risks, and next action.
-4. Add code graph correctness and coordination benchmarks described in [docs/reference_repo_benchmark_plan.md](reference_repo_benchmark_plan.md).
+4. Add code graph correctness and coordination benchmarks.
 5. Validate patch-hunk symbol links on larger Python/TypeScript repositories and tune deletion-only hunk behavior.
 6. Run saved benchmark comparisons across OpenAI, Azure OpenAI, APIM gateway, and local providers using the same judgments file.
 7. Expand benchmark reports with token usage and provider billing dimensions when gateways expose them.

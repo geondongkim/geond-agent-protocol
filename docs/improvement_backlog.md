@@ -3,11 +3,7 @@
 This backlog turns the current MVP into a stronger public protocol. It is
 organized by product risk rather than by implementation convenience.
 
-The current product direction is now captured in
-[`docs/patent_driven_next_steps.md`](patent_driven_next_steps.md), with
-reference-repo benchmarking in
-[`docs/reference_repo_benchmark_plan.md`](reference_repo_benchmark_plan.md).
-Those documents sharpen the backlog around dependency-aware reservations,
+The current product direction emphasises dependency-aware reservations,
 handoff packages, patch-to-symbol evidence, MCP contract health, two-client
 cloud collaboration, and benchmark evidence.
 
@@ -68,6 +64,11 @@ cloud collaboration, and benchmark evidence.
 | Release automation | Public OSS needs predictable artifacts. | GitHub Actions now runs lint, compile, tests, and package build with isolated embedding/CI env notes; next add docs link checks and release notes. |
 | Example integrations | Users learn faster from concrete adapters. | Add examples for Continue, Claude Desktop, VS Code MCP, and a simple CI benchmark job. |
 | Apple Silicon onboarding | Contributors may clone on M-series MacBooks. | Native arm64 setup notes are documented; next validate on real hardware and add macOS CI if needed. |
+| One-shot installer for coding agents | `examples/mcp_clients/*` exists but each agent must be wired manually. | Add `geond install` that detects Claude Code, VS Code MCP, Continue, Codex, etc. and writes MCP entries plus optional pre-tool hooks. |
+| Graph query DSL | `get_symbol_context` answers one symbol at a time; transitive/structural questions still require multiple tool calls. | Add a constrained, safe graph query (e.g. a typed predicate API) returning canonical `geond.evidence.v1` refs. |
+| IaC and HTTP route nodes | Patch evidence often crosses code and deploy boundaries (Dockerfile, Kubernetes, route handlers). | Add IaC parsers (Docker/K8s/Kustomize) and cross-service HTTP route edges as new code graph node/edge types. |
+| Trace and dead-code analyses | GEOND stores call edges but does not expose transitive call paths or reachability-based dead-code detection. | Add `trace_call_path` and reachability-based dead-symbol reports as MCP/CLI tools. |
+| CLI option consistency | Coordination commands work, but related commands use slightly different option names and output conventions. | Normalize agent/workspace/output flags across reservation and handoff commands, then add CLI contract snapshots for common flows. |
 
 ## Current Recommendation
 

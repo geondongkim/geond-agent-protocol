@@ -39,9 +39,11 @@ where = ["src"]
 [tool.ruff]
 line-length = 100
 src = ["src", "tests"]
+extend-exclude = ["repo", "docs/patent"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+norecursedirs = ["repo", "docs", ".venv", "node_modules", "build", "dist"]
