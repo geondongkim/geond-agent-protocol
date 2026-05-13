@@ -306,6 +306,39 @@ Current status:
 - [x] Azure CLI and Azure Portal deployment guide added with AWS/GCP resource analogues.
 - [x] Changeset-to-code-entity links now surface touched symbols in `explain_change` and symbol context results.
 
+## 11.5. Phase 9: Agent Activity Dashboard
+
+Status: planned and documented in [agent_activity_dashboard.md](agent_activity_dashboard.md).
+
+This phase adds an optional local web app for observing multi-agent work. It is
+not an MCP feature and does not run agents. It reads Geond's database and
+repository functions to show which agents are active, what they claimed, what
+they changed, which handoffs are open, and which evidence or validation signals
+need review.
+
+Tasks:
+
+- [ ] Add a read-only localhost HTTP API over existing workspace overview,
+  timeline, lineage, reservation, handoff, changeset, benchmark, and code-risk
+  data.
+- [ ] Add `geond dashboard serve` for local development and seeded demos.
+- [ ] Build a compact operational UI with command center, agent fleet, timeline,
+  handoff board, collaboration graph, and code-risk map views.
+- [ ] Add a normalized activity projection so PM agents and orchestrators can
+  consume one ordered event stream instead of many tables.
+- [ ] Add optional Codex and Claude Code hook examples that record activity
+  events without exposing secrets.
+- [ ] Add a dashboard GIF to the public demo once the read-only path exists.
+
+Acceptance criteria:
+
+- A seeded workspace can show at least two agents, one reservation, one handoff,
+  one changeset, and one benchmark or validation signal in the dashboard.
+- The API is localhost-bound and read-only by default.
+- Dashboard rows link back to Geond evidence refs or resource-shaped payloads.
+- PM/orchestrator examples can consume the same API to summarize blockers and
+  suggest next work.
+
 ## 12. Risks and Mitigations
 
 | Risk | Impact | Mitigation |
@@ -333,14 +366,16 @@ GEOND should focus on the coupled pipeline of AST-derived symbol dependency
 scope, diff hunk evidence, reservations, structured handoff packages, and
 follow-up agent verification.
 
-1. Add MCP contract tests that count static resources and resource templates separately.
-2. Implement dependency-aware reservation scopes with caller/callee/import/export expansion.
-3. Upgrade handoff summaries into consumable handoff packages that bind intent, patch, evidence refs, reservation ids, tests, risks, and next action.
-4. Add code graph correctness and coordination benchmarks.
-5. Validate patch-hunk symbol links on larger Python/TypeScript repositories and tune deletion-only hunk behavior.
-6. Run saved benchmark comparisons across OpenAI, Azure OpenAI, APIM gateway, and local providers using the same judgments file.
-7. Expand benchmark reports with token usage and provider billing dimensions when gateways expose them.
-8. Move long-lived Azure validation resources to Bicep or Terraform under `infra/` and validate with `what-if` before deployment.
+1. Add the read-only dashboard API and reuse existing timeline, lineage,
+   reservation, handoff, changeset, and benchmark read models.
+2. Add MCP contract tests that count static resources and resource templates separately.
+3. Implement dependency-aware reservation scopes with caller/callee/import/export expansion.
+4. Upgrade handoff summaries into consumable handoff packages that bind intent, patch, evidence refs, reservation ids, tests, risks, and next action.
+5. Add code graph correctness and coordination benchmarks.
+6. Validate patch-hunk symbol links on larger Python/TypeScript repositories and tune deletion-only hunk behavior.
+7. Run saved benchmark comparisons across OpenAI, Azure OpenAI, APIM gateway, and local providers using the same judgments file.
+8. Expand benchmark reports with token usage and provider billing dimensions when gateways expose them.
+9. Move long-lived Azure validation resources to Bicep or Terraform under `infra/` and validate with `what-if` before deployment.
 
 See [docs/improvement_backlog.md](improvement_backlog.md) for the deeper prioritized backlog.
 

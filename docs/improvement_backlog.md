@@ -4,8 +4,8 @@ This backlog turns the current MVP into a stronger public protocol. It is
 organized by product risk rather than by implementation convenience.
 
 The current product direction emphasises dependency-aware reservations,
-handoff packages, patch-to-symbol evidence, MCP contract health, two-client
-cloud collaboration, and benchmark evidence.
+handoff packages, patch-to-symbol evidence, MCP contract health, agent activity
+observability, two-client cloud collaboration, and benchmark evidence.
 
 ## Priority 0: Trust And Safety
 
@@ -55,6 +55,16 @@ cloud collaboration, and benchmark evidence.
 | Session lineage | Multi-agent workflows need provenance. | Implemented workspace lineage graphs linking sessions, handoffs, actions, changesets, and benchmark runs. |
 | Context review loop | Agents should compare the next task with current intent, reservations, and handoffs before editing. | Implemented `review_workspace_context` and `geond review-context` to assess requested work against active reservations, open handoffs, and lineage matches. |
 
+## Priority 4.5: Agent Activity Observability
+
+| Improvement | Why | Candidate implementation |
+| --- | --- | --- |
+| Local agent dashboard | Humans and PM agents need to see which agent is doing what without reading raw MCP JSON. | Add a localhost read-only dashboard with command center, agent fleet, timeline, handoff board, lineage graph, and code-risk map; see [agent_activity_dashboard.md](agent_activity_dashboard.md). |
+| Dashboard HTTP API | UI, PM agents, and orchestrators need a stable read model that is not tied to MCP resources. | Add `geond dashboard serve` with `/api/workspaces/{id}/overview`, `/timeline`, `/lineage`, `/reservations`, `/handoffs`, `/changesets`, and `/code-risk`. |
+| Normalized activity stream | `agent_actions`, reservations, handoffs, changesets, and benchmark runs currently require multiple queries. | Add an `agent_activity_events` projection or equivalent view that reduces existing evidence into one ordered event stream. |
+| Agent lifecycle adapters | Real-time views need consistent lifecycle events from Codex, Claude Code, Copilot, and CLI workflows. | Add optional hook examples for session start/end, pre/post tool use, validation, compaction, and stop events. |
+| PM/orchestrator read model | Future PM and orchestration agents need blocker, ownership, and readiness signals. | Provide prompts and dry-run CLI examples that summarize open handoffs, stale reservations, risky symbols, and latest validation evidence. |
+
 ## Priority 5: Packaging And Adoption
 
 | Improvement | Why | Candidate implementation |
@@ -97,8 +107,11 @@ sample benchmark artifacts; tag pushes create GitHub Releases from generated
 notes and attach source/wheel/checksum files with Sigstore keyless signing
 bundles; manual PyPI trusted publishing can publish a selected tag after the
 PyPI trusted publisher is configured; and `geond install` previews or writes
-common MCP/editor config files. A good next slice is a TestPyPI dry-run or
-editor-extension commands.
+common MCP/editor config files. The latest `repo/` reference review points to a
+read-only agent activity dashboard as the next product slice: first expose a
+localhost HTTP read model over existing timeline, lineage, reservation, handoff,
+changeset, and benchmark data, then build the UI and PM/orchestrator examples on
+top.
 Change narratives cite `code_edge` evidence when touched symbols have call
 impact. Changeset detail lookup rejects ambiguous git commit prefixes with
 explicit candidate matches. Reservation renewal is available for file and symbol

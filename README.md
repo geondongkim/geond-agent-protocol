@@ -43,6 +43,7 @@ flowchart LR
 - Retrieve context by semantic similarity, symbol neighborhood, timeline, and change intent.
 - Expose shared memory through MCP tools such as `search_dev_memory`, `get_symbol_context`, and `record_agent_action`.
 - Help agents coordinate by recording file reservations, active tasks, and handoff notes.
+- Provide an optional local dashboard for agent activity, reservations, handoffs, lineage, and review status.
 - Provide a local-first Docker setup using Postgres and pgvector.
 
 ## Test Beds
@@ -68,6 +69,7 @@ validation status, and improvement plan.
 - [docs/azure_validation/README.md](docs/azure_validation/README.md) records the temporary Azure OpenAI, APIM, and VM validation workflow and sanitized evidence.
 - [docs/improvement_backlog.md](docs/improvement_backlog.md) lists prioritized next improvements for evidence quality, deployment, retrieval, and adoption.
 - [docs/agent_testbeds.md](docs/agent_testbeds.md) compares the Copilot Chat, Codex, and Claude Code test beds.
+- [docs/agent_activity_dashboard.md](docs/agent_activity_dashboard.md) proposes the local dashboard, live activity model, and PM/orchestration use cases.
 - [docs/vscode_chat_storage_structure.md](docs/vscode_chat_storage_structure.md) documents the first VS Code Copilot Chat test bed.
 - [docs/codex_testbed.md](docs/codex_testbed.md) documents the Codex JSONL test bed.
 - [docs/demo.md](docs/demo.md) walks through the current seed, retrieval, code graph, MCP, coordination, and purge demo.

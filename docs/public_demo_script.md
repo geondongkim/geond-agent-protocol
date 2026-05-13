@@ -117,6 +117,19 @@ In the MCP client, show resources/tools:
 
 Client config examples are in [examples/mcp_clients](../examples/mcp_clients).
 
+## Future Dashboard Shot
+
+After the dashboard MVP lands, add a short browser shot that opens the local
+Command Center and shows the same seeded evidence visually:
+
+- active agents and their latest action
+- one symbol reservation on `build_answer`
+- one open handoff from Copilot to Codex
+- the workspace timeline with reservation and handoff events
+- the lineage graph connecting session, agent action, handoff, changeset, and benchmark nodes
+
+The dashboard plan is tracked in [docs/agent_activity_dashboard.md](agent_activity_dashboard.md).
+
 ## Cleanup Shot
 
 ```bash
