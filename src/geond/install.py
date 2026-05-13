@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from copy import deepcopy
 from pathlib import Path
@@ -15,6 +16,7 @@ SUPPORTED_INSTALL_CLIENTS = (
 )
 DEFAULT_INSTALL_CLIENTS = ("vscode-mcp", "vscode-lsp-task")
 DEFAULT_DATABASE_URL = "postgresql://geond:geond_dev_password@localhost:55432/geond"
+DEFAULT_DATABASE_PROFILE = "local"
 LSP_TASK_LABEL = "Geond: collect LSP references"
 
 
@@ -59,6 +61,7 @@ def mcp_server_entry(
     repo_root: Path,
     *,
     database_url: str = DEFAULT_DATABASE_URL,
+    database_profile: str = DEFAULT_DATABASE_PROFILE,
     privacy_mode: str = "local-only",
     embedding_provider: str = "none",
     embedding_model: str | None = None,
@@ -68,7 +71,8 @@ def mcp_server_entry(
         "command": "uv",
         "args": ["--directory", repo_root.resolve().as_posix(), "run", "geond-mcp"],
         "env": {
-            "GEOND_DATABASE_URL": database_url,
+            "GEOND_DATABASE_PROFILE": database_profile,
+            database_url_env_key(database_profile): database_url,
             "GEOND_PRIVACY_MODE": privacy_mode,
             "GEOND_EMBEDDING_PROVIDER": embedding_provider,
         },
@@ -78,6 +82,15 @@ def mcp_server_entry(
     if include_type:
         entry = {"type": "stdio", **entry}
     return entry
+
+
+def database_url_env_key(profile: str) -> str:
+    normalized = re.sub(r"[^A-Z0-9]+", "_", profile.upper()).strip("_")
+    if not normalized or normalized == "LOCAL":
+        return "GEOND_DATABASE_URL"
+    if normalized == "AZURE":
+        return "AZURE_GEOND_DATABASE_URL"
+    return f"GEOND_DATABASE_URL_{normalized}"
 
 
 def vscode_mcp_config(
@@ -227,6 +240,7 @@ def install_clients(
     config_path: Path | None = None,
     server_name: str = "geond",
     database_url: str = DEFAULT_DATABASE_URL,
+    database_profile: str = DEFAULT_DATABASE_PROFILE,
     privacy_mode: str = "local-only",
     embedding_provider: str = "none",
     embedding_model: str | None = None,
@@ -246,6 +260,7 @@ def install_clients(
             repo_root=repo_root,
             server_name=server_name,
             database_url=database_url,
+            database_profile=database_profile,
             privacy_mode=privacy_mode,
             embedding_provider=embedding_provider,
             embedding_model=embedding_model,
@@ -264,6 +279,7 @@ def install_one_client(
     repo_root: Path,
     server_name: str,
     database_url: str,
+    database_profile: str,
     privacy_mode: str,
     embedding_provider: str,
     embedding_model: str | None,
@@ -281,6 +297,7 @@ def install_one_client(
     entry = mcp_server_entry(
         repo_root,
         database_url=database_url,
+        database_profile=database_profile,
         privacy_mode=privacy_mode,
         embedding_provider=embedding_provider,
         embedding_model=embedding_model,

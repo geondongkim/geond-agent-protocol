@@ -12,7 +12,9 @@ from geond.storage.benchmark import save_benchmark_run
 from geond.storage.dashboard import (
     get_agent_activity_events,
     get_dashboard_overview,
+    get_dashboard_project_activity,
     get_dashboard_sessions,
+    get_dashboard_workspaces,
     is_readable_dashboard_message,
 )
 from geond.storage.repository import (
@@ -118,6 +120,8 @@ def test_dashboard_overview_and_activity_events() -> None:
             overview = get_dashboard_overview(conn, workspace_id, limit=10)
             activity = get_agent_activity_events(conn, workspace_uri, limit=20)
             sessions = get_dashboard_sessions(conn, workspace_id, limit=10, message_limit=2)
+            workspaces = get_dashboard_workspaces(conn, limit=50)
+            project = get_dashboard_project_activity(conn, workspace_id, limit=10)
 
             assert overview["status"] == "ok"
             assert overview["counts"]["sessions"] >= 1
@@ -145,6 +149,10 @@ def test_dashboard_overview_and_activity_events() -> None:
             assert sessions["sessions"][0]["messages"][0]["role"] == "assistant_or_tool"
             assert sessions["sessions"][0]["readable_messages"][0]["role"] == "user"
             assert sessions["sessions"][0]["readable_excerpt_count"] == 2
+            assert any(item["workspace_id"] == workspace_id for item in workspaces["workspaces"])
+            assert project["status"] == "ok"
+            assert project["files"][0]["file_path"] == "service.py"
+            assert project["files"][0]["status"] == "active"
         finally:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM workspaces WHERE id = %s", (workspace_id,))

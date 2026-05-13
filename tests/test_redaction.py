@@ -34,3 +34,13 @@ def test_redact_text_replaces_invalid_surrogate_codepoints() -> None:
 
     assert redacted == f"정상 텍스트 {UNICODE_REPLACEMENT} 유지"
     assert [finding.finding_type for finding in findings] == ["unicode_replacement"]
+
+
+def test_redact_value_replaces_nul_in_text_and_keys() -> None:
+    redacted, findings = redact_value({"bad\x00key": "value\x00with-nul"})
+
+    assert redacted == {f"bad{UNICODE_REPLACEMENT}key": f"value{UNICODE_REPLACEMENT}with-nul"}
+    assert [finding.finding_type for finding in findings] == [
+        "unicode_replacement",
+        "unicode_replacement",
+    ]

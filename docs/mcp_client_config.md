@@ -33,6 +33,19 @@ uses local-first defaults: `GEOND_PRIVACY_MODE=local-only` and
 uv run geond install --write
 ```
 
+Point generated MCP configs at a named database profile when the same repo is
+used against more than one Postgres target:
+
+```bash
+uv run geond install --client vscode-mcp --write \
+  --database-profile azure \
+  --database-url "$AZURE_GEOND_DATABASE_URL"
+```
+
+The installer writes `GEOND_DATABASE_PROFILE` plus the matching profile-specific
+URL key. `local` uses `GEOND_DATABASE_URL`; `azure` uses
+`AZURE_GEOND_DATABASE_URL`; custom profiles use `GEOND_DATABASE_URL_<PROFILE>`.
+
 Install or preview specific clients with repeated `--client` values:
 
 ```bash
@@ -46,6 +59,78 @@ uv run geond install --client all --format text
 JSON-based clients are merged conservatively by server name or task label.
 Continue YAML is previewed by default; if the target config already exists,
 `--write` skips it unless `--overwrite` is also provided.
+
+## Multi-Agent Setup
+
+Every agent should point at the same Geond database and the same canonical
+workspace URI. If Copilot imports `file:///C:/Users/you/project` while Codex
+imports `file:///C:/tmp/project-copy`, the dashboard correctly shows two
+workspaces instead of one mixed lane. Use aliases only when those roots are the
+same logical repository.
+
+Recommended shared workspace URI for this checkout on Windows:
+
+```text
+file:///C:/Users/EL035/dataschool/RealMe_OPIc
+```
+
+### VS Code Copilot Chat
+
+Install the workspace MCP server and LSP collection task:
+
+```bash
+uv run geond install --client vscode-mcp --client vscode-lsp-task --write
+```
+
+Then enable the `geond` MCP server from VS Code's MCP UI. A Copilot agent can
+call `review_workspace_context`, `reserve_files`, `record_changeset`, and
+`record_handoff_summary` directly through MCP before, during, and after edits.
+
+### Codex CLI
+
+Codex JSONL is imported through the CLI adapter. Import it into the same
+canonical workspace URI so the dashboard shows Codex beside Copilot:
+
+```bash
+uv run geond import-codex "C:/Users/<you>/.codex/sessions" \
+  --limit 20 \
+  --workspace-uri "file:///C:/Users/EL035/dataschool/RealMe_OPIc" \
+  --workspace-name "RealMe_OPIc"
+```
+
+After importing, Codex sessions appear in the workspace selector and in the
+Agent Fleet lanes as source `codex`. If a previous Codex import used a fixture
+or temporary path, leave it as a separate workspace for provenance, or register
+an alias when it is truly the same repository:
+
+```bash
+uv run geond register-workspace-alias \
+  "file:///C:/Users/EL035/dataschool/RealMe_OPIc" \
+  "file:///C:/tmp/old-codex-root" \
+  --reason same-repository-root
+```
+
+### Claude Desktop, Continue, and Other MCP Clients
+
+Use the same `uv --directory <repo> run geond-mcp` stdio command and the same
+database profile env block as VS Code. The examples in
+[examples/mcp_clients](../examples/mcp_clients) include the required command,
+args, and env shape. For shared team validation, keep the MCP process local to
+each machine and point all clients at the shared PostgreSQL profile.
+
+### Agent Lifecycle Pattern
+
+Use this lightweight sequence for each agent task:
+
+1. `review_workspace_context` with the intended files, symbols, and goal.
+2. `reserve_files` or `reserve_symbols` for active ownership.
+3. Make the code or documentation change.
+4. `record_changeset` with touched files and optional patch evidence.
+5. `record_handoff_summary` when another agent or reviewer should continue.
+
+That sequence gives the dashboard enough evidence to show live ownership,
+project structure hotspots, recent sessions, and next actions for a PM or
+orchestrator.
 
 ## Claude Desktop
 

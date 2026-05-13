@@ -85,19 +85,21 @@ def redact_value(value: Any, path: str = "$") -> tuple[Any, list[RedactionFindin
         redacted_dict: dict[str, Any] = {}
         findings: list[RedactionFinding] = []
         for key, item in value.items():
-            child_path = f"{path}.{key}"
-            if is_sensitive_key(str(key)) and item not in (None, "", [], {}):
-                redacted_dict[key] = REDACTION_MARKER
+            safe_key, key_findings = redact_text(str(key), path=f"{path}.__key__")
+            findings.extend(key_findings)
+            child_path = f"{path}.{safe_key}"
+            if is_sensitive_key(safe_key) and item not in (None, "", [], {}):
+                redacted_dict[safe_key] = REDACTION_MARKER
                 findings.append(
                     RedactionFinding(
                         finding_type="sensitive_key",
                         path=child_path,
-                        metadata={"key": str(key)},
+                        metadata={"key": safe_key},
                     )
                 )
                 continue
             redacted_item, item_findings = redact_value(item, path=child_path)
-            redacted_dict[key] = redacted_item
+            redacted_dict[safe_key] = redacted_item
             findings.extend(item_findings)
         return redacted_dict, findings
     return value, []
@@ -150,7 +152,8 @@ def sanitize_text(text: str) -> tuple[str, int]:
     replacement_count = 0
     characters: list[str] = []
     for character in text:
-        if 0xD800 <= ord(character) <= 0xDFFF:
+        codepoint = ord(character)
+        if character == "\x00" or 0xD800 <= codepoint <= 0xDFFF:
             characters.append(UNICODE_REPLACEMENT)
             replacement_count += 1
         else:

@@ -248,6 +248,7 @@ def main() -> None:
         "--database-url",
         default="postgresql://geond:geond_dev_password@localhost:55432/geond",
     )
+    install.add_argument("--database-profile", default="local")
     install.add_argument("--privacy-mode", default="local-only")
     install.add_argument("--embedding-provider", default="none")
     install.add_argument("--embedding-model")
@@ -728,6 +729,7 @@ def main() -> None:
             config_path=args.config_path,
             server_name=args.server_name,
             database_url=args.database_url,
+            database_profile=args.database_profile,
             privacy_mode=args.privacy_mode,
             embedding_provider=args.embedding_provider,
             embedding_model=args.embedding_model,

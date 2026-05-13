@@ -23,8 +23,25 @@ def test_install_vscode_mcp_preview_uses_safe_local_defaults(tmp_path: Path) -> 
     server = target["content"]["servers"]["geond"]
     assert server["type"] == "stdio"
     assert server["command"] == "uv"
+    assert server["env"]["GEOND_DATABASE_PROFILE"] == "local"
+    assert server["env"]["GEOND_DATABASE_URL"].startswith("postgresql://geond")
     assert server["env"]["GEOND_PRIVACY_MODE"] == "local-only"
     assert server["env"]["GEOND_EMBEDDING_PROVIDER"] == "none"
+
+
+def test_install_vscode_mcp_can_use_azure_database_profile(tmp_path: Path) -> None:
+    result = install_clients(
+        ["vscode-mcp"],
+        repo_root=tmp_path / "repo",
+        workspace_root=tmp_path / "workspace",
+        database_profile="azure",
+        database_url="postgresql://example.postgres.database.azure.com/geond?sslmode=require",
+    )
+
+    server = result["targets"][0]["content"]["servers"]["geond"]
+    assert server["env"]["GEOND_DATABASE_PROFILE"] == "azure"
+    assert "GEOND_DATABASE_URL" not in server["env"]
+    assert server["env"]["AZURE_GEOND_DATABASE_URL"].startswith("postgresql://example")
 
 
 def test_install_vscode_mcp_merges_existing_json(tmp_path: Path) -> None:

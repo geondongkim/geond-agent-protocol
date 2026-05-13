@@ -476,12 +476,15 @@ uv run geond dashboard serve --host 127.0.0.1 --port 8765
 ```
 
 Read-only endpoints include `/health`,
+`/api/workspaces`,
 `/api/workspaces/{workspace_id}/overview`,
 `/api/workspaces/{workspace_id}/activity`, and
-`/api/workspaces/{workspace_id}/sessions`. Open
-`http://127.0.0.1:8765/?workspace=<workspace-id>` for the local Command Center,
-database source badge, horizontal Agent Fleet lanes, agent switchboard,
-session/message cards, reservations, handoffs, lineage counts, and timeline.
+`/api/workspaces/{workspace_id}/sessions`, and
+`/api/workspaces/{workspace_id}/project`. Open
+`http://127.0.0.1:8765/` for the local Command Center with a workspace selector,
+database source badge, live refresh, horizontal Agent Fleet lanes, agent
+switchboard, project-structure activity, session/message cards, reservations,
+handoffs, lineage counts, and timeline.
 The `/health` and `/api` responses include safe database metadata so a local
 browser can distinguish Local PostgreSQL from Azure PostgreSQL without exposing
 credentials.

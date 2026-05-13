@@ -49,8 +49,26 @@ uv run geond import-codex "C:/Users/<you>/.codex/sessions" \
     --workspace-name "my-project"
 ```
 
+For multi-agent dashboard work, use the same canonical `--workspace-uri` that
+Copilot, Claude Code, and MCP tools use for the repository. For this checkout on
+Windows that is:
+
+```bash
+uv run geond import-codex "C:/Users/<you>/.codex/sessions" \
+  --limit 20 \
+  --workspace-uri "file:///C:/Users/EL035/dataschool/RealMe_OPIc" \
+  --workspace-name "RealMe_OPIc"
+```
+
+If Codex is imported into a fixture or temporary workspace URI, it will still be
+preserved, but the dashboard will show it as a different workspace. Register a
+workspace alias only when the old URI is truly the same logical repository root;
+otherwise leave the split visible so provenance stays honest.
+
 Imported Codex messages use the same `messages` and `events` tables as VS Code Copilot
 Chat imports, so keyword/vector/hybrid retrieval can compare both sources.
+When the workspace URI matches, the dashboard workspace selector and Agent Fleet
+lanes show Codex beside Copilot instead of requiring a manual workspace id.
 
 Search imported Codex memory with an explicit source filter:
 

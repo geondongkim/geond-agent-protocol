@@ -192,6 +192,19 @@ work, then scrolls the board to that agent. This keeps the dashboard usable as
 Azure-backed shared memory starts showing multiple agents from different
 machines.
 
+The UI now starts from `/api/workspaces` instead of requiring an operator to
+paste a workspace id. Each option shows the workspace name, short id, session
+count, message count, and observed agents; selecting a workspace refreshes the
+overview, activity stream, sessions, and project structure together. The default
+window is 100 records, and a small polling control refreshes the page every few
+seconds for live PM/orchestrator observation.
+
+The Mission Control side panel includes a project-structure activity map from
+indexed code entities, change files, and active reservations. It highlights
+changed files, symbol counts, active claims, responsible agents, and last change
+time so a PM or orchestration agent can spot hot files without reading raw
+changeset JSON.
+
 ![Azure-backed dashboard walkthrough](assets/geond_dashboard_azure_collaboration.gif)
 
 The Azure validation slice exercises all four dashboard views against shared
@@ -225,6 +238,7 @@ GET /api/workspaces
 GET /api/workspaces/{workspace_id}/overview
 GET /api/workspaces/{workspace_id}/agents
 GET /api/workspaces/{workspace_id}/sessions?limit=50&message_limit=5
+GET /api/workspaces/{workspace_id}/project?limit=100
 GET /api/workspaces/{workspace_id}/timeline?limit=100&after=<cursor>
 GET /api/workspaces/{workspace_id}/lineage?limit=250
 GET /api/workspaces/{workspace_id}/reservations
@@ -363,8 +377,8 @@ memory, but visible work state.
 | --- | --- | --- |
 | 0. Product docs | Align on dashboard shape. | This document, README link, backlog entry, and demo-script note exist. |
 | 1. Read model | Expose dashboard-shaped JSON from existing repository functions. | Implemented through `dashboard-overview`, `dashboard-events`, `get_dashboard_overview`, `get_agent_activity_events`, `geond://workspaces/{id}/overview`, and `geond://workspaces/{id}/activity`. |
-| 1.5. Local HTTP API | Serve the same read model over localhost. | Implemented as `geond dashboard serve` with `/health`, `/api/workspaces/{id}/overview`, `/activity`, `/sessions`, `/timeline`, `/lineage`, `/reservations`, and `/handoffs`. |
-| 2. Local UI MVP | Render command center, timeline, agent fleet, handoffs, and lineage graph. | Mission Control, horizontally expanding Agent Fleet lanes, session/message cards, reservations, handoffs, lineage counts, Activity Timeline, and trace-model tab are served at `/?workspace=<workspace-id>`; next add richer code-risk views. |
+| 1.5. Local HTTP API | Serve the same read model over localhost. | Implemented as `geond dashboard serve` with `/health`, `/api/workspaces`, `/api/workspaces/{id}/overview`, `/activity`, `/sessions`, `/project`, `/timeline`, `/lineage`, `/reservations`, and `/handoffs`. |
+| 2. Local UI MVP | Render command center, timeline, agent fleet, handoffs, and lineage graph. | Mission Control, workspace selector, live polling, project-structure activity, horizontally expanding Agent Fleet lanes, session/message cards, reservations, handoffs, lineage counts, Activity Timeline, and trace-model tab are served at `/`; next add richer code-risk views. |
 | 3. Activity projection | Normalize agent activity events for UI and orchestrators. | Agent actions, reservations, handoffs, changesets, and benchmark runs reduce into one ordered event stream. |
 | 4. Hook adapters | Capture real agent lifecycle events. | Codex/Claude Code hook examples record session/tool/stop events without exposing secrets. |
 | 5. PM/orchestrator loop | Use the read model to guide work assignment. | A PM prompt and CLI dry-run can recommend next work, detect blockers, and cite evidence. |
@@ -373,6 +387,7 @@ memory, but visible work state.
 ## Recommended Next Slice
 
 Add richer code-risk views next. The first local UI now renders split pages with
-Mission Control, horizontally expanding Agent Fleet lanes, session/message
-cards, reservations, handoffs, lineage counts, Activity Timeline, and a
-trace-model tab over the same read-only payloads.
+Mission Control, workspace selection, live refresh, project-structure activity,
+horizontally expanding Agent Fleet lanes, session/message cards, reservations,
+handoffs, lineage counts, Activity Timeline, and a trace-model tab over the same
+read-only payloads.

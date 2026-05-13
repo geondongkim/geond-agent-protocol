@@ -10,7 +10,9 @@ from geond.db import connect
 from geond.storage.dashboard import (
     get_agent_activity_events,
     get_dashboard_overview,
+    get_dashboard_project_activity,
     get_dashboard_sessions,
+    get_dashboard_workspaces,
 )
 from geond.storage.resources import (
     get_workspace_handoffs,
@@ -82,6 +84,11 @@ def dashboard_payload(settings: Settings, path: str) -> tuple[int, dict[str, Any
             "service": "geond-dashboard",
             "database": database_connection_info(settings),
         }
+    if parsed.path == "/api/workspaces":
+        limit = query_limit(parsed.query, default=250)
+        with connect(settings) as conn:
+            payload = get_dashboard_workspaces(conn, limit=limit)
+        return status_for_payload(payload), payload
 
     route = match_workspace_route(parsed.path)
     if route is None:
@@ -118,6 +125,9 @@ def dashboard_payload(settings: Settings, path: str) -> tuple[int, dict[str, Any
                 message_limit=message_limit,
             )
             return status_for_payload(payload), payload
+        if endpoint == "project":
+            payload = get_dashboard_project_activity(conn, workspace_id, limit=limit)
+            return status_for_payload(payload), payload
 
     return 404, {"status": "not_found", "workspace_id": workspace_id, "endpoint": endpoint}
 
@@ -130,6 +140,7 @@ def dashboard_index(settings: Settings | None = None) -> dict[str, Any]:
         "database": database_connection_info(settings or Settings()),
         "endpoints": [
             "/health",
+            "/api/workspaces",
             "/api/workspaces/{workspace_id}/overview",
             "/api/workspaces/{workspace_id}/activity",
             "/api/workspaces/{workspace_id}/timeline",
@@ -137,6 +148,7 @@ def dashboard_index(settings: Settings | None = None) -> dict[str, Any]:
             "/api/workspaces/{workspace_id}/reservations",
             "/api/workspaces/{workspace_id}/handoffs",
             "/api/workspaces/{workspace_id}/sessions",
+            "/api/workspaces/{workspace_id}/project",
         ],
     }
 
@@ -190,6 +202,7 @@ def mission_control_html() -> str:
       --line: #d7dde5;
       --accent: #0b6b63;
       --accent-soft: #dcefeb;
+      --accent-2: #6d4aff;
       --warn: #9a5b00;
       --danger: #a33a34;
       --ok: #167044;
@@ -245,10 +258,10 @@ def mission_control_html() -> str:
     }
     .toolbar {
       display: grid;
-      grid-template-columns: minmax(220px, 1fr) auto auto;
+      grid-template-columns: minmax(280px, 1fr) auto auto auto;
       gap: 10px;
       align-items: center;
-      width: min(780px, 100%);
+      width: min(960px, 100%);
     }
     label {
       display: grid;
@@ -267,6 +280,14 @@ def mission_control_html() -> str:
     }
     input { padding: 0 10px; min-width: 0; }
     select { padding: 0 28px 0 10px; }
+    .control-meta {
+      min-height: 16px;
+      color: var(--muted);
+      font-size: 11px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
     button {
       padding: 0 12px;
       background: var(--accent);
@@ -489,6 +510,61 @@ def mission_control_html() -> str:
       white-space: pre-wrap;
       overflow-wrap: anywhere;
     }
+    .agent-name {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-width: 0;
+    }
+    .agent-icon {
+      display: inline-grid;
+      place-items: center;
+      width: 24px;
+      height: 24px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      flex: 0 0 auto;
+      font-size: 14px;
+    }
+    .project-tree {
+      display: grid;
+      gap: 6px;
+      max-height: 240px;
+      overflow: auto;
+      padding: 10px;
+    }
+    .project-file {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: start;
+      padding: 8px 9px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+    }
+    .project-file .icon {
+      color: var(--accent-2);
+      line-height: 1.25;
+    }
+    .project-file .path {
+      font-size: 12px;
+      font-weight: 650;
+      overflow-wrap: anywhere;
+    }
+    .project-file .meta {
+      margin-top: 2px;
+    }
+    .live-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
     .trace-grid {
       display: grid;
       grid-template-columns: repeat(3, minmax(260px, 1fr));
@@ -643,20 +719,29 @@ def mission_control_html() -> str:
     <h1>Geond Agent Activity</h1>
     <form class="toolbar" id="controls">
       <label>
-        Workspace id or URI
-        <input id="workspace" name="workspace"
-          placeholder="workspace id or file:///..." autocomplete="off" />
+        Workspace
+        <select id="workspace" name="workspace"></select>
+        <span class="control-meta" id="workspace-meta">Loading workspaces</span>
       </label>
       <label>
-        Limit
+        Window
         <select id="limit" name="limit">
-          <option>25</option>
-          <option selected>50</option>
-          <option>100</option>
+          <option>50</option>
+          <option selected>100</option>
           <option>250</option>
+          <option>500</option>
         </select>
       </label>
-      <button type="submit">Refresh</button>
+      <label>
+        Live
+        <select id="refresh-interval" name="refresh_interval">
+          <option value="0">Off</option>
+          <option value="5">5s</option>
+          <option value="10" selected>10s</option>
+          <option value="30">30s</option>
+        </select>
+      </label>
+      <button type="submit" title="Refresh" aria-label="Refresh">↻</button>
     </form>
     <div class="runtime" aria-label="Database runtime">
       <span class="badge" id="database-badge">database</span>
@@ -664,7 +749,7 @@ def mission_control_html() -> str:
     </div>
   </header>
   <main>
-    <div class="status-line" id="status">Enter a workspace id or URI to load dashboard data.</div>
+    <div class="status-line" id="status">Loading workspaces...</div>
     <nav class="tabs" aria-label="Dashboard views">
       <button class="tab active" type="button" data-view="mission">Mission Control</button>
       <button class="tab" type="button" data-view="sessions">Sessions</button>
@@ -681,6 +766,10 @@ def mission_control_html() -> str:
             </header>
             <div class="metrics" id="metrics"></div>
           </section>
+          <details class="collapsible" open>
+            <summary>Project Structure</summary>
+            <div class="project-tree" id="project-tree"></div>
+          </details>
           <details class="collapsible" open>
             <summary>Active Reservations</summary>
             <div class="list" id="reservations"></div>
@@ -765,12 +854,26 @@ def mission_control_html() -> str:
     </section>
   </main>
   <script>
-    const state = { workspace: "", limit: 50, overview: null, events: [], sessions: [] };
+    const state = {
+      workspace: "",
+      limit: 100,
+      autoRefreshSeconds: 10,
+      refreshTimer: null,
+      loading: false,
+      overview: null,
+      events: [],
+      sessions: [],
+      project: null,
+      workspaces: [],
+    };
     const qs = new URLSearchParams(location.search);
     const workspaceInput = document.querySelector("#workspace");
+    const workspaceMeta = document.querySelector("#workspace-meta");
     const limitInput = document.querySelector("#limit");
+    const refreshInput = document.querySelector("#refresh-interval");
     const statusLine = document.querySelector("#status");
     const metrics = document.querySelector("#metrics");
+    const projectTree = document.querySelector("#project-tree");
     const reservations = document.querySelector("#reservations");
     const handoffs = document.querySelector("#handoffs");
     const databaseBadge = document.querySelector("#database-badge");
@@ -785,12 +888,19 @@ def mission_control_html() -> str:
     const lineageEdges = document.querySelector("#lineage-edges");
     const copyApi = document.querySelector("#copy-api");
 
-    workspaceInput.value = qs.get("workspace") || "";
-    limitInput.value = qs.get("limit") || "50";
+    const requestedWorkspace = qs.get("workspace") || "";
+    limitInput.value = qs.get("limit") || "100";
+    refreshInput.value = qs.get("refresh") || "10";
 
     document.querySelector("#controls").addEventListener("submit", (event) => {
       event.preventDefault();
       loadDashboard();
+    });
+    workspaceInput.addEventListener("change", () => loadDashboard());
+    refreshInput.addEventListener("change", () => {
+      state.autoRefreshSeconds = Number(refreshInput.value || 0);
+      scheduleAutoRefresh();
+      updateUrl();
     });
     for (const button of document.querySelectorAll(".tab")) {
       button.addEventListener("click", () => switchView(button.dataset.view));
@@ -810,7 +920,12 @@ def mission_control_html() -> str:
         const database = payload.database || {};
         databaseBadge.textContent = database.label || "Database";
         databaseBadge.className = `badge ${database.source === "local" ? "ok" : "warn"}`;
-        databaseMeta.textContent = [database.host, database.database, database.sslmode]
+        databaseMeta.textContent = [
+          database.profile,
+          database.host,
+          database.database,
+          database.sslmode,
+        ]
           .filter(Boolean)
           .join(" | ");
         if (state.overview) renderTraceModel(state.overview, state.events, state.sessions);
@@ -825,6 +940,87 @@ def mission_control_html() -> str:
     function setStatus(message, error = false) {
       statusLine.textContent = message;
       statusLine.style.color = error ? "var(--danger)" : "var(--muted)";
+    }
+
+    function shortId(value) {
+      return String(value || "").slice(0, 8);
+    }
+
+    function agentIcon(name) {
+      const key = String(name || "system").toLowerCase();
+      if (key.includes("copilot") || key.includes("vscode")) return "🤖";
+      if (key.includes("codex")) return "⌘";
+      if (key.includes("claude")) return "◆";
+      if (key.includes("system")) return "◎";
+      return "✦";
+    }
+
+    function workspaceSummary(workspace) {
+      return [
+        `${workspace.session_count || 0} sessions`,
+        `${workspace.message_count || 0} messages`,
+        (workspace.agents || []).join(" + ") || "no agents",
+      ].join(" | ");
+    }
+
+    async function loadWorkspaceOptions() {
+      const response = await fetch("/api/workspaces?limit=250");
+      const payload = await response.json();
+      state.workspaces = payload.workspaces || [];
+      workspaceInput.replaceChildren();
+      if (!state.workspaces.length) {
+        const option = document.createElement("option");
+        option.value = "";
+        option.textContent = "No workspaces found";
+        workspaceInput.append(option);
+        workspaceMeta.textContent = "Run an import or record a changeset first.";
+        return;
+      }
+      for (const workspace of state.workspaces) {
+        const option = document.createElement("option");
+        option.value = workspace.workspace_id;
+        option.textContent = [
+          `${agentIcon((workspace.agents || [])[0])} ${workspace.workspace_name}`,
+          `(${shortId(workspace.workspace_id)})`,
+        ].join(" ");
+        option.dataset.summary = workspaceSummary(workspace);
+        option.title = [workspace.workspace_uri, ...(workspace.aliases || []).map(
+          (alias) => alias.alias_uri
+        )].filter(Boolean).join("\\n");
+        workspaceInput.append(option);
+      }
+      const selected = state.workspaces.find((workspace) => (
+        workspace.workspace_id === requestedWorkspace ||
+        workspace.workspace_uri === requestedWorkspace ||
+        (workspace.aliases || []).some((alias) => alias.alias_uri === requestedWorkspace)
+      )) || state.workspaces.find((workspace) => (workspace.session_count || 0) > 0)
+        || state.workspaces[0];
+      workspaceInput.value = selected.workspace_id;
+      updateWorkspaceMeta();
+    }
+
+    function updateWorkspaceMeta() {
+      const option = workspaceInput.selectedOptions[0];
+      workspaceMeta.textContent = option?.dataset.summary || "";
+    }
+
+    function scheduleAutoRefresh() {
+      if (state.refreshTimer) clearInterval(state.refreshTimer);
+      state.refreshTimer = null;
+      if (!state.autoRefreshSeconds) return;
+      state.refreshTimer = setInterval(() => {
+        if (!document.hidden) loadDashboard({ silent: true });
+      }, state.autoRefreshSeconds * 1000);
+    }
+
+    function updateUrl() {
+      const workspace = workspaceInput.value.trim();
+      if (!workspace) return;
+      const url = new URL(location.href);
+      url.searchParams.set("workspace", workspace);
+      url.searchParams.set("limit", limitInput.value);
+      url.searchParams.set("refresh", refreshInput.value);
+      history.replaceState(null, "", url);
     }
 
     function switchView(view) {
@@ -865,6 +1061,46 @@ def mission_control_html() -> str:
         return;
       }
       for (const item of items) target.append(mapper(item));
+    }
+
+    function fileActivityIcon(file) {
+      if (file.active_file_claims) return "●";
+      if (file.changeset_count) return "◆";
+      return "◇";
+    }
+
+    function fileActivityMeta(file) {
+      const parts = [];
+      if (file.changeset_count) parts.push(`${file.changeset_count} changesets`);
+      if (file.symbol_count) parts.push(`${file.symbol_count} symbols`);
+      if (file.active_agents?.length) parts.push(`claimed by ${file.active_agents.join(", ")}`);
+      if (file.latest_changed_at) parts.push(new Date(file.latest_changed_at).toLocaleString());
+      return parts.join(" | ") || "tracked file";
+    }
+
+    function renderProjectTree(project) {
+      const files = project?.files || [];
+      projectTree.replaceChildren();
+      if (!files.length) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = "No indexed or changed files for this workspace.";
+        projectTree.append(empty);
+        return;
+      }
+      for (const file of files.slice(0, 80)) {
+        const item = document.createElement("div");
+        item.className = "project-file";
+        item.innerHTML = `
+          <span class="icon"></span>
+          <div><div class="path"></div><div class="meta"></div></div>
+          <span class="badge ${badgeClass(file.status)}"></span>`;
+        item.querySelector(".icon").textContent = fileActivityIcon(file);
+        item.querySelector(".path").textContent = file.file_path;
+        item.querySelector(".meta").textContent = fileActivityMeta(file);
+        item.querySelector(".badge").textContent = file.status;
+        projectTree.append(item);
+      }
     }
 
     function renderMetrics(counts, agentLaneCount) {
@@ -1091,13 +1327,16 @@ def mission_control_html() -> str:
       lane.innerHTML = `
         <div class="lane-head">
           <div>
-            <h2></h2>
+            <h2 class="agent-name">
+              <span class="agent-icon"></span><span class="agent-label"></span>
+            </h2>
             <div class="meta"></div>
           </div>
           <span class="badge"></span>
         </div>
         <div class="lane-body"></div>`;
-      lane.querySelector("h2").textContent = name;
+      lane.querySelector(".agent-icon").textContent = agentIcon(name);
+      lane.querySelector(".agent-label").textContent = name;
       lane.querySelector(".meta").textContent = summary || "";
       lane.querySelector(".badge").textContent = "agent";
       return lane;
@@ -1121,9 +1360,14 @@ def mission_control_html() -> str:
         chip.setAttribute("aria-label", `Show ${name} lane`);
         if (index === 0) chip.classList.add("active");
         const activeWork = laneData.reservations.length + laneData.handoffs.length;
-        chip.innerHTML = `<strong></strong><span></span>`;
-        chip.querySelector("strong").textContent = name;
-        chip.querySelector("span").textContent = [
+        chip.innerHTML = `
+          <strong class="agent-name">
+            <span class="agent-icon"></span><span></span>
+          </strong>
+          <span></span>`;
+        chip.querySelector(".agent-icon").textContent = agentIcon(name);
+        chip.querySelector("strong span:last-child").textContent = name;
+        chip.querySelector("strong + span").textContent = [
           `${laneData.events.length} events`,
           `${laneData.sessions.length} sessions`,
           activeWork ? `${activeWork} active` : "idle",
@@ -1247,13 +1491,17 @@ def mission_control_html() -> str:
         lane.innerHTML = `
           <div class="lane-head">
             <div>
-              <h2></h2>
+              <h2 class="agent-name">
+                <span class="agent-icon"></span><span class="agent-label"></span>
+              </h2>
               <div class="meta"></div>
             </div>
             <span class="badge"></span>
           </div>
           <div class="lane-body"></div>`;
-        lane.querySelector("h2").textContent = session.agent_name || session.source;
+        const sessionAgent = session.agent_name || session.source;
+        lane.querySelector(".agent-icon").textContent = agentIcon(sessionAgent);
+        lane.querySelector(".agent-label").textContent = sessionAgent;
         lane.querySelector(".meta").textContent = session.external_id || "";
         lane.querySelector(".badge").textContent = session.source;
         lane.querySelector(".lane-body").append(sessionCard(session));
@@ -1316,35 +1564,51 @@ def mission_control_html() -> str:
       );
     }
 
-    async function loadDashboard() {
+    async function loadDashboard(options = {}) {
+      if (state.loading) return;
       const workspace = workspaceInput.value.trim();
       const limit = limitInput.value;
       if (!workspace) {
-        setStatus("Enter a workspace id or URI to load dashboard data.", true);
+        setStatus("No workspace selected.", true);
         return;
       }
+      state.loading = true;
       state.workspace = workspace;
       state.limit = limit;
-      setStatus("Loading dashboard data...");
+      updateWorkspaceMeta();
+      if (!options.silent) setStatus("Loading dashboard data...");
       const encoded = encodeURIComponent(workspace);
       const overviewUrl = `/api/workspaces/${encoded}/overview?limit=${encodeURIComponent(limit)}`;
       const activityUrl = `/api/workspaces/${encoded}/activity?limit=${encodeURIComponent(limit)}`;
+      const projectUrl = `/api/workspaces/${encoded}/project?limit=${encodeURIComponent(limit)}`;
       const sessionsUrl = [
         `/api/workspaces/${encoded}/sessions?limit=${encodeURIComponent(limit)}`,
         "message_limit=30"
       ].join("&");
-      const [overviewResponse, activityResponse, sessionsResponse] = await Promise.all([
-        fetch(overviewUrl),
-        fetch(activityUrl),
-        fetch(sessionsUrl),
-      ]);
-      const overview = await overviewResponse.json();
-      const activity = await activityResponse.json();
-      const sessionPayload = await sessionsResponse.json();
-      if (!overviewResponse.ok || overview.status === "not_found") {
-        setStatus(`Workspace not found: ${workspace}`, true);
-        return;
-      }
+      let overviewResponse;
+      let activityResponse;
+      let sessionsResponse;
+      let projectResponse;
+      try {
+        [
+          overviewResponse,
+          activityResponse,
+          sessionsResponse,
+          projectResponse,
+        ] = await Promise.all([
+          fetch(overviewUrl),
+          fetch(activityUrl),
+          fetch(sessionsUrl),
+          fetch(projectUrl),
+        ]);
+        const overview = await overviewResponse.json();
+        const activity = await activityResponse.json();
+        const sessionPayload = await sessionsResponse.json();
+        const projectPayload = await projectResponse.json();
+        if (!overviewResponse.ok || overview.status === "not_found") {
+          setStatus(`Workspace not found: ${workspace}`, true);
+          return;
+        }
       const files = overview.active_reservations?.files || [];
       const symbols = overview.active_reservations?.symbols || [];
       renderList(
@@ -1374,20 +1638,32 @@ def mission_control_html() -> str:
       state.overview = overview;
       state.events = events;
       state.sessions = sessions;
+      state.project = projectPayload;
       renderMetrics(overview.counts || {}, collectAgentKeys(events, sessions, overview).length);
+      renderProjectTree(projectPayload);
       renderAgentBoard(events, sessions, overview);
       renderSessionBoard(sessions);
       renderTimeline(events);
       renderTraceModel(overview, events, sessions);
-      const url = new URL(location.href);
-      url.searchParams.set("workspace", workspace);
-      url.searchParams.set("limit", limit);
-      history.replaceState(null, "", url);
-      setStatus(`Loaded ${overview.workspace_name || workspace}`);
+        updateUrl();
+        const loadedAt = new Date().toLocaleTimeString();
+        setStatus(`Loaded ${overview.workspace_name || workspace} · ${loadedAt}`);
+      } catch (error) {
+        setStatus(`Dashboard refresh failed: ${error}`, true);
+      } finally {
+        state.loading = false;
+      }
     }
 
-    if (workspaceInput.value.trim()) loadDashboard();
-    loadRuntimeInfo();
+    async function startDashboard() {
+      await loadRuntimeInfo();
+      await loadWorkspaceOptions();
+      if (workspaceInput.value.trim()) await loadDashboard();
+      state.autoRefreshSeconds = Number(refreshInput.value || 0);
+      scheduleAutoRefresh();
+    }
+
+    startDashboard();
   </script>
 </body>
 </html>"""
@@ -1406,6 +1682,7 @@ def match_workspace_route(path: str) -> tuple[str, str] | None:
         "reservations",
         "handoffs",
         "sessions",
+        "project",
     }:
         return None
     return parts[2], endpoint

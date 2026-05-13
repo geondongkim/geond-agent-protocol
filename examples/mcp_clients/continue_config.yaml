@@ -7,6 +7,7 @@ mcpServers:
       - run
       - geond-mcp
     env:
+      GEOND_DATABASE_PROFILE: local
       GEOND_DATABASE_URL: postgresql://geond:geond_dev_password@localhost:55432/geond
       GEOND_PRIVACY_MODE: redacted-cloud
       GEOND_EMBEDDING_PROVIDER: openai

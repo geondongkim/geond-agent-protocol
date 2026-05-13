@@ -18,6 +18,7 @@ def test_dashboard_route_matching_and_index() -> None:
         "activity",
     )
     assert match_workspace_route("/api/workspaces/abc-123/sessions") == ("abc-123", "sessions")
+    assert match_workspace_route("/api/workspaces/abc-123/project") == ("abc-123", "project")
     assert match_workspace_route("/api/workspaces/abc/write") is None
     assert query_limit("limit=5") == 5
     assert query_limit("limit=9999") == 500
@@ -41,6 +42,9 @@ def test_dashboard_root_serves_html_without_database() -> None:
     assert b"session-summary" in body
     assert b"Readable Excerpts" in body
     assert b"Coordination Readiness" in body
+    assert b"workspace-meta" in body
+    assert b"refresh-interval" in body
+    assert b"project-tree" in body
 
 
 def test_dashboard_database_info_classifies_local_and_azure() -> None:
@@ -90,4 +94,6 @@ def test_dashboard_index_includes_safe_database_metadata() -> None:
 
     assert index["database"]["source"] == "azure-postgresql"
     assert index["database"]["host"] == "pg-geond-team.postgres.database.azure.com"
+    assert "/api/workspaces" in index["endpoints"]
+    assert "/api/workspaces/{workspace_id}/project" in index["endpoints"]
     assert "secret" not in str(index)
