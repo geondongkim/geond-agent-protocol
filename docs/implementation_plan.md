@@ -328,13 +328,20 @@ Current status:
 
 ## 14. Recommended Immediate Next Steps
 
-1. Define a canonical evidence reference schema shared by messages, snapshots, symbols, changesets, and benchmark runs.
-2. Validate patch-hunk symbol links on larger Python/TypeScript repositories and tune deletion-only hunk behavior.
-3. Validate the tree-sitter index path on a larger mixed-language repository and tune duplicate import handling.
-4. Run saved benchmark comparisons across OpenAI, Azure OpenAI, APIM gateway, and local providers using the same judgments file.
-5. Expand benchmark reports with token usage and provider billing dimensions when gateways expose them.
-6. Turn the scripted GIF into a narrated public video and prepare `v0.1.0-alpha` release notes.
-7. Add stricter privacy-mode policy around raw event retention for thinking/tool payloads.
+The patent drafting pass clarified the strongest next product slice:
+GEOND should focus on the coupled pipeline of AST-derived symbol dependency
+scope, diff hunk evidence, reservations, structured handoff packages, and
+follow-up agent verification. See
+[docs/patent_driven_next_steps.md](patent_driven_next_steps.md) for the
+track-level plan.
+
+1. Add MCP contract tests that count static resources and resource templates separately.
+2. Implement dependency-aware reservation scopes with caller/callee/import/export expansion.
+3. Upgrade handoff summaries into consumable handoff packages that bind intent, patch, evidence refs, reservation ids, tests, risks, and next action.
+4. Add code graph correctness and coordination benchmarks described in [docs/reference_repo_benchmark_plan.md](reference_repo_benchmark_plan.md).
+5. Validate patch-hunk symbol links on larger Python/TypeScript repositories and tune deletion-only hunk behavior.
+6. Run saved benchmark comparisons across OpenAI, Azure OpenAI, APIM gateway, and local providers using the same judgments file.
+7. Expand benchmark reports with token usage and provider billing dimensions when gateways expose them.
 8. Move long-lived Azure validation resources to Bicep or Terraform under `infra/` and validate with `what-if` before deployment.
 
 See [docs/improvement_backlog.md](improvement_backlog.md) for the deeper prioritized backlog.

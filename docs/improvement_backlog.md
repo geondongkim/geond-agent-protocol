@@ -3,6 +3,14 @@
 This backlog turns the current MVP into a stronger public protocol. It is
 organized by product risk rather than by implementation convenience.
 
+The current product direction is now captured in
+[`docs/patent_driven_next_steps.md`](patent_driven_next_steps.md), with
+reference-repo benchmarking in
+[`docs/reference_repo_benchmark_plan.md`](reference_repo_benchmark_plan.md).
+Those documents sharpen the backlog around dependency-aware reservations,
+handoff packages, patch-to-symbol evidence, MCP contract health, two-client
+cloud collaboration, and benchmark evidence.
+
 ## Priority 0: Trust And Safety
 
 | Improvement | Why | Candidate implementation |

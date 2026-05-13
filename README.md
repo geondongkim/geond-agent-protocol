@@ -62,6 +62,8 @@ validation status, and improvement plan.
 - [docs/deployment_guide.md](docs/deployment_guide.md) explains Azure CLI and Azure Portal deployment flows with AWS/GCP resource analogues.
 - [docs/mcp_client_config.md](docs/mcp_client_config.md) provides Claude Desktop, Continue, and VS Code MCP client examples.
 - [docs/workspace_identity_and_search.md](docs/workspace_identity_and_search.md) explains folder move tracking, workspace aliases, multilingual search, and when Elasticsearch/CDC may be worth it.
+- [docs/patent_driven_next_steps.md](docs/patent_driven_next_steps.md) turns the patent thesis into the next product and implementation tracks.
+- [docs/reference_repo_benchmark_plan.md](docs/reference_repo_benchmark_plan.md) compares local reference repos and defines benchmark surfaces for graph, coordination, handoff, retrieval, MCP, and cloud collaboration.
 - [docs/benchmarking.md](docs/benchmarking.md) shows the current retrieval benchmark command.
 - [docs/ci.md](docs/ci.md) records CI environment rules and the local validation checklist.
 - [docs/azure_validation/README.md](docs/azure_validation/README.md) records the temporary Azure OpenAI, APIM, and VM validation workflow and sanitized evidence.

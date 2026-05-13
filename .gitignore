@@ -43,6 +43,7 @@ Thumbs.db
 migrate_chat_offline.py
 
 ref/
+repo/
 
 # Local patent/private filing materials
 docs/patent/

@@ -313,14 +313,21 @@ def collect_doctor_report(
             resources = (
                 getattr(resource_manager, "_resources", {}) if resource_manager is not None else {}
             )
+            resource_templates = (
+                getattr(resource_manager, "_templates", {}) if resource_manager is not None else {}
+            )
             has_required_tool = "search_dev_memory" in tools
             checks.append(
                 make_check(
                     "mcp_registration",
                     "ok" if has_required_tool else "error",
-                    f"MCP registered {len(tools)} tools and {len(resources)} resources.",
+                    (
+                        f"MCP registered {len(tools)} tools, {len(resources)} static "
+                        f"resources, and {len(resource_templates)} resource templates."
+                    ),
                     tool_count=len(tools),
                     resource_count=len(resources),
+                    resource_template_count=len(resource_templates),
                 )
             )
         except Exception as exc:
