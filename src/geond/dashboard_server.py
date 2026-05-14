@@ -120,7 +120,7 @@ def dashboard_payload(settings: Settings, path: str) -> tuple[int, dict[str, Any
             payload = get_workspace_handoffs(conn, workspace_id, status=status, limit=limit)
             return status_for_payload(payload), payload
         if endpoint == "sessions":
-            message_limit = query_int(parsed.query, "message_limit", default=4, maximum=20)
+            message_limit = query_int(parsed.query, "message_limit", default=4, maximum=30)
             payload = get_dashboard_sessions(
                 conn,
                 workspace_id,
@@ -371,7 +371,7 @@ def mission_control_html() -> str:
     }
     .session-summary {
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
       gap: 8px;
     }
     .session-stat {
@@ -394,10 +394,39 @@ def mission_control_html() -> str:
     }
     .agent-workspace {
       display: grid;
-      grid-template-rows: auto minmax(0, 1fr);
+      grid-template-rows: auto auto minmax(0, 1fr);
       gap: 8px;
       min-height: 0;
       height: 100%;
+    }
+    .mode-strip {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      min-width: 0;
+    }
+    .mode-card {
+      min-height: 58px;
+      padding: 9px 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+    }
+    .mode-card strong,
+    .mode-card span {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .mode-card strong {
+      font-size: 13px;
+      margin-bottom: 5px;
+    }
+    .mode-card span {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 600;
     }
     .agent-switchboard {
       display: flex;
@@ -574,7 +603,7 @@ def mission_control_html() -> str:
       gap: 12px;
       height: 100%;
       overflow: auto;
-      align-items: stretch;
+      align-items: start;
     }
     section {
       background: var(--surface);
@@ -710,6 +739,7 @@ def mission_control_html() -> str:
       .toolbar { grid-template-columns: 1fr; width: 100%; }
       main { height: calc(100vh - 145px); padding: 10px; }
       .overview-shell, .split, .lineage, .trace-grid { grid-template-columns: 1fr; }
+      .mode-strip { grid-template-columns: 1fr; }
       .session-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .panel + .panel, .lineage div + div { border-left: 0; border-top: 1px solid var(--line); }
@@ -757,7 +787,7 @@ def mission_control_html() -> str:
       <button class="tab active" type="button" data-view="mission">Mission Control</button>
       <button class="tab" type="button" data-view="sessions">Sessions</button>
       <button class="tab" type="button" data-view="timeline">Timeline</button>
-      <button class="tab" type="button" data-view="trace">Trace Model</button>
+      <button class="tab" type="button" data-view="trace">Relationships</button>
     </nav>
     <section class="view active" data-view-panel="mission">
       <div class="overview-shell">
@@ -790,6 +820,17 @@ def mission_control_html() -> str:
           </details>
         </aside>
         <div class="agent-workspace">
+          <div class="mode-strip" aria-label="Dashboard evidence model">
+            <div class="mode-card">
+              <strong>Agent Lanes</strong><span>live ownership and blockers</span>
+            </div>
+            <div class="mode-card">
+              <strong>Evidence Sessions</strong><span>user prompts and agent replies</span>
+            </div>
+            <div class="mode-card">
+              <strong>Relationships</strong><span>agents, work, files, and time</span>
+            </div>
+          </div>
           <div class="agent-switchboard" id="agent-switchboard"
             aria-label="Agent switchboard"></div>
           <div class="agent-board" id="agent-board"></div>
@@ -814,42 +855,38 @@ def mission_control_html() -> str:
     <section class="view" data-view-panel="trace">
       <div class="trace-grid" id="trace-grid">
         <section>
-          <header><h2>Graph UI Pattern</h2></header>
+          <header><h2>Agent To Sessions</h2></header>
           <div class="panel">
             <div class="row">
               <div>
-                <div class="title">Fast graph, localhost first</div>
-                <div class="meta">
-                  Use the lineage payload before adding a heavier graph canvas.
-                </div>
+                <div class="title">Loading relationships</div>
+                <div class="meta">Waiting for dashboard data.</div>
               </div>
-              <span class="badge ok">read-only</span>
+              <span class="badge warn">pending</span>
             </div>
           </div>
         </section>
         <section>
-          <header><h2>Trace And Hooks</h2></header>
+          <header><h2>Agent To Work</h2></header>
           <div class="panel">
             <div class="row">
               <div>
-                <div class="title">Session, tool, validation, stop</div>
-                <div class="meta">Normalize Codex/Claude hook events into the activity stream.</div>
+                <div class="title">Loading work links</div>
+                <div class="meta">Waiting for reservations and handoffs.</div>
               </div>
-              <span class="badge warn">next</span>
+              <span class="badge warn">pending</span>
             </div>
           </div>
         </section>
         <section>
-          <header><h2>Handoff Lifecycle</h2></header>
+          <header><h2>Evidence To Timeline</h2></header>
           <div class="panel">
             <div class="row">
               <div>
-                <div class="title">Open, blocked, closed, released</div>
-                <div class="meta">
-                  Tie PM/orchestration state to reservations and code evidence.
-                </div>
+                <div class="title">Loading timeline links</div>
+                <div class="meta">Waiting for sessions and events.</div>
               </div>
-              <span class="badge ok">linked</span>
+              <span class="badge warn">pending</span>
             </div>
           </div>
         </section>
@@ -1042,7 +1079,7 @@ def mission_control_html() -> str:
       return "";
     }
 
-    function row(title, meta, status) {
+    function row(title, meta, status, label) {
       const item = document.createElement("div");
       item.className = "row";
       item.innerHTML = `
@@ -1050,7 +1087,7 @@ def mission_control_html() -> str:
         <span class="badge ${badgeClass(status)}"></span>`;
       item.querySelector(".title").textContent = title || "Untitled";
       item.querySelector(".meta").textContent = meta || "";
-      item.querySelector(".badge").textContent = status || "unknown";
+      item.querySelector(".badge").textContent = label || status || "unknown";
       return item;
     }
 
@@ -1194,9 +1231,55 @@ def mission_control_html() -> str:
 
     function messageRole(message) {
       const role = String(message.role || "message");
-      if (role === "metadata_or_text") return "captured prompt";
-      if (role === "assistant_or_tool") return "assistant/tool";
+      if (role === "user" || role === "human") return "User Prompt";
+      if (role === "assistant") return "Agent Reply";
+      if (role === "metadata_or_text") return "Captured Prompt";
+      if (role === "assistant_or_tool") return "Tool/Trace";
+      if (role === "metadata") return "Metadata";
+      if (role === "system") return "System";
       return role;
+    }
+
+    function roleCounts(session) {
+      return session.role_counts || {
+        user: session.user_message_count || 0,
+        agent: session.assistant_message_count || 0,
+        captured: session.captured_prompt_count || 0,
+        technical: session.technical_message_count || 0,
+      };
+    }
+
+    function sessionConversationState(session) {
+      if (sessionReadableCount(session) > 0) return { label: "readable", status: "ok" };
+      if (session.conversation_signal === "empty") return { label: "empty", status: "warning" };
+      if (session.conversation_signal === "unreadable") {
+        return { label: "unreadable", status: "warning" };
+      }
+      return { label: "technical", status: "warning" };
+    }
+
+    function sessionEvidenceMeta(session) {
+      const counts = roleCounts(session);
+      return [
+        `${session.message_count || 0} stored`,
+        `${counts.user || 0} user`,
+        `${counts.agent || 0} agent`,
+        `${counts.captured || 0} captured`,
+        `${sessionReadableCount(session)} readable`,
+        session.latest_message_at
+          ? new Date(session.latest_message_at).toLocaleString()
+          : "no time",
+      ].join(" | ");
+    }
+
+    function sessionEvidenceRow(session) {
+      const signal = sessionConversationState(session);
+      return row(
+        session.title || session.external_id || shortId(session.session_id),
+        sessionEvidenceMeta(session),
+        signal.status,
+        signal.label
+      );
     }
 
     function sessionReadableMessages(session) {
@@ -1226,6 +1309,8 @@ def mission_control_html() -> str:
       const allReadableMessages = sessionReadableMessages(session);
       const visibleMessages = allReadableMessages.slice(-6);
       const metadata = sessionMetadata(session);
+      const counts = roleCounts(session);
+      const signal = sessionConversationState(session);
       const card = document.createElement("article");
       card.className = "session-card";
       card.innerHTML = `
@@ -1245,15 +1330,19 @@ def mission_control_html() -> str:
         session.external_id
       ].filter(Boolean).join(" | ");
       const facts = [
+        ["state", signal.label, signal.status],
         ["stored", `${session.message_count || 0}`],
         ["readable", `${sessionReadableCount(session)}`],
-        ["source", session.source || "unknown"],
+        ["user", `${counts.user || 0}`],
+        ["agent", `${counts.agent || 0}`],
+        ["captured", `${counts.captured || 0}`],
+        ["technical", `${counts.technical || 0}`],
       ];
       if (metadata.has_editing_context) facts.push(["editing", "yes"]);
       card.querySelector(".session-facts").replaceChildren(
-        ...facts.map(([label, value]) => {
+        ...facts.map(([label, value, status]) => {
           const item = document.createElement("span");
-          item.className = "badge";
+          item.className = `badge ${badgeClass(status)}`;
           item.textContent = `${label}: ${value}`;
           return item;
         })
@@ -1289,13 +1378,23 @@ def mission_control_html() -> str:
         (total, session) => total + sessionReadableCount(session),
         0
       );
+      const roleTotals = sessions.reduce((totals, session) => {
+        const counts = roleCounts(session);
+        totals.user += counts.user || 0;
+        totals.agent += counts.agent || 0;
+        totals.captured += counts.captured || 0;
+        totals.technical += counts.technical || 0;
+        return totals;
+      }, { user: 0, agent: 0, captured: 0, technical: 0 });
       const sources = new Set(sessions.map((session) => session.source).filter(Boolean));
-      const agents = new Set(sessions.map((session) => agentKey(session.agent_name)));
       const entries = [
         ["Sessions", sessions.length],
-        ["Stored Messages", totalMessages],
-        ["Readable Excerpts", readableTotal],
-        ["Sources", sources.size || agents.size],
+        ["Messages", totalMessages],
+        ["Readable", readableTotal],
+        ["User Prompts", roleTotals.user],
+        ["Agent Replies", roleTotals.agent],
+        ["Captured Text", roleTotals.captured],
+        ["Technical", roleTotals.technical],
       ];
       sessionSummary.replaceChildren(
         ...entries.map(([label, value]) => {
@@ -1311,7 +1410,9 @@ def mission_control_html() -> str:
 
     function collectAgentKeys(events, sessions, overview) {
       const names = new Set();
-      for (const event of events) names.add(eventAgentName(event));
+      for (const event of events) {
+        if (event.agent_name) names.add(eventAgentName(event));
+      }
       for (const session of sessions) names.add(agentKey(session.agent_name));
       for (const item of [
         ...(overview.active_reservations?.files || []),
@@ -1363,6 +1464,10 @@ def mission_control_html() -> str:
         chip.setAttribute("aria-label", `Show ${name} lane`);
         if (index === 0) chip.classList.add("active");
         const activeWork = laneData.reservations.length + laneData.handoffs.length;
+        const readable = laneData.sessions.reduce(
+          (total, session) => total + sessionReadableCount(session),
+          0
+        );
         chip.innerHTML = `
           <strong class="agent-name">
             <span class="agent-icon"></span><span></span>
@@ -1373,6 +1478,7 @@ def mission_control_html() -> str:
         chip.querySelector("strong + span").textContent = [
           `${laneData.events.length} events`,
           `${laneData.sessions.length} sessions`,
+          readable ? `${readable} readable` : "no readable",
           activeWork ? `${activeWork} active` : "idle",
         ].join(" | ");
         chip.addEventListener("click", () => {
@@ -1414,7 +1520,9 @@ def mission_control_html() -> str:
         }
         return lanes.get(key);
       };
-      for (const event of events) ensure(eventAgentName(event)).events.push(event);
+      for (const event of events) {
+        if (event.agent_name) ensure(eventAgentName(event)).events.push(event);
+      }
       for (const session of sessions) ensure(session.agent_name).sessions.push(session);
       for (const item of [
         ...(overview.active_reservations?.files || []),
@@ -1458,10 +1566,10 @@ def mission_control_html() -> str:
         );
         appendDetails(
           body,
-          "Sessions",
+          "Evidence sessions",
           laneData.sessions,
           "No sessions for this agent.",
-          sessionCard,
+          sessionEvidenceRow,
           true
         );
         appendDetails(
@@ -1505,64 +1613,120 @@ def mission_control_html() -> str:
         const sessionAgent = session.agent_name || session.source;
         lane.querySelector(".agent-icon").textContent = agentIcon(sessionAgent);
         lane.querySelector(".agent-label").textContent = sessionAgent;
-        lane.querySelector(".meta").textContent = session.external_id || "";
+        lane.querySelector(".meta").textContent = sessionEvidenceMeta(session);
         lane.querySelector(".badge").textContent = session.source;
         lane.querySelector(".lane-body").append(sessionCard(session));
         sessionBoard.append(lane);
       }
     }
 
-    function tracePanel(title, description, status, meta = "") {
+    function relationshipPanel(title, rows, emptyText) {
       const panel = document.createElement("section");
       panel.innerHTML = `
         <header><h2></h2></header>
-        <div class="panel">
-          <div class="row">
-            <div>
-              <div class="title"></div>
-              <div class="meta"></div>
-            </div>
-            <span class="badge ${badgeClass(status)}"></span>
-          </div>
-        </div>`;
+        <div class="panel"><div class="list"></div></div>`;
       panel.querySelector("h2").textContent = title;
-      panel.querySelector(".title").textContent = description;
-      panel.querySelector(".meta").textContent = meta;
-      panel.querySelector(".badge").textContent = status;
+      const list = panel.querySelector(".list");
+      if (!rows.length) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = emptyText;
+        list.append(empty);
+      } else {
+        for (const item of rows) list.append(item);
+      }
       return panel;
+    }
+
+    function agentSessionRows(sessions) {
+      const grouped = new Map();
+      for (const session of sessions) {
+        const key = agentKey(session.agent_name);
+        if (!grouped.has(key)) grouped.set(key, []);
+        grouped.get(key).push(session);
+      }
+      return [...grouped.entries()].map(([agent, agentSessions]) => {
+        const totals = agentSessions.reduce((acc, session) => {
+          const counts = roleCounts(session);
+          acc.messages += session.message_count || 0;
+          acc.readable += sessionReadableCount(session);
+          acc.user += counts.user || 0;
+          acc.agent += counts.agent || 0;
+          acc.captured += counts.captured || 0;
+          acc.technical += counts.technical || 0;
+          return acc;
+        }, { messages: 0, readable: 0, user: 0, agent: 0, captured: 0, technical: 0 });
+        return row(
+          agent,
+          [
+            `${agentSessions.length} sessions`,
+            `${totals.user} user prompts`,
+            `${totals.agent} agent replies`,
+            `${totals.captured} captured`,
+            `${totals.readable} readable`,
+            `${totals.technical} technical`,
+          ].join(" | "),
+          totals.readable ? "ok" : "warning",
+          "evidence"
+        );
+      });
+    }
+
+    function agentWorkRows(overview) {
+      const claims = [
+        ...(overview.active_reservations?.files || []),
+        ...(overview.active_reservations?.symbols || []),
+      ].map((item) => row(
+        agentKey(item.agent_name),
+        item.file_path || item.qualified_name || item.symbol || item.purpose,
+        item.status || "ok",
+        item.file_path ? "file" : "symbol"
+      ));
+      const handoffs = (overview.open_handoffs || []).map((handoff) => row(
+        `${handoff.from_agent_name || "agent"} -> ${handoff.to_agent_name || "unassigned"}`,
+        handoff.next_action || handoff.summary,
+        handoff.status || "open",
+        "handoff"
+      ));
+      return [...claims, ...handoffs];
+    }
+
+    function evidenceTimelineRows(events, sessions) {
+      const sessionRows = sessions.slice(0, 4).map((session) => {
+        const signal = sessionConversationState(session);
+        return row(
+          session.title || session.external_id || shortId(session.session_id),
+          [agentKey(session.agent_name), sessionEvidenceMeta(session)].join(" | "),
+          signal.status,
+          "session"
+        );
+      });
+      const eventRows = events.slice(0, 8).map((event) => row(
+        event.title || event.kind,
+        [event.agent_name, event.kind, event.artifact_type].filter(Boolean).join(" | "),
+        event.status || "ok",
+        event.kind
+      ));
+      return [...sessionRows, ...eventRows];
     }
 
     function renderTraceModel(overview, events, sessions) {
       const traceGrid = document.querySelector("#trace-grid");
-      const handoffCount = (overview.open_handoffs || []).length;
-      const reservationCount = [
-        ...(overview.active_reservations?.files || []),
-        ...(overview.active_reservations?.symbols || []),
-      ].length;
-      const coordinationStatus = handoffCount || reservationCount ? "ok" : "warning";
       traceGrid.replaceChildren(
-        tracePanel(
-          "Shared Memory Source",
-          databaseBadge.textContent || "Database runtime unknown",
-          databaseBadge.classList.contains("danger") ? "warning" : "ok",
-          databaseMeta.textContent || "No database metadata"
+        relationshipPanel(
+          "Agent To Sessions",
+          agentSessionRows(sessions),
+          "No session evidence for this workspace."
         ),
-        tracePanel(
-          "Evidence Coverage",
-          `${sessions.length} sessions, ${events.length} timeline events`,
-          events.length || sessions.length ? "ok" : "warning",
-          [
-            `${overview.lineage?.node_count ?? 0} lineage nodes`,
-            `${overview.lineage?.edge_count ?? 0} edges`,
-          ].join(" | ")
+        relationshipPanel(
+          "Agent To Work",
+          agentWorkRows(overview),
+          "No active reservations or open handoffs."
         ),
-        tracePanel(
-          "Coordination Readiness",
-          handoffCount || reservationCount
-            ? `${handoffCount} open handoffs and ${reservationCount} active claims`
-            : "No active ownership signals for the next collaborator",
-          coordinationStatus,
-          "Use handoffs and reservations when work splits across agents or machines."
+        relationshipPanel(
+          "Evidence To Timeline",
+          evidenceTimelineRows(events, sessions),
+          "No sessions or timeline events."
         )
       );
     }

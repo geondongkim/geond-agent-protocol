@@ -144,11 +144,22 @@ def test_dashboard_overview_and_activity_events() -> None:
                 "benchmark_run",
             } <= kinds
             assert any(event["agent_name"] == "agent-a" for event in activity["events"])
+            assert any(
+                event["kind"] == "session" and event["agent_name"] == "codex"
+                for event in activity["events"]
+            )
             assert sessions["status"] == "ok"
             assert sessions["sessions"][0]["agent_name"] == "codex"
             assert sessions["sessions"][0]["messages"][0]["role"] == "assistant_or_tool"
             assert sessions["sessions"][0]["readable_messages"][0]["role"] == "user"
             assert sessions["sessions"][0]["readable_excerpt_count"] == 2
+            assert sessions["sessions"][0]["role_counts"] == {
+                "user": 1,
+                "agent": 1,
+                "captured": 0,
+                "technical": 2,
+            }
+            assert sessions["sessions"][0]["conversation_signal"] == "readable"
             assert any(item["workspace_id"] == workspace_id for item in workspaces["workspaces"])
             assert project["status"] == "ok"
             assert project["files"][0]["file_path"] == "service.py"

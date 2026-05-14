@@ -490,7 +490,21 @@ def get_dashboard_sessions(
             SELECT s.id::text, s.source, s.external_id, s.title, s.metadata,
                    s.started_at, s.ended_at, s.created_at, s.updated_at,
                    count(m.id) AS message_count,
-                   max(m.created_at) AS latest_message_at
+                   max(m.created_at) AS latest_message_at,
+                   count(m.id) FILTER (
+                       WHERE lower(coalesce(m.role, '')) IN ('user', 'human')
+                   ) AS user_message_count,
+                   count(m.id) FILTER (
+                       WHERE lower(coalesce(m.role, '')) = 'assistant'
+                   ) AS assistant_message_count,
+                   count(m.id) FILTER (
+                       WHERE lower(coalesce(m.role, '')) = 'metadata_or_text'
+                   ) AS captured_prompt_count,
+                   count(m.id) FILTER (
+                       WHERE lower(coalesce(m.role, '')) NOT IN (
+                           'user', 'human', 'assistant', 'metadata_or_text'
+                       )
+                   ) AS technical_message_count
             FROM sessions s
             LEFT JOIN messages m ON m.session_id = s.id
             WHERE s.workspace_id = %s
@@ -574,6 +588,21 @@ def get_dashboard_sessions(
         metadata = row[4] or {}
         session_messages = messages_by_session.get(row[0], [])
         readable_messages = readable_by_session.get(row[0], [])
+        message_count = int(row[9] or 0)
+        role_counts = {
+            "user": int(row[11] or 0),
+            "agent": int(row[12] or 0),
+            "captured": int(row[13] or 0),
+            "technical": int(row[14] or 0),
+        }
+        if readable_messages:
+            conversation_signal = "readable"
+        elif session_messages:
+            conversation_signal = "technical_recent"
+        elif message_count:
+            conversation_signal = "unreadable"
+        else:
+            conversation_signal = "empty"
         sessions.append(
             {
                 "session_id": row[0],
@@ -586,8 +615,14 @@ def get_dashboard_sessions(
                 "ended_at": row[6].isoformat() if row[6] else None,
                 "created_at": row[7].isoformat() if row[7] else None,
                 "updated_at": row[8].isoformat() if row[8] else None,
-                "message_count": int(row[9] or 0),
+                "message_count": message_count,
                 "latest_message_at": row[10].isoformat() if row[10] else None,
+                "role_counts": role_counts,
+                "user_message_count": role_counts["user"],
+                "assistant_message_count": role_counts["agent"],
+                "captured_prompt_count": role_counts["captured"],
+                "technical_message_count": role_counts["technical"],
+                "conversation_signal": conversation_signal,
                 "messages": session_messages[-message_limit:],
                 "readable_messages": readable_messages[-message_limit:],
                 "readable_excerpt_count": len(readable_messages),
@@ -757,14 +792,18 @@ def dashboard_counts(conn: Connection, workspace_id: str) -> dict[str, int]:
 
 
 def activity_event(row: tuple[Any, ...]) -> dict[str, Any]:
+    metadata = row[7] or {}
+    agent_name = row[2]
+    if row[0] == "session" and not agent_name:
+        agent_name = dashboard_session_agent(row[4] or "", metadata.get("metadata") or {})
     return {
         "kind": row[0],
         "id": row[1],
-        "agent_name": row[2],
+        "agent_name": agent_name,
         "title": row[3],
         "status": row[4],
         "artifact_type": row[5],
         "artifact_id": row[6],
-        "metadata": row[7],
+        "metadata": metadata,
         "occurred_at": row[8].isoformat() if row[8] else None,
     }

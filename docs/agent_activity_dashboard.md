@@ -46,6 +46,23 @@ workflows:
 
 ## MVP Views
 
+### View Semantics
+
+Agent lanes, sessions, and relationship traces answer different collaboration
+questions and should stay visually distinct.
+
+- Agent lanes are the operational board: current owner, live claims, open
+  handoffs, blockers, and the latest evidence that an agent is active.
+- Sessions are the transcript evidence board: what the human asked, what the
+  agent answered, and which recent stored messages are only technical trace.
+- Relationships are the bounded connector view: agents linked to sessions,
+  agents linked to active work, and sessions linked to timeline events.
+
+For day-to-day coordination, PM/orchestrator users should start in Agent Lanes.
+For review, debugging, or handoff confidence, they should open Sessions. A lane
+without sessions is weak evidence; a session without claims or handoffs is useful
+history but not enough to coordinate parallel work.
+
 ### 1. Command Center
 
 Purpose: make the current workspace state scannable in five seconds.
@@ -215,6 +232,13 @@ summarizes shared-memory source, evidence coverage, and coordination readiness.
 The readiness panel intentionally warns when a workspace has sessions but no
 active handoffs or reservations, because that state is readable but weak for
 multi-agent collaboration.
+
+The current dashboard makes this split explicit in the UI. Mission Control keeps
+full chat cards out of the agent lanes and shows compact evidence-session links
+instead, while the Sessions view expands readable user prompts, captured prompts,
+agent replies, and technical-message counts. The Relationships view replaces the
+older static trace placeholder with bounded rows for agent-to-session,
+agent-to-work, and evidence-to-timeline links.
 
 - `geond://sessions`
 - `geond://workspaces/{workspace_id}/timeline`

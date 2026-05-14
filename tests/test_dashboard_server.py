@@ -40,8 +40,11 @@ def test_dashboard_root_serves_html_without_database() -> None:
     assert b"database-badge" in body
     assert b"agent-switchboard" in body
     assert b"session-summary" in body
-    assert b"Readable Excerpts" in body
-    assert b"Coordination Readiness" in body
+    assert b"Evidence Sessions" in body
+    assert b"User Prompts" in body
+    assert b"Captured Text" in body
+    assert b"Relationships" in body
+    assert b"Agent To Sessions" in body
     assert b"workspace-meta" in body
     assert b"refresh-interval" in body
     assert b"project-tree" in body

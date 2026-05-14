@@ -484,12 +484,16 @@ Read-only endpoints include `/health`,
 `http://127.0.0.1:8765/` for the local Command Center with a workspace selector,
 database source badge, live refresh, horizontal Agent Fleet lanes, agent
 switchboard, project-structure activity, session/message cards, reservations,
-handoffs, lineage counts, and timeline.
+handoffs, lineage counts, timeline, and relationship rows that connect agents to
+session evidence and active work.
 The `/health` and `/api` responses include safe database metadata so a local
 browser can distinguish Local PostgreSQL from Azure PostgreSQL without exposing
 credentials.
-Sessions separate raw stored messages from readable captured prompts so recent
-tool traces do not hide the human conversation context.
+Agent lanes are the operational coordination surface: ownership, blockers,
+handoffs, and current claims. Sessions are the transcript evidence surface: user
+prompts, captured prompts, agent replies, readable excerpts, and technical trace
+counts. The Relationships tab keeps the two connected without turning the
+dashboard into an unbounded graph.
 
 ![Azure-backed Geond dashboard](docs/assets/geond_dashboard_azure_collaboration.gif)
 
