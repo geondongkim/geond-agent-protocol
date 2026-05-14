@@ -72,6 +72,28 @@ on the same codebase: claim, narrate, and look up each other's work
 without scraping each other's chat logs. It is necessary connective
 tissue, not a complete coordinator.
 
+### Operational loop
+
+The practical agent workflow is:
+
+1. Read prior context with `search_dev_memory`, `geond://sessions`,
+  `get_symbol_context`, `explain_change`, and `get_changeset_detail`.
+2. Check live collaboration state with `review_workspace_context`, workspace
+  timeline, lineage, reservations, handoffs, `get_dashboard_overview`, and
+  `get_agent_activity_events`.
+3. Advertise intent with `record_agent_action`, then reserve files or symbols
+  before editing when the work could collide with another agent.
+4. Record the result with `record_changeset`; if another agent or a human needs
+  to continue, write a structured handoff with tested commands, risks, blockers,
+  and the next action.
+
+The human-facing workflow is the dashboard version of the same state. Agent
+Lanes answer who owns what right now, Sessions answer what the user and agent
+actually discussed, Timeline orders the evidence, Relationships connects agents
+to sessions and work, and Project Structure highlights the files that deserve
+attention. The reviewer still uses git for final diff review, but uses Geond to
+decide what to review, who to ask, and whether parallel work is safe.
+
 ## 2. geond CLI/MCP vs reading git directly
 
 | Question a reviewer asks | Git answer | geond answer |

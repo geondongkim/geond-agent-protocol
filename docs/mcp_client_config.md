@@ -151,6 +151,41 @@ Use [examples/mcp_clients/continue_config.yaml](../examples/mcp_clients/continue
 
 ## Useful Tools
 
+For collaboration, agents should think in two passes: read first, then write a
+small amount of durable state.
+
+Read before editing:
+
+- `search_dev_memory`, `geond://sessions`, and
+  `geond://sessions/{session_external_id}` recover prior conversation evidence.
+- `get_symbol_context`, `geond://symbols/{symbol}`, `explain_change`, and
+  `get_changeset_detail` recover code, changeset, narrative, and call/reference
+  evidence.
+- `get_dashboard_overview`, `get_agent_activity_events`, workspace `timeline`,
+  `lineage`, `reservations`, and `handoffs` reveal current ownership,
+  blockers, active claims, and recent activity.
+- `review_workspace_context` is the preflight check before a prompt-driven edit;
+  it compares the intended files/symbols with current reservations, handoffs,
+  and lineage.
+
+Write after deciding to work:
+
+- `record_agent_action` records what the agent is doing now.
+- `reserve_files` and `reserve_symbols` advertise ownership before editing;
+  `renew_reservation`, `renew_symbol_reservation`, release tools, and
+  `list_reservation_events` keep lease state auditable.
+- `record_changeset` records file, patch, commit, and intent evidence after a
+  meaningful change.
+- `record_handoff_summary`, `list_handoff_summaries`, and
+  `close_handoff_summary` transfer next steps, tested commands, risks, and
+  blockers between agents.
+
+The web dashboard is the human-facing view over the same state. Users watch
+Agent Lanes for active ownership, Sessions for the actual user/agent exchange,
+Timeline for ordered evidence, Relationships for agent-session-work links, and
+Project Structure for hot files. They do not need MCP JSON to decide whether to
+continue, review a handoff, reassign work, or ask an agent to release a claim.
+
 - `search_dev_memory`: retrieve prior session evidence. Pass `rerank="local"` or
     `rerank="api"` and optional `candidate_limit` to rerank keyword/vector/hybrid
     candidates locally or through `GEOND_RERANK_URL`.
@@ -165,6 +200,8 @@ Use [examples/mcp_clients/continue_config.yaml](../examples/mcp_clients/continue
 - `suggest_workspace_aliases`: ask Geond which existing workspace a new folder URI probably belongs to before registering an alias; responses include recommendation fields for single, ambiguous, already-resolved, and partial matches.
 - `get_workspace_coordination_policy`: read reservation conflict behavior for a workspace.
 - `set_workspace_coordination_policy`: set reservation conflict behavior to `advisory`, `strict`, or `override-with-reason`.
+- `record_agent_action`: record current agent intent/status so it appears in
+  activity events, dashboard lanes, and handoff context.
 - `explain_change`: inspect file snapshots, related messages, changesets, touched symbols, and resolved call impact. Pass `include_narrative=true` to attach a deterministic, evidence-citing summary under `narrative` (schema `geond.evidence.v1.narrative`).
 - CLI handoff lifecycle: use `record-handoff`, `list-handoffs`, and `close-handoff <handoff-id>` to keep context reviews focused on truly open work.
 - `get_changeset_detail`: look up a changeset by UUID or git commit (sha or prefix); returns files, touched code entities, call impact, and `geond.evidence.v1` evidence refs. Ambiguous commit prefixes return `ambiguous=true` with candidate matches instead of choosing silently. Pass `include_narrative=true` for a one-paragraph briefing.

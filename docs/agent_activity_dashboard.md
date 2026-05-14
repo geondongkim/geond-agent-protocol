@@ -195,6 +195,23 @@ Existing schema tables cover the MVP read model:
 Existing MCP/resource functions already provide useful dashboard-shaped
 payloads:
 
+| Collaboration question | Agent MCP read/write path | Human web view |
+| --- | --- | --- |
+| What happened before? | `search_dev_memory`, `geond://sessions`, `geond://sessions/{id}` | Sessions shows user prompts, captured prompts, agent replies, readable excerpts, and technical trace counts. |
+| What code or symbol is involved? | `get_symbol_context`, `geond://symbols/{symbol}`, `explain_change`, `get_changeset_detail` | Project Structure and future code-risk views show hot files, symbols, changesets, and impact. |
+| Who is working now? | `get_dashboard_overview`, `get_agent_activity_events`, `record_agent_action` | Agent Lanes show active agents, latest activity, and compact evidence sessions. |
+| Is there a conflict? | `review_workspace_context`, workspace `reservations`, `get_symbol_conflicts` | Active Reservations and Agent Lanes show current file/symbol claims and blockers. |
+| What should the next agent do? | `record_handoff_summary`, `list_handoff_summaries`, `close_handoff_summary` | Open Handoffs and Relationships show from/to agents, next action, tested commands, and risk context. |
+| What changed and why? | `record_changeset`, `geond://changesets`, workspace `timeline`, `lineage` | Timeline and Relationships connect sessions, changesets, handoffs, and validation events. |
+
+The intended loop is simple: an agent reads memory, code evidence, reservations,
+handoffs, and lineage before editing; it records an action or reservation when
+it starts; it records a changeset and handoff when it finishes or pauses. The
+human does not need to read MCP JSON. The web app turns that same evidence into
+operational choices: continue the current lane, inspect a session, review a
+handoff, ask an agent to release or renew a claim, or open the git diff for the
+actual code review.
+
 ## Current Local UI Slice
 
 The local dashboard now exposes the active database source in both `/health` and

@@ -464,6 +464,28 @@ Useful MCP resources:
 - `geond://workspaces/{workspace_id}/reservations`
 - `geond://workspaces/{workspace_id}/handoffs`
 
+Agent collaboration loop:
+
+1. Read memory and code evidence. Use `search_dev_memory`,
+    `geond://sessions`, `geond://symbols/{symbol}`, `get_symbol_context`,
+    `explain_change`, and `get_changeset_detail` to recover prior prompts,
+    touched symbols, related changesets, and call/reference impact.
+2. Read live coordination state. Use `get_dashboard_overview`,
+    `get_agent_activity_events`, `review_workspace_context`, workspace
+    timeline, lineage, reservations, and handoffs before editing.
+3. Write intent and ownership. Use `record_agent_action`, `reserve_files`,
+    `reserve_symbols`, renew/release tools, and `record_handoff_summary` so the
+    next agent can see what is claimed, blocked, tested, and ready to review.
+4. Write durable change evidence. Use `record_changeset` after meaningful work
+    so later agents and reviewers can connect files, patches, symbols, commit
+    ids, and the intent behind the change.
+5. Human review stays in the web app. The dashboard shows the same evidence as
+    a read-only workflow: Agent Lanes for current ownership and blockers,
+    Sessions for user prompts and agent replies, Timeline for ordered events,
+    Relationships for agent-to-session/work links, and Project Structure for hot
+    files. The human can decide whether to continue, reassign, inspect a handoff,
+    ask an agent to release a claim, or open the underlying git diff.
+
 MCP clients can also call `record_changeset` with `workspace_id` or
 `workspace_uri` plus a `files` array. Each file entry supports `file_path`,
 `status`, `additions`, `deletions`, `patch`, and `metadata`, matching the CLI
@@ -478,7 +500,7 @@ uv run geond dashboard serve --host 127.0.0.1 --port 8765
 Read-only endpoints include `/health`,
 `/api/workspaces`,
 `/api/workspaces/{workspace_id}/overview`,
-`/api/workspaces/{workspace_id}/activity`, and
+`/api/workspaces/{workspace_id}/activity`,
 `/api/workspaces/{workspace_id}/sessions`, and
 `/api/workspaces/{workspace_id}/project`. Open
 `http://127.0.0.1:8765/` for the local Command Center with a workspace selector,
