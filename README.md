@@ -75,7 +75,7 @@ flowchart LR
 | Check setup | `uv run geond doctor --format text` |
 | Install editor/MCP config | `uv run geond install --write` |
 | Smoke-test the MCP server | `uv run geond mcp-smoke --format text --strict` |
-| Import agent memory | `import-vscode`, `import-codex`, `import-claude-code` |
+| Import agent memory | `import-vscode`, `import-codex` (sessions plus usage), `import-claude-code` |
 | Index source code | `index-tree-sitter`, `index-python`, `index-ts-js` |
 | Import editor references | `collect-lsp-references`, `import-lsp-references` |
 | Search memory | `search --mode keyword`, `search --mode vector`, or `search --mode hybrid` |

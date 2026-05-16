@@ -11,9 +11,11 @@ from geond.config import get_settings
 from geond.db import connect, run_schema_file
 from geond.retrieval.simple import search_dev_memory
 from geond.storage.repository import store_codex_session, upsert_workspace
+from geond.storage.usage import record_codex_usage_events, summarize_usage
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "codex"
 SCHEMA = Path(__file__).parents[1] / "schemas" / "001_initial.sql"
+USAGE_SCHEMA = Path(__file__).parents[1] / "schemas" / "003_llm_usage.sql"
 
 
 def test_import_codex_fixture_redacts_payloads_and_supports_search() -> None:
@@ -28,6 +30,7 @@ def test_import_codex_fixture_redacts_payloads_and_supports_search() -> None:
     with conn:
         try:
             run_schema_file(conn, SCHEMA)
+            run_schema_file(conn, USAGE_SCHEMA)
         except psycopg.Error as exc:
             pytest.skip(f"Postgres integration schema is not available: {exc}")
 
@@ -39,7 +42,25 @@ def test_import_codex_fixture_redacts_payloads_and_supports_search() -> None:
         )
         try:
             sessions = parse_storage(FIXTURE_ROOT, limit=1)
-            stored = [store_codex_session(conn, workspace_id, session) for session in sessions]
+            stored = []
+            usage_events = []
+            for session in sessions:
+                session_row_id = store_codex_session(conn, workspace_id, session)
+                stored.append(session_row_id)
+                usage_events.extend(
+                    record_codex_usage_events(
+                        conn,
+                        workspace_id=workspace_id,
+                        session=session,
+                        session_row_id=session_row_id,
+                    )
+                )
+                record_codex_usage_events(
+                    conn,
+                    workspace_id=workspace_id,
+                    session=session,
+                    session_row_id=session_row_id,
+                )
 
             results = search_dev_memory(
                 conn,
@@ -70,8 +91,13 @@ def test_import_codex_fixture_redacts_payloads_and_supports_search() -> None:
                     (workspace_id,),
                 )
                 finding_count = cur.fetchone()[0]
+            usage_summary = summarize_usage(conn, workspace_id, source="codex")
 
             assert stored
+            assert usage_events
+            assert usage_summary["totals"]["event_count"] == 1
+            assert usage_summary["totals"]["estimated_event_count"] == 1
+            assert usage_summary["totals"]["total_tokens"] > 0
             assert results
             assert results[0]["source"] == "codex"
             assert unredacted_event_count == 0

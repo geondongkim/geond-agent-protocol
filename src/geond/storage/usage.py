@@ -7,6 +7,7 @@ from typing import Any
 from psycopg import Connection
 from psycopg.types.json import Jsonb
 
+from geond.adapters.codex import ParsedCodexSession
 from geond.storage.pricing import estimate_usage_cost_usd, lookup_model_pricing
 from geond.storage.repository import resolve_session_row_id, resolve_workspace_id, upsert_agent
 
@@ -224,6 +225,81 @@ def summarize_usage(
     }
 
 
+def record_codex_usage_events(
+    conn: Connection,
+    *,
+    workspace_id: str,
+    session: ParsedCodexSession,
+    session_row_id: str | None = None,
+) -> list[str]:
+    if not usage_table_exists(conn):
+        return []
+
+    provider = string_or_none(session.metadata.get("model_provider"))
+    model = string_or_none(session.metadata.get("model"))
+    usage_ids: list[str] = []
+    for event in session.events:
+        for usage_index, usage in enumerate(extract_token_usage_candidates(event.raw)):
+            if not has_token_usage(usage):
+                continue
+            usage_ids.append(
+                insert_usage_event(
+                    conn,
+                    workspace_id=workspace_id,
+                    session_id=session_row_id,
+                    agent_name="codex",
+                    source="codex",
+                    provider=provider,
+                    model=model,
+                    operation=event.event_type,
+                    input_tokens=usage.get("input_tokens"),
+                    output_tokens=usage.get("output_tokens"),
+                    cached_input_tokens=usage.get("cached_input_tokens"),
+                    reasoning_tokens=usage.get("reasoning_tokens"),
+                    total_tokens=usage.get("total_tokens"),
+                    estimated=False,
+                    source_record_id=(
+                        f"codex:{session.session_id}:{event.ordinal}:usage:{usage_index}"
+                    ),
+                    metadata={
+                        "source": "codex_import",
+                        "accuracy": "provider_reported",
+                        "event_ordinal": event.ordinal,
+                    },
+                )
+            )
+
+    if usage_ids:
+        return usage_ids
+
+    estimated = estimate_codex_message_usage(session)
+    if not has_token_usage(estimated):
+        return []
+    return [
+        insert_usage_event(
+            conn,
+            workspace_id=workspace_id,
+            session_id=session_row_id,
+            agent_name="codex",
+            source="codex",
+            provider=provider,
+            model=model,
+            operation="session_message_estimate",
+            input_tokens=estimated.get("input_tokens"),
+            output_tokens=estimated.get("output_tokens"),
+            total_tokens=estimated.get("total_tokens"),
+            estimated=True,
+            source_record_id=f"codex:{session.session_id}:estimated_messages",
+            metadata={
+                "source": "codex_import",
+                "accuracy": "adapter_estimated",
+                "estimator": "ceil_char_count_div_4_by_role",
+                "message_count": len(session.messages),
+            },
+        )
+    ]
+
+
 def format_usage_summary_markdown(summary: dict[str, Any]) -> str:
     if summary.get("status") == "workspace_not_found":
         return (
@@ -277,6 +353,144 @@ def usage_filter_sql(
         filters.append("model = %s")
         params.append(model)
     return "WHERE " + " AND ".join(filters), params
+
+
+def usage_table_exists(conn: Connection) -> bool:
+    with conn.cursor() as cur:
+        cur.execute("SELECT to_regclass('public.llm_usage_events') IS NOT NULL")
+        return bool(cur.fetchone()[0])
+
+
+def extract_token_usage_candidates(value: Any) -> list[dict[str, int | None]]:
+    raw_candidates = find_token_usage_dicts(value)
+    return [normalize_token_usage(candidate) for candidate in raw_candidates]
+
+
+def find_token_usage_dicts(value: Any, max_depth: int = 8) -> list[dict[str, Any]]:
+    if max_depth <= 0:
+        return []
+    if isinstance(value, list):
+        candidates: list[dict[str, Any]] = []
+        for item in value:
+            candidates.extend(find_token_usage_dicts(item, max_depth - 1))
+        return candidates
+    if not isinstance(value, dict):
+        return []
+
+    usage = value.get("usage")
+    if isinstance(usage, dict):
+        return [usage]
+    if has_usage_shape(value):
+        return [value]
+
+    candidates = []
+    for item in value.values():
+        candidates.extend(find_token_usage_dicts(item, max_depth - 1))
+    return candidates
+
+
+def normalize_token_usage(value: dict[str, Any]) -> dict[str, int | None]:
+    input_tokens = first_int(value, "input_tokens", "prompt_tokens", "input_token_count")
+    output_tokens = first_int(
+        value,
+        "output_tokens",
+        "completion_tokens",
+        "output_token_count",
+        "completion_token_count",
+    )
+    cached_input_tokens = first_int(
+        value,
+        "cached_input_tokens",
+        "cache_read_input_tokens",
+        "cached_tokens",
+    )
+    reasoning_tokens = first_int(value, "reasoning_tokens")
+    total_tokens = first_int(value, "total_tokens", "total_token_count")
+
+    input_details = first_dict(value, "input_tokens_details", "prompt_tokens_details")
+    if input_details and cached_input_tokens is None:
+        cached_input_tokens = first_int(input_details, "cached_tokens")
+    output_details = first_dict(value, "output_tokens_details", "completion_tokens_details")
+    if output_details and reasoning_tokens is None:
+        reasoning_tokens = first_int(output_details, "reasoning_tokens")
+
+    return {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "cached_input_tokens": cached_input_tokens,
+        "reasoning_tokens": reasoning_tokens,
+        "total_tokens": total_tokens,
+    }
+
+
+def has_usage_shape(value: dict[str, Any]) -> bool:
+    usage_keys = {
+        "input_tokens",
+        "prompt_tokens",
+        "input_token_count",
+        "output_tokens",
+        "completion_tokens",
+        "output_token_count",
+        "completion_token_count",
+        "total_tokens",
+        "total_token_count",
+    }
+    return any(key in value for key in usage_keys)
+
+
+def has_token_usage(value: dict[str, int | None]) -> bool:
+    return any(token_count is not None for token_count in value.values())
+
+
+def estimate_codex_message_usage(session: ParsedCodexSession) -> dict[str, int | None]:
+    input_tokens = 0
+    output_tokens = 0
+    for message in session.messages:
+        estimated_tokens = estimate_text_tokens(message.content)
+        if message.role == "assistant":
+            output_tokens += estimated_tokens
+        else:
+            input_tokens += estimated_tokens
+    total_tokens = input_tokens + output_tokens
+    return {
+        "input_tokens": input_tokens or None,
+        "output_tokens": output_tokens or None,
+        "cached_input_tokens": None,
+        "reasoning_tokens": None,
+        "total_tokens": total_tokens or None,
+    }
+
+
+def estimate_text_tokens(text: str | None) -> int:
+    if not text:
+        return 0
+    return max(1, (len(text) + 3) // 4)
+
+
+def first_int(value: dict[str, Any], *keys: str) -> int | None:
+    for key in keys:
+        candidate = value.get(key)
+        if isinstance(candidate, bool):
+            continue
+        if isinstance(candidate, int):
+            return candidate
+        if isinstance(candidate, float) and candidate.is_integer():
+            return int(candidate)
+        if isinstance(candidate, str) and candidate.isdigit():
+            return int(candidate)
+    return None
+
+
+def first_dict(value: dict[str, Any], *keys: str) -> dict[str, Any] | None:
+    for key in keys:
+        candidate = value.get(key)
+        if isinstance(candidate, dict):
+            return candidate
+    return None
+
+
+def string_or_none(value: Any) -> str | None:
+    return value if isinstance(value, str) and value else None
 
 
 def usage_total_result(row: tuple[Any, ...]) -> dict[str, Any]:

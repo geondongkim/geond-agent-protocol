@@ -49,6 +49,11 @@ uv run geond import-codex "C:/Users/<you>/.codex/sessions" \
     --workspace-name "my-project"
 ```
 
+When `llm_usage_events` is available, `import-codex` also records usage events.
+It uses provider-reported usage blocks when present and otherwise stores a
+session-level estimated event derived from user/assistant message text. Reimports
+reuse stable `source_record_id` values so the usage row count stays idempotent.
+
 For multi-agent dashboard work, use the same canonical `--workspace-uri` that
 Copilot, Claude Code, and MCP tools use for the repository. For this checkout on
 Windows that is:

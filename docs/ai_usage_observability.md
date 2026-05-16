@@ -116,10 +116,11 @@ CREATE INDEX idx_llm_usage_model
 
 Codex importer:
 
-- read model and provider metadata when present
-- detect usage-like fields in raw JSONL records
-- write `llm_usage_events` when token data exists
-- fall back to estimated tokens from user/assistant messages
+- reads model and provider metadata when present
+- detects usage-like fields in raw JSONL records
+- writes `llm_usage_events` when token data exists
+- falls back to estimated tokens from user/assistant messages
+- uses stable `source_record_id` values for idempotent reimports
 
 Claude Code importer:
 

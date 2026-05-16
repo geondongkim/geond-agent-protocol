@@ -10,10 +10,43 @@ import pytest
 from geond.config import get_settings
 from geond.db import connect, run_schema_file
 from geond.storage.repository import upsert_workspace
-from geond.storage.usage import insert_usage_event, summarize_usage
+from geond.storage.usage import (
+    estimate_text_tokens,
+    extract_token_usage_candidates,
+    insert_usage_event,
+    summarize_usage,
+)
 
 SCHEMA = Path(__file__).parents[1] / "schemas" / "001_initial.sql"
 USAGE_SCHEMA = Path(__file__).parents[1] / "schemas" / "003_llm_usage.sql"
+
+
+def test_token_usage_candidates_normalize_openai_shapes() -> None:
+    candidates = extract_token_usage_candidates(
+        {
+            "payload": {
+                "usage": {
+                    "prompt_tokens": "120",
+                    "completion_tokens": 40,
+                    "total_tokens": 160,
+                    "prompt_tokens_details": {"cached_tokens": 20},
+                    "completion_tokens_details": {"reasoning_tokens": 5},
+                }
+            }
+        }
+    )
+
+    assert candidates == [
+        {
+            "input_tokens": 120,
+            "output_tokens": 40,
+            "cached_input_tokens": 20,
+            "reasoning_tokens": 5,
+            "total_tokens": 160,
+        }
+    ]
+    assert estimate_text_tokens("abcd") == 1
+    assert estimate_text_tokens("abcde") == 2
 
 
 def test_insert_usage_event_and_summary_are_idempotent() -> None:

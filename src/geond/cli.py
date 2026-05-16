@@ -86,7 +86,11 @@ from geond.storage.repository import (
     suggest_workspace_aliases,
     upsert_workspace,
 )
-from geond.storage.usage import format_usage_summary_markdown, summarize_usage
+from geond.storage.usage import (
+    format_usage_summary_markdown,
+    record_codex_usage_events,
+    summarize_usage,
+)
 from geond.workspace_identity import (
     discover_workspace_fingerprints,
     workspace_uri_from_path_or_uri,
@@ -1067,10 +1071,27 @@ def main() -> None:
                 name=args.workspace_name,
                 metadata={"source": "cli"},
             )
-            stored = [store_codex_session(conn, workspace_id, session) for session in sessions]
+            stored = []
+            usage_events = []
+            for session in sessions:
+                session_row_id = store_codex_session(conn, workspace_id, session)
+                stored.append(session_row_id)
+                usage_events.extend(
+                    record_codex_usage_events(
+                        conn,
+                        workspace_id=workspace_id,
+                        session=session,
+                        session_row_id=session_row_id,
+                    )
+                )
         print(
             json.dumps(
-                {"status": "ok", "workspace_id": workspace_id, "imported_sessions": stored},
+                {
+                    "status": "ok",
+                    "workspace_id": workspace_id,
+                    "imported_sessions": stored,
+                    "imported_usage_events": usage_events,
+                },
                 ensure_ascii=False,
                 indent=2,
             )
