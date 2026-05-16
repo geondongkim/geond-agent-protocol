@@ -208,6 +208,23 @@ def summarize_usage(
             params,
         )
         by_model = [usage_group_result(row, ["provider", "model"]) for row in cur.fetchall()]
+        cur.execute(
+            f"""
+            SELECT
+                coalesce(agents.name, llm_usage_events.source, 'unknown') AS agent_name,
+                count(*) AS event_count,
+                coalesce(sum(total_tokens), 0) AS total_tokens,
+                count(*) FILTER (WHERE estimated) AS estimated_event_count,
+                sum(estimated_cost_usd) AS estimated_cost_usd
+            FROM llm_usage_events
+            LEFT JOIN agents ON agents.id = llm_usage_events.agent_id
+            {where_clause}
+            GROUP BY coalesce(agents.name, llm_usage_events.source, 'unknown')
+            ORDER BY total_tokens DESC, event_count DESC, agent_name
+            """,
+            params,
+        )
+        by_agent = [usage_group_result(row, ["agent_name"]) for row in cur.fetchall()]
 
     return {
         "status": "ok",
@@ -216,6 +233,7 @@ def summarize_usage(
         "totals": totals,
         "by_source": by_source,
         "by_model": by_model,
+        "by_agent": by_agent,
         "data_quality": {
             "exact_event_count": totals["exact_event_count"],
             "estimated_event_count": totals["estimated_event_count"],
@@ -488,6 +506,145 @@ def format_usage_summary_markdown(summary: dict[str, Any]) -> str:
         )
     else:
         lines.append("- No usage events recorded.")
+    return "\n".join(lines)
+
+
+def usage_group_report(summary: dict[str, Any], group_key: str) -> dict[str, Any]:
+    return {
+        "status": summary.get("status"),
+        "workspace_id": summary.get("workspace_id"),
+        "workspace_id_or_uri": summary.get("workspace_id_or_uri"),
+        "filters": summary.get("filters", {}),
+        "totals": summary.get("totals", {}),
+        group_key: summary.get(group_key, []),
+        "data_quality": summary.get("data_quality", {}),
+    }
+
+
+def format_usage_group_markdown(
+    report: dict[str, Any],
+    *,
+    title: str,
+    group_key: str,
+    label_keys: list[str],
+) -> str:
+    if report.get("status") == "workspace_not_found":
+        return (
+            f"# {title}\n\n"
+            f"- Workspace: `{report.get('workspace_id_or_uri')}`\n"
+            "- Status: `workspace_not_found`\n"
+        )
+
+    totals = report.get("totals") or {}
+    lines = [
+        f"# {title}",
+        "",
+        f"- Workspace: `{report.get('workspace_id')}`",
+        f"- Events: `{totals.get('event_count', 0)}`",
+        f"- Tokens: `{totals.get('total_tokens', 0)}`",
+        "",
+    ]
+    rows = report.get(group_key) or []
+    if not rows:
+        lines.append("- No usage events recorded.")
+        return "\n".join(lines)
+
+    for row in rows:
+        label = " / ".join(str(row.get(key) or "unknown") for key in label_keys)
+        lines.append(
+            f"- `{label}`: `{row.get('total_tokens')}` tokens "
+            f"across `{row.get('event_count')}` events"
+        )
+    return "\n".join(lines)
+
+
+def build_usage_risk_signals(payload: dict[str, Any]) -> dict[str, Any]:
+    usage = payload.get("usage") or payload
+    totals = usage.get("totals") or {}
+    quality = usage.get("data_quality") or {}
+    evidence = payload.get("evidence") or {}
+    linked = payload.get("usage_vs_evidence") or {}
+    event_count = int(totals.get("event_count") or 0)
+    total_tokens = int(totals.get("total_tokens") or 0)
+    estimated_share = quality.get("estimated_token_share")
+    exact_event_count = int(quality.get("exact_event_count") or 0)
+    user_prompts = int(evidence.get("user_prompts") or 0)
+    has_output_evidence = bool(linked.get("has_output_evidence"))
+    signals: list[dict[str, Any]] = []
+
+    if event_count == 0:
+        signals.append(
+            {
+                "severity": "info",
+                "code": "no_usage_events",
+                "message": "No usage events have been recorded for this workspace.",
+            }
+        )
+    if total_tokens > 0 and not has_output_evidence:
+        signals.append(
+            {
+                "severity": "warning",
+                "code": "usage_without_output_evidence",
+                "message": "Usage exists without linked changesets or tested handoffs.",
+            }
+        )
+    if estimated_share is not None and estimated_share >= 0.8:
+        signals.append(
+            {
+                "severity": "warning",
+                "code": "estimated_heavy_usage",
+                "message": (
+                    "Most token counts are estimates; review precision before cost reporting."
+                ),
+                "estimated_token_share": estimated_share,
+            }
+        )
+    if event_count > 0 and exact_event_count == 0:
+        signals.append(
+            {
+                "severity": "info",
+                "code": "no_exact_usage_events",
+                "message": "All usage events are estimated rather than provider-reported.",
+            }
+        )
+    if user_prompts > 0 and total_tokens == 0:
+        signals.append(
+            {
+                "severity": "warning",
+                "code": "prompt_evidence_without_usage",
+                "message": "Session evidence exists without matching usage events.",
+            }
+        )
+    if not signals:
+        signals.append(
+            {
+                "severity": "ok",
+                "code": "usage_evidence_linked",
+                "message": "Usage signals are linked to evidence for this workspace.",
+            }
+        )
+
+    return {
+        "status": payload.get("status") or usage.get("status"),
+        "workspace_id": payload.get("workspace_id") or usage.get("workspace_id"),
+        "totals": totals,
+        "evidence": evidence,
+        "usage_vs_evidence": linked,
+        "signals": signals,
+    }
+
+
+def format_usage_risk_signals_markdown(report: dict[str, Any]) -> str:
+    lines = [
+        "# Usage Risk Signals",
+        "",
+        f"- Workspace: `{report.get('workspace_id')}`",
+        "",
+    ]
+    for signal in report.get("signals") or []:
+        lines.append(
+            f"- `{signal.get('severity')}` `{signal.get('code')}`: {signal.get('message')}"
+        )
     return "\n".join(lines)
 
 

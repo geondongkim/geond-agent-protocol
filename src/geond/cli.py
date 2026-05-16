@@ -55,7 +55,11 @@ from geond.storage.benchmark import (
 )
 from geond.storage.code_graph import store_code_index, store_lsp_references
 from geond.storage.context_review import format_context_review_markdown, review_workspace_context
-from geond.storage.dashboard import get_agent_activity_events, get_dashboard_overview
+from geond.storage.dashboard import (
+    get_agent_activity_events,
+    get_dashboard_overview,
+    get_dashboard_usage,
+)
 from geond.storage.embeddings import embed_pending_messages, embedding_stats
 from geond.storage.maintenance import purge_workspace, seed_sample_workspace
 from geond.storage.repository import (
@@ -87,11 +91,15 @@ from geond.storage.repository import (
     upsert_workspace,
 )
 from geond.storage.usage import (
+    build_usage_risk_signals,
+    format_usage_group_markdown,
+    format_usage_risk_signals_markdown,
     format_usage_summary_markdown,
     record_claude_code_usage_events,
     record_codex_usage_events,
     record_vscode_copilot_usage_events,
     summarize_usage,
+    usage_group_report,
 )
 from geond.workspace_identity import (
     discover_workspace_fingerprints,
@@ -319,6 +327,33 @@ def main() -> None:
     usage_summary.add_argument("--provider")
     usage_summary.add_argument("--model")
     usage_summary.add_argument("--format", choices=["json", "markdown"], default="json")
+
+    usage_by_agent = subparsers.add_parser(
+        "usage-by-agent",
+        help="Group normalized LLM usage events by agent for one workspace",
+    )
+    usage_by_agent.add_argument("workspace_id_or_uri")
+    usage_by_agent.add_argument("--source")
+    usage_by_agent.add_argument("--provider")
+    usage_by_agent.add_argument("--model")
+    usage_by_agent.add_argument("--format", choices=["json", "markdown"], default="json")
+
+    usage_by_model = subparsers.add_parser(
+        "usage-by-model",
+        help="Group normalized LLM usage events by provider and model for one workspace",
+    )
+    usage_by_model.add_argument("workspace_id_or_uri")
+    usage_by_model.add_argument("--source")
+    usage_by_model.add_argument("--provider")
+    usage_by_model.add_argument("--model")
+    usage_by_model.add_argument("--format", choices=["json", "markdown"], default="json")
+
+    usage_risk = subparsers.add_parser(
+        "usage-risk-signals",
+        help="Return review signals that compare usage with evidence for one workspace",
+    )
+    usage_risk.add_argument("workspace_id_or_uri")
+    usage_risk.add_argument("--format", choices=["json", "markdown"], default="json")
 
     parse_vscode = subparsers.add_parser(
         "parse-vscode", help="Parse VS Code Copilot Chat storage without writing to DB"
@@ -895,6 +930,61 @@ def main() -> None:
             )
         if args.format == "markdown":
             print(format_usage_summary_markdown(result))
+        else:
+            print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        return
+
+    if args.command == "usage-by-agent":
+        with connect(get_settings()) as conn:
+            summary = summarize_usage(
+                conn,
+                args.workspace_id_or_uri,
+                source=args.source,
+                provider=args.provider,
+                model=args.model,
+            )
+        result = usage_group_report(summary, "by_agent")
+        if args.format == "markdown":
+            print(
+                format_usage_group_markdown(
+                    result,
+                    title="Usage By Agent",
+                    group_key="by_agent",
+                    label_keys=["agent_name"],
+                )
+            )
+        else:
+            print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        return
+
+    if args.command == "usage-by-model":
+        with connect(get_settings()) as conn:
+            summary = summarize_usage(
+                conn,
+                args.workspace_id_or_uri,
+                source=args.source,
+                provider=args.provider,
+                model=args.model,
+            )
+        result = usage_group_report(summary, "by_model")
+        if args.format == "markdown":
+            print(
+                format_usage_group_markdown(
+                    result,
+                    title="Usage By Model",
+                    group_key="by_model",
+                    label_keys=["provider", "model"],
+                )
+            )
+        else:
+            print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        return
+
+    if args.command == "usage-risk-signals":
+        with connect(get_settings()) as conn:
+            result = build_usage_risk_signals(get_dashboard_usage(conn, args.workspace_id_or_uri))
+        if args.format == "markdown":
+            print(format_usage_risk_signals_markdown(result))
         else:
             print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
         return

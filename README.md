@@ -82,7 +82,7 @@ flowchart LR
 | Explain code changes | `record-changeset`, `explain-change`, `summarize-changeset` |
 | Coordinate agents | `start-task`, `finish-task`, `record-agent-action`, `reserve-files`, `reserve-symbols`, `record-handoff`, `review-context` |
 | Inspect agent activity | `dashboard-overview`, `dashboard-events` |
-| Inspect AI usage | `usage-summary`, dashboard Usage Evidence tab and `/api/workspaces/{id}/usage` |
+| Inspect AI usage | `usage-summary`, `usage-by-agent`, `usage-by-model`, `usage-risk-signals`, dashboard Usage Evidence tab and `/api/workspaces/{id}/usage` |
 | Serve dashboard API | `uv run geond dashboard serve` |
 | Measure retrieval quality | `benchmark-search`, `benchmark-report` |
 | Serve MCP | `uv run geond-mcp` |

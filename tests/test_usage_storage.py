@@ -125,6 +125,10 @@ def test_insert_usage_event_and_summary_are_idempotent() -> None:
                 "codex",
                 "vscode_copilot",
             }
+            assert {row["agent_name"] for row in summary["by_agent"]} == {
+                "codex",
+                "vscode_copilot",
+            }
         finally:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM workspaces WHERE id = %s", (workspace_id,))

@@ -214,7 +214,7 @@ These are not disciplinary metrics. They are review signals.
 2. Add usage extraction in importers where metadata is available.
 3. Add tokenizer-based fallback estimates.
 4. Add model pricing registry.
-5. Add CLI reports:
+5. Add CLI reports. These are now available as:
    - `usage-summary`
    - `usage-by-agent`
    - `usage-by-model`

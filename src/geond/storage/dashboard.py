@@ -939,6 +939,7 @@ def empty_usage_summary(workspace_id_or_uri: str) -> dict[str, Any]:
         },
         "by_source": [],
         "by_model": [],
+        "by_agent": [],
         "data_quality": {
             "exact_event_count": 0,
             "estimated_event_count": 0,

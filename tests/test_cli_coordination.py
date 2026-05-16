@@ -190,3 +190,82 @@ def test_usage_summary_cli_wires_storage(monkeypatch, capsys) -> None:
         "provider": "openai",
         "model": "gpt-test",
     }
+
+
+def test_usage_by_agent_cli_outputs_agent_rollup(monkeypatch, capsys) -> None:
+    def fake_connect(settings) -> FakeConnection:  # noqa: ANN001
+        return FakeConnection()
+
+    def fake_summarize_usage(conn, workspace_id_or_uri: str, **kwargs):  # noqa: ANN001, ANN202
+        return {
+            "status": "ok",
+            "workspace_id": "workspace-1",
+            "totals": {"event_count": 1, "total_tokens": 42},
+            "filters": kwargs,
+            "by_agent": [
+                {"agent_name": "codex", "event_count": 1, "total_tokens": 42},
+            ],
+        }
+
+    monkeypatch.setattr(cli, "connect", fake_connect)
+    monkeypatch.setattr(cli, "summarize_usage", fake_summarize_usage)
+    monkeypatch.setattr(sys, "argv", ["geond", "usage-by-agent", "file:///repo"])
+
+    cli.main()
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["by_agent"][0]["agent_name"] == "codex"
+    assert output["totals"]["total_tokens"] == 42
+
+
+def test_usage_by_model_cli_outputs_model_rollup(monkeypatch, capsys) -> None:
+    def fake_connect(settings) -> FakeConnection:  # noqa: ANN001
+        return FakeConnection()
+
+    def fake_summarize_usage(conn, workspace_id_or_uri: str, **kwargs):  # noqa: ANN001, ANN202
+        return {
+            "status": "ok",
+            "workspace_id": "workspace-1",
+            "totals": {"event_count": 1, "total_tokens": 42},
+            "filters": kwargs,
+            "by_model": [
+                {"provider": "openai", "model": "gpt-test", "event_count": 1},
+            ],
+        }
+
+    monkeypatch.setattr(cli, "connect", fake_connect)
+    monkeypatch.setattr(cli, "summarize_usage", fake_summarize_usage)
+    monkeypatch.setattr(sys, "argv", ["geond", "usage-by-model", "file:///repo"])
+
+    cli.main()
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["by_model"][0]["model"] == "gpt-test"
+
+
+def test_usage_risk_signals_cli_compares_usage_to_evidence(monkeypatch, capsys) -> None:
+    def fake_connect(settings) -> FakeConnection:  # noqa: ANN001
+        return FakeConnection()
+
+    def fake_get_dashboard_usage(conn, workspace_id_or_uri: str):  # noqa: ANN001, ANN202
+        return {
+            "status": "ok",
+            "workspace_id": "workspace-1",
+            "usage": {
+                "totals": {"event_count": 1, "total_tokens": 100},
+                "data_quality": {"estimated_token_share": 1.0, "exact_event_count": 0},
+            },
+            "evidence": {"changesets": 0, "tested_handoffs": 0, "user_prompts": 1},
+            "usage_vs_evidence": {"has_output_evidence": False},
+        }
+
+    monkeypatch.setattr(cli, "connect", fake_connect)
+    monkeypatch.setattr(cli, "get_dashboard_usage", fake_get_dashboard_usage)
+    monkeypatch.setattr(sys, "argv", ["geond", "usage-risk-signals", "file:///repo"])
+
+    cli.main()
+
+    output = json.loads(capsys.readouterr().out)
+    codes = {signal["code"] for signal in output["signals"]}
+    assert "usage_without_output_evidence" in codes
+    assert "estimated_heavy_usage" in codes
