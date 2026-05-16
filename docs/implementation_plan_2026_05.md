@@ -37,6 +37,7 @@
 - `record-agent-action`과 `record-changeset`은 `--session-id` 또는 `--session-external-id`를 받아 imported session evidence에 명시적으로 연결할 수 있습니다.
 - `start-task` / `finish-task` wrapper를 구현했습니다. `cli.py`는 parser/dispatch만 맡고, orchestration은 `src/geond/cli_tasks.py`로 분리했습니다.
 - `llm_usage_events` storage slice를 시작했습니다. `schemas/003_llm_usage.sql`, `src/geond/storage/usage.py`, `usage-summary` CLI가 추가되어 importer 작업 전에 수동/테스트 usage event를 요약할 수 있습니다.
+- `model_pricing` storage slice를 시작했습니다. `schemas/004_model_pricing.sql`과 `src/geond/storage/pricing.py`가 추가되었고, usage event insert는 provider/model 가격이 있을 때 `estimated_cost_usd`와 `priced_at`을 스냅샷합니다.
 - D-6은 Python rule engine + SQL rollup helper 방향으로 수정합니다. 순수 SQL view 단독 구현은 v1 기본안에서 제외합니다.
 - Usage schema 번호는 한 칸 밀립니다. collaboration linkage가 `002`, `llm_usage_events`는 후속 `003`, pricing은 그 다음 migration으로 둡니다.
 

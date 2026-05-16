@@ -23,7 +23,7 @@ Tokenmaxxing means optimizing for high AI token consumption as a status or perfo
 | Benchmark run count | Available | `benchmark_runs` |
 | Model/provider metadata | Partially available | session metadata and benchmark metadata |
 | Exact input/output token count | Schema and summary storage started | `llm_usage_events` |
-| Estimated cost | Storage column available; pricing registry pending | `llm_usage_events.estimated_cost_usd` |
+| Estimated cost | Pricing registry storage started | `model_pricing`, `llm_usage_events.estimated_cost_usd` |
 | Tokenmaxxing detection | Not implemented yet | needs usage versus evidence scoring |
 
 ## Why Raw Token Counts Are Dangerous
@@ -142,6 +142,11 @@ All importers:
 - should attach source record IDs for auditability
 
 ## Model Pricing
+
+Implementation started in `schemas/004_model_pricing.sql` and
+`src/geond/storage/pricing.py`. `insert_usage_event` now snapshots
+`estimated_cost_usd` and `priced_at` when a provider/model price is available,
+so later price changes do not silently rewrite historical usage reports.
 
 Add a pricing registry rather than hardcoding costs in queries.
 

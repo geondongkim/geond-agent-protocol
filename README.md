@@ -114,7 +114,7 @@ validation status, and improvement plan.
 - [docs/agent_activity_dashboard.md](docs/agent_activity_dashboard.md) proposes the local dashboard, live activity model, and PM/orchestration use cases.
 - [docs/geond_mcp_repository_evaluation.md](docs/geond_mcp_repository_evaluation.md) evaluates Geond against an MCP repository selection rubric, including lightweight MCP tradeoffs and enterprise gaps.
 - [docs/agent_operating_loop.md](docs/agent_operating_loop.md) defines the recommended read, reserve, record, and handoff loop for Codex, Claude Code, Copilot, and other agents.
-- [docs/ai_usage_observability.md](docs/ai_usage_observability.md) designs token, prompt, cost, and usage-versus-evidence observability without encouraging tokenmaxxing.
+- [docs/ai_usage_observability.md](docs/ai_usage_observability.md) designs token, prompt, cost, pricing snapshots, and usage-versus-evidence observability without encouraging tokenmaxxing.
 - [docs/geond_roadmap_backlog.md](docs/geond_roadmap_backlog.md) turns the evaluation into prioritized implementation phases and backlog items.
 - [docs/agent_doc_consumption_guide.md](docs/agent_doc_consumption_guide.md) tells future agents which docs to read for each task type.
 - [docs/vscode_chat_storage_structure.md](docs/vscode_chat_storage_structure.md) documents the first VS Code Copilot Chat test bed.

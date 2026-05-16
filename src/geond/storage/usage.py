@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
 from psycopg import Connection
 from psycopg.types.json import Jsonb
 
+from geond.storage.pricing import estimate_usage_cost_usd, lookup_model_pricing
 from geond.storage.repository import resolve_session_row_id, resolve_workspace_id, upsert_agent
 
 
@@ -47,6 +49,25 @@ def insert_usage_event(
             cached_input_tokens,
             reasoning_tokens,
         )
+    resolved_estimated_cost_usd = estimated_cost_usd
+    resolved_priced_at = priced_at
+    if resolved_estimated_cost_usd is None:
+        pricing_timestamp = priced_at or datetime.now(UTC)
+        price = lookup_model_pricing(
+            conn,
+            provider=provider,
+            model=model,
+            at=pricing_timestamp if isinstance(pricing_timestamp, datetime) else None,
+        )
+        resolved_estimated_cost_usd = estimate_usage_cost_usd(
+            price,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cached_input_tokens=cached_input_tokens,
+            reasoning_tokens=reasoning_tokens,
+        )
+        if resolved_estimated_cost_usd is not None:
+            resolved_priced_at = pricing_timestamp
 
     with conn.cursor() as cur:
         cur.execute(
@@ -104,8 +125,8 @@ def insert_usage_event(
                 reasoning_tokens,
                 resolved_total_tokens,
                 estimated,
-                estimated_cost_usd,
-                priced_at,
+                resolved_estimated_cost_usd,
+                resolved_priced_at,
                 source_record_id,
                 Jsonb(metadata or {}),
             ),
