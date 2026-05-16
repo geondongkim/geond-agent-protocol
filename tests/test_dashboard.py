@@ -14,6 +14,7 @@ from geond.storage.dashboard import (
     get_dashboard_overview,
     get_dashboard_project_activity,
     get_dashboard_sessions,
+    get_dashboard_usage,
     get_dashboard_workspaces,
     is_readable_dashboard_message,
 )
@@ -25,8 +26,10 @@ from geond.storage.repository import (
     reserve_symbols,
     upsert_workspace,
 )
+from geond.storage.usage import insert_usage_event
 
 SCHEMA = Path(__file__).parents[1] / "schemas" / "001_initial.sql"
+USAGE_SCHEMA = Path(__file__).parents[1] / "schemas" / "003_llm_usage.sql"
 
 
 def test_dashboard_overview_and_activity_events() -> None:
@@ -177,3 +180,84 @@ def test_dashboard_readable_message_filter_skips_numeric_metadata() -> None:
     assert is_readable_dashboard_message(
         {"role": "metadata_or_text", "content": "Please inspect the dashboard."}
     )
+
+
+def test_dashboard_usage_rollup_links_usage_to_evidence() -> None:
+    settings = get_settings()
+    workspace_uri = f"file:///tmp/geond-dashboard-usage-test-{uuid4()}"
+    try:
+        conn = connect(settings)
+    except psycopg.OperationalError as exc:
+        pytest.skip(f"Postgres integration database is not available: {exc}")
+
+    with conn:
+        try:
+            run_schema_file(conn, SCHEMA)
+            run_schema_file(conn, USAGE_SCHEMA)
+        except psycopg.Error as exc:
+            pytest.skip(f"Postgres integration schema is not available: {exc}")
+
+        workspace_id = upsert_workspace(
+            conn,
+            root_uri=workspace_uri,
+            name="dashboard-usage-fixture",
+            metadata={"source": "pytest"},
+        )
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO sessions (workspace_id, source, external_id, title, metadata)
+                    VALUES (%s, 'codex', 'usage-session', 'Usage session', '{}')
+                    RETURNING id::text
+                    """,
+                    (workspace_id,),
+                )
+                session_id = cur.fetchone()[0]
+                cur.execute(
+                    """
+                    INSERT INTO messages (session_id, role, ordinal, content)
+                    VALUES (%s, 'user', 1, 'Please add usage dashboard evidence.')
+                    """,
+                    (session_id,),
+                )
+            record_changeset(
+                conn,
+                workspace_id=workspace_id,
+                files=[{"file_path": "usage.py", "status": "modified"}],
+                summary="Added usage dashboard read model.",
+            )
+            record_handoff_summary(
+                conn,
+                workspace_id=workspace_id,
+                from_agent_name="agent-a",
+                summary="Usage dashboard is ready for review.",
+                tested_commands=["uv run pytest tests/test_dashboard.py"],
+            )
+            insert_usage_event(
+                conn,
+                workspace_id=workspace_id,
+                session_id=session_id,
+                source="codex",
+                provider="openai",
+                model="gpt-test",
+                input_tokens=100,
+                output_tokens=50,
+                estimated=False,
+                source_record_id=f"dashboard-usage:{uuid4()}",
+            )
+
+            usage = get_dashboard_usage(conn, workspace_uri)
+
+            assert usage["status"] == "ok"
+            assert usage["usage"]["totals"]["total_tokens"] == 150
+            assert usage["usage"]["data_quality"]["exact_token_share"] == 1.0
+            assert usage["evidence"]["changesets"] == 1
+            assert usage["evidence"]["tested_handoffs"] == 1
+            assert usage["evidence"]["user_prompts"] == 1
+            assert usage["usage_vs_evidence"]["tokens_per_changeset"] == 150.0
+            assert usage["usage_vs_evidence"]["has_output_evidence"] is True
+        finally:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM workspaces WHERE id = %s", (workspace_id,))
+            conn.commit()

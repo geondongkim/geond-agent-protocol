@@ -280,6 +280,7 @@ GET /api/workspaces/{workspace_id}/overview
 GET /api/workspaces/{workspace_id}/agents
 GET /api/workspaces/{workspace_id}/sessions?limit=50&message_limit=5
 GET /api/workspaces/{workspace_id}/project?limit=100
+GET /api/workspaces/{workspace_id}/usage
 GET /api/workspaces/{workspace_id}/timeline?limit=100&after=<cursor>
 GET /api/workspaces/{workspace_id}/lineage?limit=250
 GET /api/workspaces/{workspace_id}/reservations
@@ -419,7 +420,7 @@ memory, but visible work state.
 | 0. Product docs | Align on dashboard shape. | This document, README link, backlog entry, and demo-script note exist. |
 | 1. Read model | Expose dashboard-shaped JSON from existing repository functions. | Implemented through `dashboard-overview`, `dashboard-events`, `get_dashboard_overview`, `get_agent_activity_events`, `geond://workspaces/{id}/overview`, and `geond://workspaces/{id}/activity`. |
 | 1.5. Local HTTP API | Serve the same read model over localhost. | Implemented as `geond dashboard serve` with `/health`, `/api/workspaces`, `/api/workspaces/{id}/overview`, `/activity`, `/sessions`, `/project`, `/timeline`, `/lineage`, `/reservations`, and `/handoffs`. |
-| 2. Local UI MVP | Render command center, timeline, agent fleet, handoffs, and lineage graph. | Mission Control, workspace selector, live polling, project-structure activity, horizontally expanding Agent Fleet lanes, session/message cards, reservations, handoffs, lineage counts, Activity Timeline, and trace-model tab are served at `/`; next add richer code-risk views. |
+| 2. Local UI MVP | Render command center, timeline, agent fleet, handoffs, lineage graph, and usage evidence. | Mission Control, workspace selector, live polling, project-structure activity, horizontally expanding Agent Fleet lanes, session/message cards, reservations, handoffs, lineage counts, Activity Timeline, trace-model tab, and `/api/workspaces/{id}/usage` read model are served; next add the visible usage panel and richer code-risk views. |
 | 3. Activity projection | Normalize agent activity events for UI and orchestrators. | Agent actions, reservations, handoffs, changesets, and benchmark runs reduce into one ordered event stream. |
 | 4. Hook adapters | Capture real agent lifecycle events. | Codex/Claude Code hook examples record session/tool/stop events without exposing secrets. |
 | 5. PM/orchestrator loop | Use the read model to guide work assignment. | A PM prompt and CLI dry-run can recommend next work, detect blockers, and cite evidence. |

@@ -12,6 +12,7 @@ from geond.storage.dashboard import (
     get_dashboard_overview,
     get_dashboard_project_activity,
     get_dashboard_sessions,
+    get_dashboard_usage,
     get_dashboard_workspaces,
 )
 from geond.storage.resources import (
@@ -131,6 +132,9 @@ def dashboard_payload(settings: Settings, path: str) -> tuple[int, dict[str, Any
         if endpoint == "project":
             payload = get_dashboard_project_activity(conn, workspace_id, limit=limit)
             return status_for_payload(payload), payload
+        if endpoint == "usage":
+            payload = get_dashboard_usage(conn, workspace_id)
+            return status_for_payload(payload), payload
 
     return 404, {"status": "not_found", "workspace_id": workspace_id, "endpoint": endpoint}
 
@@ -152,6 +156,7 @@ def dashboard_index(settings: Settings | None = None) -> dict[str, Any]:
             "/api/workspaces/{workspace_id}/handoffs",
             "/api/workspaces/{workspace_id}/sessions",
             "/api/workspaces/{workspace_id}/project",
+            "/api/workspaces/{workspace_id}/usage",
         ],
     }
 
@@ -1850,6 +1855,7 @@ def match_workspace_route(path: str) -> tuple[str, str] | None:
         "handoffs",
         "sessions",
         "project",
+        "usage",
     }:
         return None
     return parts[2], endpoint

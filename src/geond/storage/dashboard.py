@@ -11,6 +11,7 @@ from geond.storage.repository import (
     resolve_workspace_id,
 )
 from geond.storage.resources import get_workspace_lineage
+from geond.storage.usage import summarize_usage, usage_table_exists
 
 
 def get_dashboard_workspaces(conn: Connection, limit: int = 100) -> dict[str, Any]:
@@ -357,6 +358,39 @@ def get_dashboard_overview(
             "node_count": len(lineage.get("nodes", [])),
             "edge_count": len(lineage.get("edges", [])),
         },
+    }
+
+
+def get_dashboard_usage(
+    conn: Connection,
+    workspace_id_or_uri: str,
+) -> dict[str, Any]:
+    workspace = resolve_dashboard_workspace(conn, workspace_id_or_uri)
+    if workspace is None:
+        return {
+            "workspace_id": workspace_id_or_uri,
+            "status": "not_found",
+            "usage": empty_usage_summary(workspace_id_or_uri),
+            "evidence": {},
+            "usage_vs_evidence": {},
+        }
+
+    workspace_id, workspace_uri, workspace_name = workspace
+    evidence = dashboard_usage_evidence(conn, workspace_id)
+    if usage_table_exists(conn):
+        usage = summarize_usage(conn, workspace_id)
+    else:
+        usage = empty_usage_summary(workspace_id)
+        usage["status"] = "usage_table_missing"
+
+    return {
+        "workspace_id": workspace_id,
+        "workspace_uri": workspace_uri,
+        "workspace_name": workspace_name,
+        "status": "ok",
+        "usage": usage,
+        "evidence": evidence,
+        "usage_vs_evidence": dashboard_usage_vs_evidence(usage.get("totals") or {}, evidence),
     }
 
 
@@ -789,6 +823,145 @@ def dashboard_counts(conn: Connection, workspace_id: str) -> dict[str, int]:
         "agents",
     ]
     return {name: int(value or 0) for name, value in zip(names, row, strict=True)}
+
+
+def dashboard_usage_evidence(conn: Connection, workspace_id: str) -> dict[str, int]:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                (SELECT count(*) FROM sessions WHERE workspace_id = %s) AS sessions,
+                (
+                    SELECT count(*)
+                    FROM messages m
+                    JOIN sessions s ON s.id = m.session_id
+                    WHERE s.workspace_id = %s
+                ) AS messages,
+                (
+                    SELECT count(*)
+                    FROM messages m
+                    JOIN sessions s ON s.id = m.session_id
+                    WHERE s.workspace_id = %s
+                      AND lower(coalesce(m.role, '')) IN ('user', 'human')
+                ) AS user_prompts,
+                (
+                    SELECT count(*)
+                    FROM messages m
+                    JOIN sessions s ON s.id = m.session_id
+                    WHERE s.workspace_id = %s
+                      AND lower(coalesce(m.role, '')) = 'assistant'
+                ) AS assistant_replies,
+                (SELECT count(*) FROM changesets WHERE workspace_id = %s) AS changesets,
+                (SELECT count(*) FROM handoff_summaries WHERE workspace_id = %s) AS handoffs,
+                (
+                    SELECT count(*)
+                    FROM handoff_summaries
+                    WHERE workspace_id = %s
+                      AND jsonb_array_length(
+                          coalesce(metadata #> '{handoff_template,tested_commands}', '[]'::jsonb)
+                      ) > 0
+                ) AS tested_handoffs,
+                (
+                    SELECT count(*)
+                    FROM file_reservations
+                    WHERE workspace_id = %s
+                      AND released_at IS NULL
+                      AND (expires_at IS NULL OR expires_at > now())
+                ) + (
+                    SELECT count(*)
+                    FROM symbol_reservations
+                    WHERE workspace_id = %s
+                      AND released_at IS NULL
+                      AND (expires_at IS NULL OR expires_at > now())
+                ) AS active_reservations,
+                (SELECT count(*) FROM benchmark_runs WHERE workspace_id = %s) AS benchmark_runs,
+                (SELECT count(*) FROM agent_actions WHERE workspace_id = %s) AS agent_actions
+            """,
+            (
+                workspace_id,
+                workspace_id,
+                workspace_id,
+                workspace_id,
+                workspace_id,
+                workspace_id,
+                workspace_id,
+                workspace_id,
+                workspace_id,
+                workspace_id,
+                workspace_id,
+            ),
+        )
+        row = cur.fetchone()
+    names = [
+        "sessions",
+        "messages",
+        "user_prompts",
+        "assistant_replies",
+        "changesets",
+        "handoffs",
+        "tested_handoffs",
+        "active_reservations",
+        "benchmark_runs",
+        "agent_actions",
+    ]
+    return {name: int(value or 0) for name, value in zip(names, row, strict=True)}
+
+
+def dashboard_usage_vs_evidence(
+    totals: dict[str, Any],
+    evidence: dict[str, int],
+) -> dict[str, Any]:
+    total_tokens = int(totals.get("total_tokens") or 0)
+    changesets = evidence.get("changesets", 0)
+    tested_handoffs = evidence.get("tested_handoffs", 0)
+    user_prompts = evidence.get("user_prompts", 0)
+    return {
+        "tokens_per_changeset": ratio_or_none(total_tokens, changesets),
+        "tokens_per_tested_handoff": ratio_or_none(total_tokens, tested_handoffs),
+        "tokens_per_user_prompt": ratio_or_none(total_tokens, user_prompts),
+        "has_output_evidence": changesets > 0 or tested_handoffs > 0,
+        "review_hint": usage_review_hint(total_tokens, changesets, tested_handoffs),
+    }
+
+
+def empty_usage_summary(workspace_id_or_uri: str) -> dict[str, Any]:
+    return {
+        "workspace_id_or_uri": workspace_id_or_uri,
+        "status": "ok",
+        "totals": {
+            "event_count": 0,
+            "total_tokens": 0,
+            "estimated_event_count": 0,
+            "exact_event_count": 0,
+            "estimated_tokens": 0,
+            "exact_tokens": 0,
+            "estimated_cost_usd": None,
+        },
+        "by_source": [],
+        "by_model": [],
+        "data_quality": {
+            "exact_event_count": 0,
+            "estimated_event_count": 0,
+            "exact_token_share": None,
+            "estimated_token_share": None,
+        },
+    }
+
+
+def ratio_or_none(numerator: int, denominator: int) -> float | None:
+    if denominator <= 0:
+        return None
+    return round(numerator / denominator, 2)
+
+
+def usage_review_hint(total_tokens: int, changesets: int, tested_handoffs: int) -> str:
+    if total_tokens == 0:
+        return "No usage events recorded yet."
+    if changesets == 0 and tested_handoffs == 0:
+        return "Usage exists without changeset or tested handoff evidence."
+    if tested_handoffs == 0:
+        return "Usage has change evidence; add tested handoff evidence when possible."
+    return "Usage is linked to reviewable work evidence."
 
 
 def activity_event(row: tuple[Any, ...]) -> dict[str, Any]:

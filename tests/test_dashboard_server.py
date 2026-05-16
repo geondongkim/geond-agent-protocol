@@ -19,6 +19,7 @@ def test_dashboard_route_matching_and_index() -> None:
     )
     assert match_workspace_route("/api/workspaces/abc-123/sessions") == ("abc-123", "sessions")
     assert match_workspace_route("/api/workspaces/abc-123/project") == ("abc-123", "project")
+    assert match_workspace_route("/api/workspaces/abc-123/usage") == ("abc-123", "usage")
     assert match_workspace_route("/api/workspaces/abc/write") is None
     assert query_limit("limit=5") == 5
     assert query_limit("limit=9999") == 500
@@ -99,4 +100,5 @@ def test_dashboard_index_includes_safe_database_metadata() -> None:
     assert index["database"]["host"] == "pg-geond-team.postgres.database.azure.com"
     assert "/api/workspaces" in index["endpoints"]
     assert "/api/workspaces/{workspace_id}/project" in index["endpoints"]
+    assert "/api/workspaces/{workspace_id}/usage" in index["endpoints"]
     assert "secret" not in str(index)
