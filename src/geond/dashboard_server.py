@@ -791,6 +791,7 @@ def mission_control_html() -> str:
     <nav class="tabs" aria-label="Dashboard views">
       <button class="tab active" type="button" data-view="mission">Mission Control</button>
       <button class="tab" type="button" data-view="sessions">Sessions</button>
+      <button class="tab" type="button" data-view="handoffs">Handoffs</button>
       <button class="tab" type="button" data-view="usage">Usage Evidence</button>
       <button class="tab" type="button" data-view="timeline">Timeline</button>
       <button class="tab" type="button" data-view="trace">Relationships</button>
@@ -847,6 +848,12 @@ def mission_control_html() -> str:
       <div class="session-workspace">
         <div class="session-summary" id="session-summary"></div>
         <div class="session-board" id="session-board"></div>
+      </div>
+    </section>
+    <section class="view" data-view-panel="handoffs">
+      <div class="session-workspace">
+        <div class="session-summary" id="handoff-summary"></div>
+        <div class="session-board" id="handoff-board"></div>
       </div>
     </section>
     <section class="view" data-view-panel="usage">
@@ -929,6 +936,7 @@ def mission_control_html() -> str:
       sessions: [],
       project: null,
       usage: null,
+      handoffs: [],
       workspaces: [],
     };
     const qs = new URLSearchParams(location.search);
@@ -947,6 +955,8 @@ def mission_control_html() -> str:
     const agentBoard = document.querySelector("#agent-board");
     const sessionSummary = document.querySelector("#session-summary");
     const sessionBoard = document.querySelector("#session-board");
+    const handoffSummary = document.querySelector("#handoff-summary");
+    const handoffBoard = document.querySelector("#handoff-board");
     const usageSummary = document.querySelector("#usage-summary");
     const usageSource = document.querySelector("#usage-source");
     const usageEvidence = document.querySelector("#usage-evidence");
@@ -1735,6 +1745,135 @@ def mission_control_html() -> str:
       }
     }
 
+    function handoffTemplate(handoff) {
+      const metadata = handoff.metadata || {};
+      return metadata.handoff_template || {};
+    }
+
+    function handoffMeta(handoff) {
+      const template = handoffTemplate(handoff);
+      const parts = [
+        `${handoff.from_agent_name || "agent"} -> ${handoff.to_agent_name || "unassigned"}`,
+        handoff.created_at ? new Date(handoff.created_at).toLocaleString() : null,
+      ];
+      if ((template.tested_commands || []).length) {
+        parts.push(`${template.tested_commands.length} tested`);
+      }
+      if ((template.remaining_risks || []).length) {
+        parts.push(`${template.remaining_risks.length} risks`);
+      }
+      if ((handoff.blocked_on || []).length) {
+        parts.push(`${handoff.blocked_on.length} blockers`);
+      }
+      return parts.filter(Boolean).join(" | ");
+    }
+
+    function handoffCard(handoff) {
+      const template = handoffTemplate(handoff);
+      const card = document.createElement("article");
+      card.className = "session-card";
+      card.innerHTML = `
+        <div>
+          <div class="title"></div>
+          <div class="meta"></div>
+        </div>
+        <div class="session-facts"></div>
+        <div class="mini-list"></div>`;
+      card.querySelector(".title").textContent = handoff.summary || "Handoff";
+      card.querySelector(".meta").textContent = handoffMeta(handoff);
+      const facts = [
+        ["status", handoff.status || "unknown", handoff.status || "warning"],
+        ["to", handoff.to_agent_name || "unassigned"],
+      ];
+      if (template.next_action) facts.push(["next", template.next_action]);
+      card.querySelector(".session-facts").replaceChildren(
+        ...facts.map(([label, value, status]) => {
+          const item = document.createElement("span");
+          item.className = `badge ${badgeClass(status)}`;
+          item.textContent = `${label}: ${value}`;
+          return item;
+        })
+      );
+      const list = card.querySelector(".mini-list");
+      const rows = [
+        ...((handoff.next_steps || []).map((item) => ["Next step", item, "ok"])),
+        ...((handoff.blocked_on || []).map((item) => ["Blocked on", item, "warning"])),
+        ...((template.remaining_risks || []).map((item) => ["Risk", item, "warning"])),
+        ...((template.tested_commands || []).map((item) => ["Tested", item, "ok"])),
+      ];
+      if (!rows.length) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = "No structured handoff details.";
+        list.append(empty);
+        return card;
+      }
+      for (const [title, meta, status] of rows) {
+        list.append(row(title, meta, status, title));
+      }
+      return card;
+    }
+
+    function renderHandoffBoard(payload) {
+      const items = payload?.handoffs || [];
+      const statusCounts = items.reduce((counts, handoff) => {
+        const status = handoff.status || "unknown";
+        counts[status] = (counts[status] || 0) + 1;
+        return counts;
+      }, {});
+      const tested = items.filter(
+        (handoff) => (handoffTemplate(handoff).tested_commands || []).length
+      ).length;
+      const blocked = items.filter((handoff) => (handoff.blocked_on || []).length).length;
+      const agents = new Set(
+        items.flatMap((handoff) => [handoff.from_agent_name, handoff.to_agent_name]).filter(Boolean)
+      );
+      renderStatCards(handoffSummary, [
+        ["Handoffs", formatNumber(items.length)],
+        ["Open", formatNumber(statusCounts.open)],
+        ["Closed", formatNumber(statusCounts.closed)],
+        ["Tested", formatNumber(tested)],
+        ["Blocked", formatNumber(blocked)],
+        ["Agents", formatNumber(agents.size)],
+      ]);
+      handoffBoard.replaceChildren();
+      if (!items.length) {
+        const lane = document.createElement("section");
+        lane.className = "session-lane";
+        lane.innerHTML = `
+          <div class="lane-head"><h2>No handoffs</h2></div>
+          <div class="lane-body"><div class="empty">No handoff summaries recorded.</div></div>`;
+        handoffBoard.append(lane);
+        return;
+      }
+      const grouped = new Map();
+      for (const handoff of items) {
+        const key = agentKey(handoff.from_agent_name);
+        if (!grouped.has(key)) grouped.set(key, []);
+        grouped.get(key).push(handoff);
+      }
+      for (const [agent, handoffItems] of grouped.entries()) {
+        const lane = laneShell(agent, `${handoffItems.length} handoffs`);
+        const body = lane.querySelector(".lane-body");
+        for (const status of ["open", "closed", "blocked", "unknown"]) {
+          const matching = handoffItems.filter(
+            (handoff) => (handoff.status || "unknown") === status
+          );
+          if (matching.length) {
+            appendDetails(
+              body,
+              `${status.charAt(0).toUpperCase()}${status.slice(1)}`,
+              matching,
+              "No handoffs in this state.",
+              handoffCard,
+              status === "open"
+            );
+          }
+        }
+        handoffBoard.append(lane);
+      }
+    }
+
     function relationshipPanel(title, rows, emptyText) {
       const panel = document.createElement("section");
       panel.innerHTML = `
@@ -1864,6 +2003,7 @@ def mission_control_html() -> str:
       const activityUrl = `/api/workspaces/${encoded}/activity?limit=${encodeURIComponent(limit)}`;
       const projectUrl = `/api/workspaces/${encoded}/project?limit=${encodeURIComponent(limit)}`;
       const usageUrl = `/api/workspaces/${encoded}/usage`;
+      const handoffsUrl = `/api/workspaces/${encoded}/handoffs?limit=${encodeURIComponent(limit)}`;
       const sessionsUrl = [
         `/api/workspaces/${encoded}/sessions?limit=${encodeURIComponent(limit)}`,
         "message_limit=30"
@@ -1873,6 +2013,7 @@ def mission_control_html() -> str:
       let sessionsResponse;
       let projectResponse;
       let usageResponse;
+      let handoffResponse;
       try {
         [
           overviewResponse,
@@ -1880,18 +2021,21 @@ def mission_control_html() -> str:
           sessionsResponse,
           projectResponse,
           usageResponse,
+          handoffResponse,
         ] = await Promise.all([
           fetch(overviewUrl),
           fetch(activityUrl),
           fetch(sessionsUrl),
           fetch(projectUrl),
           fetch(usageUrl),
+          fetch(handoffsUrl),
         ]);
         const overview = await overviewResponse.json();
         const activity = await activityResponse.json();
         const sessionPayload = await sessionsResponse.json();
         const projectPayload = await projectResponse.json();
         const usagePayload = await usageResponse.json();
+        const handoffPayload = await handoffResponse.json();
         if (!overviewResponse.ok || overview.status === "not_found") {
           setStatus(`Workspace not found: ${workspace}`, true);
           return;
@@ -1927,9 +2071,11 @@ def mission_control_html() -> str:
       state.sessions = sessions;
       state.project = projectPayload;
       state.usage = usagePayload;
+      state.handoffs = handoffPayload.handoffs || [];
       renderMetrics(overview.counts || {}, collectAgentKeys(events, sessions, overview).length);
       renderProjectTree(projectPayload);
       renderUsageBoard(usagePayload);
+      renderHandoffBoard(handoffPayload);
       renderAgentBoard(events, sessions, overview);
       renderSessionBoard(sessions);
       renderTimeline(events);

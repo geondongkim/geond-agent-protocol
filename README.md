@@ -64,7 +64,7 @@ flowchart LR
 
 ## Planned Next
 
-- Expand the read-only localhost dashboard with richer code-risk and handoff-board views on top of the current mission-control, agent-lane, session, usage, and timeline views.
+- Expand the read-only localhost dashboard with richer code-risk views on top of the current mission-control, agent-lane, session, handoff-board, usage, and timeline views.
 - Add normalized activity events so agent lifecycle hooks, CLI workflows, trace adapters, and future orchestrators can read one ordered stream.
 - Continue improving adoption paths with editor commands, TestPyPI/release observation, and smaller local setup options.
 
@@ -517,8 +517,9 @@ Read-only endpoints include `/health`,
 `http://127.0.0.1:8765/` for the local Command Center with a workspace selector,
 database source badge, live refresh, horizontal Agent Fleet lanes, agent
 switchboard, project-structure activity, session/message cards, reservations,
-handoffs, lineage counts, timeline, Usage Evidence totals/source rollups, and
-relationship rows that connect agents to session evidence and active work.
+handoff-board status lanes, lineage counts, timeline, Usage Evidence
+totals/source rollups, and relationship rows that connect agents to session
+evidence and active work.
 The `/health` and `/api` responses include safe database metadata so a local
 browser can distinguish Local PostgreSQL from Azure PostgreSQL without exposing
 credentials.

@@ -44,6 +44,9 @@ def test_dashboard_root_serves_html_without_database() -> None:
     assert b"Evidence Sessions" in body
     assert b"User Prompts" in body
     assert b"Captured Text" in body
+    assert b"Handoffs" in body
+    assert b"handoff-summary" in body
+    assert b"handoff-board" in body
     assert b"Relationships" in body
     assert b"Usage Evidence" in body
     assert b"usage-summary" in body
