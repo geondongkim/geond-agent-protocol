@@ -261,7 +261,8 @@ steps, blockers, tested commands, and remaining risks when agents record them.
 The Code Risk view starts as a bounded hot-file table built from active claims,
 recent changesets, code graph fan-out, and open handoff mentions. The Changesets
 view groups recent changesets by branch with changed files, linked entity counts,
-and additions/deletions for focused review.
+and additions/deletions for focused review. The same read models are available
+to automation through `dashboard-code-risk` and `dashboard-changesets`.
 
 - `geond://sessions`
 - `geond://workspaces/{workspace_id}/timeline`

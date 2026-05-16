@@ -57,6 +57,8 @@ from geond.storage.code_graph import store_code_index, store_lsp_references
 from geond.storage.context_review import format_context_review_markdown, review_workspace_context
 from geond.storage.dashboard import (
     get_agent_activity_events,
+    get_dashboard_changesets,
+    get_dashboard_code_risk,
     get_dashboard_overview,
     get_dashboard_usage,
 )
@@ -307,6 +309,20 @@ def main() -> None:
     )
     dashboard_events.add_argument("workspace_id_or_uri")
     dashboard_events.add_argument("--limit", type=int, default=100)
+
+    dashboard_code_risk = subparsers.add_parser(
+        "dashboard-code-risk",
+        help="Return dashboard code-risk hot files for one workspace",
+    )
+    dashboard_code_risk.add_argument("workspace_id_or_uri")
+    dashboard_code_risk.add_argument("--limit", type=int, default=100)
+
+    dashboard_changesets = subparsers.add_parser(
+        "dashboard-changesets",
+        help="Return dashboard changeset review feed for one workspace",
+    )
+    dashboard_changesets.add_argument("workspace_id_or_uri")
+    dashboard_changesets.add_argument("--limit", type=int, default=50)
 
     dashboard = subparsers.add_parser("dashboard", help="Run local dashboard commands")
     dashboard_subparsers = dashboard.add_subparsers(dest="dashboard_command", required=True)
@@ -903,6 +919,26 @@ def main() -> None:
     if args.command == "dashboard-events":
         with connect(get_settings()) as conn:
             result = get_agent_activity_events(
+                conn,
+                args.workspace_id_or_uri,
+                limit=args.limit,
+            )
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        return
+
+    if args.command == "dashboard-code-risk":
+        with connect(get_settings()) as conn:
+            result = get_dashboard_code_risk(
+                conn,
+                args.workspace_id_or_uri,
+                limit=args.limit,
+            )
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        return
+
+    if args.command == "dashboard-changesets":
+        with connect(get_settings()) as conn:
+            result = get_dashboard_changesets(
                 conn,
                 args.workspace_id_or_uri,
                 limit=args.limit,

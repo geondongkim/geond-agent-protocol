@@ -192,6 +192,58 @@ def test_usage_summary_cli_wires_storage(monkeypatch, capsys) -> None:
     }
 
 
+def test_dashboard_code_risk_cli_wires_storage(monkeypatch, capsys) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_connect(settings) -> FakeConnection:  # noqa: ANN001
+        return FakeConnection()
+
+    def fake_get_dashboard_code_risk(conn, workspace_id_or_uri: str, limit: int):  # noqa: ANN001
+        captured["workspace_id_or_uri"] = workspace_id_or_uri
+        captured["limit"] = limit
+        return {"status": "ok", "summary": {"high": 1}, "files": []}
+
+    monkeypatch.setattr(cli, "connect", fake_connect)
+    monkeypatch.setattr(cli, "get_dashboard_code_risk", fake_get_dashboard_code_risk)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["geond", "dashboard-code-risk", "file:///repo", "--limit", "7"],
+    )
+
+    cli.main()
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["summary"]["high"] == 1
+    assert captured == {"workspace_id_or_uri": "file:///repo", "limit": 7}
+
+
+def test_dashboard_changesets_cli_wires_storage(monkeypatch, capsys) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_connect(settings) -> FakeConnection:  # noqa: ANN001
+        return FakeConnection()
+
+    def fake_get_dashboard_changesets(conn, workspace_id_or_uri: str, limit: int):  # noqa: ANN001
+        captured["workspace_id_or_uri"] = workspace_id_or_uri
+        captured["limit"] = limit
+        return {"status": "ok", "summary": {"changesets": 1}, "changesets": []}
+
+    monkeypatch.setattr(cli, "connect", fake_connect)
+    monkeypatch.setattr(cli, "get_dashboard_changesets", fake_get_dashboard_changesets)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["geond", "dashboard-changesets", "file:///repo", "--limit", "9"],
+    )
+
+    cli.main()
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["summary"]["changesets"] == 1
+    assert captured == {"workspace_id_or_uri": "file:///repo", "limit": 9}
+
+
 def test_usage_by_agent_cli_outputs_agent_rollup(monkeypatch, capsys) -> None:
     def fake_connect(settings) -> FakeConnection:  # noqa: ANN001
         return FakeConnection()
