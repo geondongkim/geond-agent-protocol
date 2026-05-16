@@ -9,6 +9,7 @@ from psycopg.types.json import Jsonb
 
 from geond.adapters.claude_code import ParsedClaudeCodeSession
 from geond.adapters.codex import ParsedCodexSession
+from geond.adapters.vscode_copilot import ParsedCopilotSession
 from geond.storage.pricing import estimate_usage_cost_usd, lookup_model_pricing
 from geond.storage.repository import resolve_session_row_id, resolve_workspace_id, upsert_agent
 
@@ -377,6 +378,84 @@ def record_claude_code_usage_events(
     ]
 
 
+def record_vscode_copilot_usage_events(
+    conn: Connection,
+    *,
+    workspace_id: str,
+    session: ParsedCopilotSession,
+    session_row_id: str | None = None,
+) -> list[str]:
+    if not usage_table_exists(conn):
+        return []
+
+    provider = "github"
+    model = vscode_copilot_model_from_session(session)
+    usage_ids: list[str] = []
+    for event_source, ordinal, operation, raw in vscode_copilot_raw_events(session):
+        for usage_index, usage in enumerate(extract_token_usage_candidates(raw)):
+            if not has_token_usage(usage):
+                continue
+            usage_ids.append(
+                insert_usage_event(
+                    conn,
+                    workspace_id=workspace_id,
+                    session_id=session_row_id,
+                    agent_name="vscode-copilot",
+                    source="vscode-copilot",
+                    provider=provider,
+                    model=model,
+                    operation=operation,
+                    input_tokens=usage.get("input_tokens"),
+                    output_tokens=usage.get("output_tokens"),
+                    cached_input_tokens=usage.get("cached_input_tokens"),
+                    reasoning_tokens=usage.get("reasoning_tokens"),
+                    total_tokens=usage.get("total_tokens"),
+                    estimated=False,
+                    source_record_id=(
+                        "vscode-copilot:"
+                        f"{session.session_id}:{event_source}:{ordinal}:usage:{usage_index}"
+                    ),
+                    metadata={
+                        "source": "vscode_copilot_import",
+                        "accuracy": "provider_reported",
+                        "event_source": event_source,
+                        "event_ordinal": ordinal,
+                    },
+                )
+            )
+
+    if usage_ids:
+        return usage_ids
+
+    estimated = estimate_vscode_copilot_message_usage(session)
+    if not has_token_usage(estimated):
+        return []
+    return [
+        insert_usage_event(
+            conn,
+            workspace_id=workspace_id,
+            session_id=session_row_id,
+            agent_name="vscode-copilot",
+            source="vscode-copilot",
+            provider=provider,
+            model=model,
+            operation="session_message_estimate",
+            input_tokens=estimated.get("input_tokens"),
+            output_tokens=estimated.get("output_tokens"),
+            total_tokens=estimated.get("total_tokens"),
+            estimated=True,
+            source_record_id=f"vscode-copilot:{session.session_id}:estimated_messages",
+            metadata={
+                "source": "vscode_copilot_import",
+                "accuracy": "session_estimated",
+                "estimator": "ceil_char_count_div_4_by_kind",
+                "chat_line_count": len(session.chat_lines),
+                "transcript_event_count": len(session.transcript_events),
+            },
+        )
+    ]
+
+
 def format_usage_summary_markdown(summary: dict[str, Any]) -> str:
     if summary.get("status") == "workspace_not_found":
         return (
@@ -570,6 +649,65 @@ def claude_model_from_session(session: ParsedClaudeCodeSession) -> str | None:
         message = event.raw.get("message")
         if isinstance(message, dict):
             model = string_or_none(message.get("model"))
+            if model:
+                return model
+    return None
+
+
+def estimate_vscode_copilot_message_usage(
+    session: ParsedCopilotSession,
+) -> dict[str, int | None]:
+    input_tokens = 0
+    output_tokens = 0
+    if session.chat_lines:
+        for line in session.chat_lines:
+            estimated_tokens = estimate_text_tokens(line.content)
+            if line.kind == 2:
+                output_tokens += estimated_tokens
+            else:
+                input_tokens += estimated_tokens
+    else:
+        for event in session.transcript_events:
+            estimated_tokens = estimate_text_tokens(event.content)
+            if event.event_type in {"agentMessage", "assistantMessage"}:
+                output_tokens += estimated_tokens
+            elif event.event_type == "userMessage":
+                input_tokens += estimated_tokens
+    total_tokens = input_tokens + output_tokens
+    return {
+        "input_tokens": input_tokens or None,
+        "output_tokens": output_tokens or None,
+        "cached_input_tokens": None,
+        "reasoning_tokens": None,
+        "total_tokens": total_tokens or None,
+    }
+
+
+def vscode_copilot_raw_events(
+    session: ParsedCopilotSession,
+) -> list[tuple[str, int, str, dict[str, Any]]]:
+    events: list[tuple[str, int, str, dict[str, Any]]] = []
+    events.extend(
+        ("chat", line.ordinal, f"chat.kind.{line.kind}", line.raw) for line in session.chat_lines
+    )
+    events.extend(
+        ("transcript", event.ordinal, event.event_type, event.raw)
+        for event in session.transcript_events
+    )
+    return events
+
+
+def vscode_copilot_model_from_session(session: ParsedCopilotSession) -> str | None:
+    model = string_or_none(session.index_entry.get("model"))
+    if model:
+        return model
+    for _, _, _, raw in vscode_copilot_raw_events(session):
+        model = string_or_none(raw.get("model"))
+        if model:
+            return model
+        data = raw.get("data")
+        if isinstance(data, dict):
+            model = string_or_none(data.get("model"))
             if model:
                 return model
     return None

@@ -4,6 +4,8 @@
 
 > 주의: 아래 구조는 VS Code와 GitHub Copilot Chat의 내부 저장 형식을 관찰한 결과이며, 공식 안정 API가 아니다. 공개 프로젝트에서는 best-effort importer로 다뤄야 한다.
 
+현재 Geond `import-vscode`는 세션/이벤트/메시지를 저장한 뒤 `llm_usage_events`가 있으면 usage도 기록한다. 저장 record 안에 provider usage block이 있으면 그 값을 우선하고, 없으면 `chatSessions` line text를 기준으로 session-level estimate를 남긴다. 재import 시에는 stable `source_record_id`로 같은 usage row를 업데이트한다.
+
 ---
 
 ## 1. workspaceStorage 위치와 구조

@@ -132,9 +132,11 @@ Claude Code importer:
 
 VS Code Copilot importer:
 
-- extract prompt and response events from chat sessions and transcripts
-- preserve source session IDs
-- use best-effort estimates if provider usage is unavailable
+- extracts prompt and response events from chat sessions and transcripts
+- preserves source session IDs
+- writes provider usage if it appears in stored records
+- stores session-level estimates from chat lines when provider usage is unavailable
+- uses stable `source_record_id` values for idempotent reimports
 
 All importers:
 

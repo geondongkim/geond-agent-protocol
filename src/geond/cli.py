@@ -90,6 +90,7 @@ from geond.storage.usage import (
     format_usage_summary_markdown,
     record_claude_code_usage_events,
     record_codex_usage_events,
+    record_vscode_copilot_usage_events,
     summarize_usage,
 )
 from geond.workspace_identity import (
@@ -1053,10 +1054,27 @@ def main() -> None:
                 name=args.workspace_name,
                 metadata={"source": "cli"},
             )
-            stored = [store_vscode_session(conn, workspace_id, session) for session in sessions]
+            stored = []
+            usage_events = []
+            for session in sessions:
+                session_row_id = store_vscode_session(conn, workspace_id, session)
+                stored.append(session_row_id)
+                usage_events.extend(
+                    record_vscode_copilot_usage_events(
+                        conn,
+                        workspace_id=workspace_id,
+                        session=session,
+                        session_row_id=session_row_id,
+                    )
+                )
         print(
             json.dumps(
-                {"status": "ok", "workspace_id": workspace_id, "imported_sessions": stored},
+                {
+                    "status": "ok",
+                    "workspace_id": workspace_id,
+                    "imported_sessions": stored,
+                    "imported_usage_events": usage_events,
+                },
                 ensure_ascii=False,
                 indent=2,
             )
