@@ -220,8 +220,9 @@ These are not disciplinary metrics. They are review signals.
    - `usage-by-model`
    - `usage-risk-signals`
 6. Add dashboard Usage view. The first read model is now available at
-    `/api/workspaces/{workspace_id}/usage` and returns usage totals, by-source
-    and by-model rollups, evidence counts, and usage-versus-evidence ratios.
+    `/api/workspaces/{workspace_id}/usage` and the local dashboard renders a
+    Usage Evidence tab with totals, source rollups, evidence counts, and
+    usage-versus-evidence ratios.
 7. Add privacy controls for personal drilldown.
 8. Add export for PM reports.
 

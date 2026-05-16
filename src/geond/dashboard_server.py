@@ -791,6 +791,7 @@ def mission_control_html() -> str:
     <nav class="tabs" aria-label="Dashboard views">
       <button class="tab active" type="button" data-view="mission">Mission Control</button>
       <button class="tab" type="button" data-view="sessions">Sessions</button>
+      <button class="tab" type="button" data-view="usage">Usage Evidence</button>
       <button class="tab" type="button" data-view="timeline">Timeline</button>
       <button class="tab" type="button" data-view="trace">Relationships</button>
     </nav>
@@ -846,6 +847,24 @@ def mission_control_html() -> str:
       <div class="session-workspace">
         <div class="session-summary" id="session-summary"></div>
         <div class="session-board" id="session-board"></div>
+      </div>
+    </section>
+    <section class="view" data-view-panel="usage">
+      <div class="trace-grid">
+        <section>
+          <header><h2>Usage Summary</h2></header>
+          <div class="panel">
+            <div class="session-summary" id="usage-summary"></div>
+          </div>
+        </section>
+        <section>
+          <header><h2>Usage By Source</h2></header>
+          <div class="panel"><div class="list" id="usage-source"></div></div>
+        </section>
+        <section>
+          <header><h2>Usage Evidence</h2></header>
+          <div class="panel"><div class="list" id="usage-evidence"></div></div>
+        </section>
       </div>
     </section>
     <section class="view" data-view-panel="timeline">
@@ -909,6 +928,7 @@ def mission_control_html() -> str:
       events: [],
       sessions: [],
       project: null,
+      usage: null,
       workspaces: [],
     };
     const qs = new URLSearchParams(location.search);
@@ -927,6 +947,9 @@ def mission_control_html() -> str:
     const agentBoard = document.querySelector("#agent-board");
     const sessionSummary = document.querySelector("#session-summary");
     const sessionBoard = document.querySelector("#session-board");
+    const usageSummary = document.querySelector("#usage-summary");
+    const usageSource = document.querySelector("#usage-source");
+    const usageEvidence = document.querySelector("#usage-evidence");
     const timeline = document.querySelector("#timeline");
     const countBadge = document.querySelector("#activity-count");
     const lineageNodes = document.querySelector("#lineage-nodes");
@@ -989,6 +1012,20 @@ def mission_control_html() -> str:
 
     function shortId(value) {
       return String(value || "").slice(0, 8);
+    }
+
+    function formatNumber(value) {
+      return Number(value || 0).toLocaleString();
+    }
+
+    function formatCost(value) {
+      if (value === null || value === undefined) return "n/a";
+      return `$${Number(value || 0).toFixed(4)}`;
+    }
+
+    function formatShare(value) {
+      if (value === null || value === undefined) return "n/a";
+      return `${Math.round(Number(value) * 100)}%`;
     }
 
     function agentIcon(name) {
@@ -1167,6 +1204,79 @@ def mission_control_html() -> str:
         item.querySelector("strong").textContent = value ?? 0;
         return item;
       }));
+    }
+
+    function renderStatCards(target, entries) {
+      target.replaceChildren(...entries.map(([label, value]) => {
+        const item = document.createElement("div");
+        item.className = "session-stat";
+        item.innerHTML = `<span></span><strong></strong>`;
+        item.querySelector("span").textContent = label;
+        item.querySelector("strong").textContent = value;
+        return item;
+      }));
+    }
+
+    function renderUsageBoard(payload) {
+      const usage = payload?.usage || {};
+      const totals = usage.totals || {};
+      const quality = usage.data_quality || {};
+      const evidence = payload?.evidence || {};
+      const linked = payload?.usage_vs_evidence || {};
+      renderStatCards(usageSummary, [
+        ["Events", formatNumber(totals.event_count)],
+        ["Tokens", formatNumber(totals.total_tokens)],
+        ["Cost", formatCost(totals.estimated_cost_usd)],
+        ["Exact", formatShare(quality.exact_token_share)],
+        ["Estimated", formatShare(quality.estimated_token_share)],
+        ["Changesets", formatNumber(evidence.changesets)],
+        ["Tested Handoffs", formatNumber(evidence.tested_handoffs)],
+        ["User Prompts", formatNumber(evidence.user_prompts)],
+      ]);
+      renderList(
+        usageSource,
+        usage.by_source || [],
+        "No usage events recorded.",
+        (item) => row(
+          item.source || "unknown source",
+          [
+            `${formatNumber(item.total_tokens)} tokens`,
+            `${formatNumber(item.event_count)} events`,
+            `cost ${formatCost(item.estimated_cost_usd)}`,
+          ].join(" | "),
+          item.estimated_event_count ? "warning" : "ok",
+          item.estimated_event_count ? "estimated" : "exact"
+        )
+      );
+      const evidenceRows = [
+        row(
+          "Usage To Changesets",
+          [
+            `${formatNumber(totals.total_tokens)} tokens`,
+            `${formatNumber(evidence.changesets)} changesets`,
+          ].join(" | "),
+          linked.has_output_evidence ? "ok" : "warning",
+          linked.tokens_per_changeset === null ? "n/a" : `${linked.tokens_per_changeset} tok/change`
+        ),
+        row(
+          "Usage To Tested Handoffs",
+          [
+            `${formatNumber(evidence.tested_handoffs)} tested handoffs`,
+            `${formatNumber(evidence.handoffs)} handoffs`,
+          ].join(" | "),
+          evidence.tested_handoffs ? "ok" : "warning",
+          linked.tokens_per_tested_handoff === null
+            ? "n/a"
+            : `${linked.tokens_per_tested_handoff} tok/test`
+        ),
+        row(
+          "Review Hint",
+          linked.review_hint || "No usage signal yet.",
+          linked.has_output_evidence ? "ok" : "warning",
+          "signal"
+        ),
+      ];
+      usageEvidence.replaceChildren(...evidenceRows);
     }
 
     function renderTimeline(events) {
@@ -1753,6 +1863,7 @@ def mission_control_html() -> str:
       const overviewUrl = `/api/workspaces/${encoded}/overview?limit=${encodeURIComponent(limit)}`;
       const activityUrl = `/api/workspaces/${encoded}/activity?limit=${encodeURIComponent(limit)}`;
       const projectUrl = `/api/workspaces/${encoded}/project?limit=${encodeURIComponent(limit)}`;
+      const usageUrl = `/api/workspaces/${encoded}/usage`;
       const sessionsUrl = [
         `/api/workspaces/${encoded}/sessions?limit=${encodeURIComponent(limit)}`,
         "message_limit=30"
@@ -1761,22 +1872,26 @@ def mission_control_html() -> str:
       let activityResponse;
       let sessionsResponse;
       let projectResponse;
+      let usageResponse;
       try {
         [
           overviewResponse,
           activityResponse,
           sessionsResponse,
           projectResponse,
+          usageResponse,
         ] = await Promise.all([
           fetch(overviewUrl),
           fetch(activityUrl),
           fetch(sessionsUrl),
           fetch(projectUrl),
+          fetch(usageUrl),
         ]);
         const overview = await overviewResponse.json();
         const activity = await activityResponse.json();
         const sessionPayload = await sessionsResponse.json();
         const projectPayload = await projectResponse.json();
+        const usagePayload = await usageResponse.json();
         if (!overviewResponse.ok || overview.status === "not_found") {
           setStatus(`Workspace not found: ${workspace}`, true);
           return;
@@ -1811,8 +1926,10 @@ def mission_control_html() -> str:
       state.events = events;
       state.sessions = sessions;
       state.project = projectPayload;
+      state.usage = usagePayload;
       renderMetrics(overview.counts || {}, collectAgentKeys(events, sessions, overview).length);
       renderProjectTree(projectPayload);
+      renderUsageBoard(usagePayload);
       renderAgentBoard(events, sessions, overview);
       renderSessionBoard(sessions);
       renderTimeline(events);
