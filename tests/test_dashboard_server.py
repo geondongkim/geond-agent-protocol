@@ -77,6 +77,9 @@ def test_dashboard_root_serves_html_without_database() -> None:
     assert b"Related Graph Node" in body
     assert b"Usage Evidence" in body
     assert b"usage-summary" in body
+    assert b"Conversation Evidence" in body
+    assert b"Work Evidence" in body
+    assert b"Validation Evidence" in body
     assert b"/usage" in body
     assert b"Agent To Sessions" in body
     assert b"workspace-meta" in body

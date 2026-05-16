@@ -1511,6 +1511,37 @@ def mission_control_html() -> str:
       );
       const evidenceRows = [
         row(
+          "Conversation Evidence",
+          [
+            `${formatNumber(evidence.sessions)} sessions`,
+            `${formatNumber(evidence.messages)} messages`,
+            `${formatNumber(evidence.user_prompts)} user prompts`,
+            `${formatNumber(evidence.assistant_replies)} agent replies`,
+          ].join(" | "),
+          evidence.user_prompts || evidence.assistant_replies ? "ok" : "warning",
+          "conversation"
+        ),
+        row(
+          "Work Evidence",
+          [
+            `${formatNumber(evidence.changesets)} changesets`,
+            `${formatNumber(evidence.handoffs)} handoffs`,
+            `${formatNumber(evidence.tested_handoffs)} tested`,
+            `${formatNumber(evidence.active_reservations)} claims`,
+          ].join(" | "),
+          linked.has_output_evidence ? "ok" : "warning",
+          "work"
+        ),
+        row(
+          "Validation Evidence",
+          [
+            `${formatNumber(evidence.benchmark_runs)} benchmarks`,
+            `${formatNumber(evidence.agent_actions)} agent actions`,
+          ].join(" | "),
+          evidence.benchmark_runs || evidence.agent_actions ? "ok" : "warning",
+          "validation"
+        ),
+        row(
           "Usage To Changesets",
           [
             `${formatNumber(totals.total_tokens)} tokens`,
