@@ -336,12 +336,16 @@ Tasks:
 - [x] Add related review context to Timeline event detail panes.
 - [x] Add conversation/work/validation evidence refs to Usage Evidence.
 - [x] Add deeper code evidence refs to Code Risk review feeds.
+- [x] Add browser verification that clicks every dashboard tab, exercises
+  Timeline filters/details, and checks nonblank screenshots.
+- [x] Add browser-verified dashboard GIFs for operations, evidence review, and
+  Timeline review workflows.
 - [ ] Add focused review filters to dashboard review feeds.
 - [x] Add a normalized activity projection so PM agents and orchestrators can
   consume one ordered event stream instead of many tables.
 - [ ] Add optional Codex and Claude Code hook examples that record activity
   events without exposing secrets.
-- [ ] Add a dashboard GIF to the public demo once the read-only path exists.
+- [x] Add dashboard GIFs to the public demo once the read-only path exists.
 
 Acceptance criteria:
 
@@ -449,6 +453,11 @@ Completed locally:
 - `docs/apple_silicon.md` documents native arm64 setup and Apple Silicon Docker/Python cautions.
 - GitHub Actions CI isolates external embeddings with `GEOND_EMBEDDING_PROVIDER=none` and avoids global privacy-mode overrides that change provider unit-test semantics.
 - `docs/assets/geond_demo.gif` and Azure Foundry/APIM samples provide public demo and deployment starting points.
+- `scripts/verify_dashboard_browser.py` validates the local dashboard in Edge or
+  Chrome with Playwright and writes browser screenshots plus a JSON report.
+- `scripts/render_dashboard_gifs.py` turns those screenshots into the
+  `geond_dashboard_operations.gif`, `geond_dashboard_evidence.gif`, and
+  `geond_dashboard_timeline_review.gif` public demo assets.
 
 Known implementation notes:
 

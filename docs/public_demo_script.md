@@ -3,10 +3,28 @@
 This is the first recording/GIF script for `v0.1.0-alpha`. It keeps the demo local, repeatable, and short enough for a README GIF or release note clip.
 
 Current scripted demo asset: [docs/assets/geond_demo.gif](assets/geond_demo.gif).
-Regenerate it with:
+Current browser-verified dashboard assets:
+[docs/assets/geond_dashboard_operations.gif](assets/geond_dashboard_operations.gif),
+[docs/assets/geond_dashboard_evidence.gif](assets/geond_dashboard_evidence.gif), and
+[docs/assets/geond_dashboard_timeline_review.gif](assets/geond_dashboard_timeline_review.gif).
+
+Regenerate the terminal demo with:
 
 ```bash
 uv run python scripts/render_demo_gif.py
+```
+
+Regenerate the dashboard GIFs after running the local dashboard browser smoke:
+
+```bash
+uv run geond dashboard serve --host 127.0.0.1 --port 8765
+uv run python scripts/verify_dashboard_browser.py \
+    --url http://127.0.0.1:8765 \
+    --workspace file:///path/to/workspace \
+    --output-dir tmp/dashboard_browser
+uv run python scripts/render_dashboard_gifs.py \
+    --screenshots tmp/dashboard_browser \
+    --output-dir docs/assets
 ```
 
 ## Target Story
@@ -117,18 +135,19 @@ In the MCP client, show resources/tools:
 
 Client config examples are in [examples/mcp_clients](../examples/mcp_clients).
 
-## Future Dashboard Shot
+## Browser-Verified Dashboard Shot
 
-After the dashboard MVP lands, add a short browser shot that opens the local
-Command Center and shows the same seeded evidence visually:
+Open the local Command Center and show the same stored evidence visually:
 
-- active agents and their latest action
-- one symbol reservation on `build_answer`
-- one open handoff from Copilot to Codex
-- the workspace timeline with reservation and handoff events
-- the lineage graph connecting session, agent action, handoff, changeset, and benchmark nodes
+- Mission Control with ownership, active work, and project hot files
+- Sessions with readable prompts and replies separated from technical trace rows
+- Handoffs and Changesets as review queues with next actions and touched files
+- Usage Evidence and Code Risk evidence cards for spend/output and hot-file review
+- Filtered Timeline details with Related Review Context
+- Graph and Relationships views connecting sessions, work, handoffs, and evidence
 
-The dashboard plan is tracked in [docs/agent_activity_dashboard.md](agent_activity_dashboard.md).
+The dashboard plan is tracked in [docs/agent_activity_dashboard.md](agent_activity_dashboard.md),
+and the browser smoke writes a JSON report plus screenshots to `tmp/dashboard_browser`.
 
 ## Cleanup Shot
 

@@ -128,6 +128,11 @@ Usage Evidence separates conversation, work, and validation evidence refs so
 usage review can distinguish raw spend from reviewed outputs and checks.
 Code Risk cards expose active claims, recent changes, handoff mentions, graph
 fan-out, and risk signals as bounded evidence rows.
+The browser smoke in `scripts/verify_dashboard_browser.py` now exercises every
+dashboard tab, applies Timeline filters, opens a related review-context detail,
+and checks that captured screenshots are nonblank. `scripts/render_dashboard_gifs.py`
+turns those screenshots into operations, evidence-review, and timeline-review
+GIFs for README and demo use.
 
 ### 4. Collaboration Graph
 
@@ -275,6 +280,12 @@ lineage nodes and edges behind the Relationships view. The same read models are
 available to automation through `dashboard-code-risk`, `dashboard-changesets`,
 and `dashboard-graph`.
 
+Browser-verified demo assets now cover three review workflows:
+`geond_dashboard_operations.gif` for Mission Control, Sessions, Handoffs, and
+Changesets; `geond_dashboard_evidence.gif` for Usage Evidence, Code Risk, and
+Graph; and `geond_dashboard_timeline_review.gif` for filtered Timeline details,
+Related Review Context, and Relationships.
+
 - `geond://sessions`
 - `geond://workspaces/{workspace_id}/timeline`
 - `geond://workspaces/{workspace_id}/lineage`
@@ -421,9 +432,7 @@ memory, but visible work state.
    `reserve-symbols`, `record-handoff`, `record-changeset`, and `benchmark-search`.
 2. Continue with `geond dashboard serve` as a single-command local UI before
    extracting a Vite/React app.
-3. Render a new GIF: dashboard opens, shows two or more horizontal agent lanes,
-   one reservation, one
-   handoff, a timeline item, and a lineage graph.
+3. Keep the browser smoke and dashboard GIF renderer current when selectors change.
 4. Add optional Claude Code and Codex hook examples that write Geond activity
    events at session start, tool use, validation, stop, and compaction.
 5. Add a PM-agent prompt example that consumes `/overview`, `/handoffs`, and
@@ -438,7 +447,7 @@ memory, but visible work state.
 | 0. Product docs | Align on dashboard shape. | This document, README link, backlog entry, and demo-script note exist. |
 | 1. Read model | Expose dashboard-shaped JSON from existing repository functions. | Implemented through `dashboard-overview`, `dashboard-events`, `get_dashboard_overview`, `get_agent_activity_events`, `geond://workspaces/{id}/overview`, and `geond://workspaces/{id}/activity`. |
 | 1.5. Local HTTP API | Serve the same read model over localhost. | Implemented as `geond dashboard serve` with `/health`, `/api/workspaces`, `/api/workspaces/{id}/overview`, `/activity`, `/sessions`, `/project`, `/timeline`, `/lineage`, `/reservations`, and `/handoffs`. |
-| 2. Local UI MVP | Render command center, timeline, agent fleet, handoffs, lineage graph, and usage evidence. | Mission Control, workspace selector, live polling, project-structure activity, horizontally expanding Agent Fleet lanes, session/message cards, reservations, handoff-board status lanes, Code Risk evidence cards, Changesets review lanes, Graph node/edge drilldowns, lineage counts, filtered Activity Timeline with related event detail panes, trace-model tab, `/api/workspaces/{id}/usage`, a Usage Evidence tab with conversation/work/validation refs, and CLI usage risk signals are served; next add focused review filters. |
+| 2. Local UI MVP | Render command center, timeline, agent fleet, handoffs, lineage graph, and usage evidence. | Mission Control, workspace selector, live polling, project-structure activity, horizontally expanding Agent Fleet lanes, session/message cards, reservations, handoff-board status lanes, Code Risk evidence cards, Changesets review lanes, Graph node/edge drilldowns, lineage counts, filtered Activity Timeline with related event detail panes, trace-model tab, `/api/workspaces/{id}/usage`, a Usage Evidence tab with conversation/work/validation refs, CLI usage risk signals, browser verification, and dashboard GIF assets are served; next add focused review filters. |
 | 3. Activity projection | Normalize agent activity events for UI and orchestrators. | Agent actions, reservations, handoffs, changesets, and benchmark runs reduce into one ordered event stream. |
 | 4. Hook adapters | Capture real agent lifecycle events. | Codex/Claude Code hook examples record session/tool/stop events without exposing secrets. |
 | 5. PM/orchestrator loop | Use the read model to guide work assignment. | A PM prompt and CLI dry-run can recommend next work, detect blockers, and cite evidence. |
@@ -446,8 +455,10 @@ memory, but visible work state.
 
 ## Recommended Next Slice
 
-Add richer code-risk views next. The first local UI now renders split pages with
+Add focused review filters next. The first local UI now renders split pages with
 Mission Control, workspace selection, live refresh, project-structure activity,
 horizontally expanding Agent Fleet lanes, session/message cards, reservations,
-handoffs, lineage counts, Activity Timeline, and a trace-model tab over the same
-read-only payloads.
+handoffs, code-risk evidence cards, changeset lanes, graph drilldowns, Usage
+Evidence, filtered Activity Timeline details, related review context, and a
+trace-model tab over the same read-only payloads. The browser smoke and GIF
+renderer now make those workflows reproducible for demos and regression checks.

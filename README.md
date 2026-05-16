@@ -59,7 +59,8 @@ flowchart LR
 - Resolve same-file calls, cross-file imports, TypeScript/JavaScript default imports, re-export barrels, and editor-provided LSP reference edges.
 - Link unified diff hunks to touched symbols, including deletion-only hunks.
 - Coordinate agent work with file/symbol reservations, renewals, release, conflict policies, audit events, structured handoffs, context review, and workspace lineage graphs.
-- Generate benchmark reports, public demo GIFs, package artifacts, checksums, GitHub Releases, Sigstore bundles, and manual PyPI trusted publishing workflows.
+- Serve a browser-verified localhost dashboard for human review of mission control, sessions, handoffs, code risk, changesets, graph lineage, usage evidence, filtered timeline details, and relationships.
+- Generate benchmark reports, public demo GIFs, dashboard workflow GIFs, package artifacts, checksums, GitHub Releases, Sigstore bundles, and manual PyPI trusted publishing workflows.
 - Preview or write common MCP/editor configuration with `geond install`, and verify real MCP stdio behavior with `geond mcp-smoke`.
 
 ## Planned Next
@@ -84,6 +85,8 @@ flowchart LR
 | Inspect agent activity | `dashboard-overview`, `dashboard-events`, `dashboard-code-risk`, `dashboard-changesets`, `dashboard-graph` |
 | Inspect AI usage | `usage-summary`, `usage-by-agent`, `usage-by-model`, `usage-risk-signals`, dashboard Usage Evidence tab and `/api/workspaces/{id}/usage` |
 | Serve dashboard API | `uv run geond dashboard serve` |
+| Verify dashboard in a browser | `uv run python scripts/verify_dashboard_browser.py --url http://127.0.0.1:8765 --workspace <workspace-uri>` |
+| Render dashboard GIFs | `uv run python scripts/render_dashboard_gifs.py --screenshots tmp/dashboard_browser --output-dir docs/assets` |
 | Measure retrieval quality | `benchmark-search`, `benchmark-report` |
 | Serve MCP | `uv run geond-mcp` |
 
@@ -535,6 +538,12 @@ Usage Evidence rows separate conversation, work, and validation evidence refs so
 reviewers can see whether token spend has matching outputs and checks.
 Code Risk cards expose file claims, symbol claims, recent changes, handoff
 mentions, graph fan-out, and risk signals as bounded evidence rows.
+In the web app, a reviewer can use these views as an operating loop: check
+Mission Control for current ownership, open Sessions for the prompting context,
+review Handoffs and Changesets for work state, inspect Code Risk before asking
+another agent to edit a hot file, compare Usage Evidence against outputs and
+validation, filter Timeline to a specific agent or event kind, and open related
+context before continuing or reassigning work.
 The `/health` and `/api` responses include safe database metadata so a local
 browser can distinguish Local PostgreSQL from Azure PostgreSQL without exposing
 credentials.
@@ -543,6 +552,29 @@ handoffs, and current claims. Sessions are the transcript evidence surface: user
 prompts, captured prompts, agent replies, readable excerpts, and technical trace
 counts. The Relationships tab keeps the two connected, while the Graph tab shows
 a bounded lineage node/edge drilldown instead of an unbounded graph canvas.
+
+Browser verification is reproducible. Start the dashboard, then run the
+Playwright smoke to click every tab, apply the Timeline filter, open a related
+review-context detail pane, and assert that screenshots are nonblank:
+
+```bash
+uv run geond dashboard serve --host 127.0.0.1 --port 8765
+uv run python scripts/verify_dashboard_browser.py \
+    --url http://127.0.0.1:8765 \
+    --workspace file:///path/to/workspace \
+    --output-dir tmp/dashboard_browser
+uv run python scripts/render_dashboard_gifs.py \
+    --screenshots tmp/dashboard_browser \
+    --output-dir docs/assets
+```
+
+Browser-verified dashboard walkthroughs:
+
+![Geond dashboard operations](docs/assets/geond_dashboard_operations.gif)
+
+![Geond dashboard evidence review](docs/assets/geond_dashboard_evidence.gif)
+
+![Geond dashboard timeline review](docs/assets/geond_dashboard_timeline_review.gif)
 
 ![Azure-backed Geond dashboard](docs/assets/geond_dashboard_azure_collaboration.gif)
 
@@ -696,7 +728,7 @@ Local protocol demo asset:
 
 ## Status
 
-Alpha MVP. The repository contains research notes, architecture, implementation plans, a local Postgres/pgvector schema, VS Code Copilot Chat, Codex, and Claude Code importers, OpenAI/Azure/gateway/local embedding provider modes, keyword/vector/hybrid retrieval with optional local or API reranking, workspace aliases with git and manifest fingerprint suggestions, AST/regex/tree-sitter code graph indexing, Python and TypeScript/JavaScript cross-file/default-import/re-export call edges, editor-provided LSP reference imports, changeset-to-symbol evidence links, call-impact narratives, reservation renewal, conflict policies, audit events, structured handoff templates, workspace lineage graphs, context review, benchmark quality metrics, coordination tools, demo assets, Azure samples, release automation, an MCP server, and a read-only local dashboard. The dashboard is an observer and PM/orchestration read model, not an agent runner.
+Alpha MVP. The repository contains research notes, architecture, implementation plans, a local Postgres/pgvector schema, VS Code Copilot Chat, Codex, and Claude Code importers, OpenAI/Azure/gateway/local embedding provider modes, keyword/vector/hybrid retrieval with optional local or API reranking, workspace aliases with git and manifest fingerprint suggestions, AST/regex/tree-sitter code graph indexing, Python and TypeScript/JavaScript cross-file/default-import/re-export call edges, editor-provided LSP reference imports, changeset-to-symbol evidence links, call-impact narratives, reservation renewal, conflict policies, audit events, structured handoff templates, workspace lineage graphs, context review, benchmark quality metrics, coordination tools, demo assets, browser-verified dashboard GIFs, Azure samples, release automation, an MCP server, and a read-only local dashboard. The dashboard is an observer and PM/orchestration read model, not an agent runner.
 
 ## Design Principles
 
