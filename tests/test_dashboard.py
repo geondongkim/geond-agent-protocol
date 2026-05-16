@@ -11,6 +11,7 @@ from geond.db import connect, run_schema_file
 from geond.storage.benchmark import save_benchmark_run
 from geond.storage.dashboard import (
     get_agent_activity_events,
+    get_dashboard_code_risk,
     get_dashboard_overview,
     get_dashboard_project_activity,
     get_dashboard_sessions,
@@ -125,6 +126,7 @@ def test_dashboard_overview_and_activity_events() -> None:
             sessions = get_dashboard_sessions(conn, workspace_id, limit=10, message_limit=2)
             workspaces = get_dashboard_workspaces(conn, limit=50)
             project = get_dashboard_project_activity(conn, workspace_id, limit=10)
+            code_risk = get_dashboard_code_risk(conn, workspace_id, limit=10)
 
             assert overview["status"] == "ok"
             assert overview["counts"]["sessions"] >= 1
@@ -167,6 +169,11 @@ def test_dashboard_overview_and_activity_events() -> None:
             assert project["status"] == "ok"
             assert project["files"][0]["file_path"] == "service.py"
             assert project["files"][0]["status"] == "active"
+            assert code_risk["status"] == "ok"
+            assert code_risk["summary"]["high"] >= 1
+            assert code_risk["files"][0]["file_path"] == "service.py"
+            assert code_risk["files"][0]["risk_level"] == "high"
+            assert "active file claim" in code_risk["files"][0]["risk_signals"]
         finally:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM workspaces WHERE id = %s", (workspace_id,))

@@ -504,6 +504,85 @@ def get_dashboard_project_activity(
     }
 
 
+def get_dashboard_code_risk(
+    conn: Connection,
+    workspace_id_or_uri: str,
+    limit: int = 100,
+) -> dict[str, Any]:
+    project = get_dashboard_project_activity(conn, workspace_id_or_uri, limit=limit)
+    if project.get("status") == "not_found":
+        return {
+            "workspace_id": workspace_id_or_uri,
+            "status": "not_found",
+            "summary": {},
+            "files": [],
+        }
+
+    workspace_id = project["workspace_id"]
+    files = project.get("files") or []
+    file_paths = [item["file_path"] for item in files]
+    symbol_claims = dashboard_symbol_claims_by_file(conn, workspace_id, file_paths)
+    graph_edges = dashboard_graph_edges_by_file(conn, workspace_id, file_paths)
+    handoff_mentions = dashboard_handoff_mentions_by_file(conn, workspace_id, file_paths, limit)
+    enriched = []
+    for item in files:
+        file_path = item["file_path"]
+        symbol_claim = symbol_claims.get(file_path, {})
+        active_symbol_claims = int(symbol_claim.get("active_symbol_claims") or 0)
+        active_file_claims = int(item.get("active_file_claims") or 0)
+        changeset_count = int(item.get("changeset_count") or 0)
+        open_handoff_mentions = int(handoff_mentions.get(file_path, 0) or 0)
+        edge_count = int(graph_edges.get(file_path, 0) or 0)
+        risk_score = code_risk_score(
+            active_file_claims=active_file_claims,
+            active_symbol_claims=active_symbol_claims,
+            changeset_count=changeset_count,
+            open_handoff_mentions=open_handoff_mentions,
+            graph_edges=edge_count,
+        )
+        risk_level = code_risk_level(risk_score)
+        active_agents = sorted(
+            {
+                *(item.get("active_agents") or []),
+                *(symbol_claim.get("active_agents") or []),
+            }
+        )
+        enriched.append(
+            {
+                **item,
+                "active_symbol_claims": active_symbol_claims,
+                "open_handoff_mentions": open_handoff_mentions,
+                "graph_edges": edge_count,
+                "risk_score": risk_score,
+                "risk_level": risk_level,
+                "risk_signals": code_risk_signals(
+                    active_file_claims=active_file_claims,
+                    active_symbol_claims=active_symbol_claims,
+                    changeset_count=changeset_count,
+                    open_handoff_mentions=open_handoff_mentions,
+                    graph_edges=edge_count,
+                ),
+                "active_agents": active_agents,
+            }
+        )
+    enriched.sort(
+        key=lambda item: (
+            item["risk_score"],
+            item.get("latest_changed_at") or "",
+            item["file_path"],
+        ),
+        reverse=True,
+    )
+    return {
+        "workspace_id": workspace_id,
+        "workspace_uri": project.get("workspace_uri"),
+        "workspace_name": project.get("workspace_name"),
+        "status": "ok",
+        "summary": code_risk_summary(enriched),
+        "files": enriched[:limit],
+    }
+
+
 def get_dashboard_sessions(
     conn: Connection,
     workspace_id_or_uri: str,
@@ -905,6 +984,158 @@ def dashboard_usage_evidence(conn: Connection, workspace_id: str) -> dict[str, i
         "agent_actions",
     ]
     return {name: int(value or 0) for name, value in zip(names, row, strict=True)}
+
+
+def dashboard_symbol_claims_by_file(
+    conn: Connection,
+    workspace_id: str,
+    file_paths: list[str],
+) -> dict[str, dict[str, Any]]:
+    if not file_paths:
+        return {}
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT sr.file_path,
+                   count(*) AS active_symbol_claims,
+                   COALESCE(array_agg(DISTINCT a.name ORDER BY a.name), ARRAY[]::text[])
+            FROM symbol_reservations sr
+            LEFT JOIN agents a ON a.id = sr.agent_id
+            WHERE sr.workspace_id = %s
+              AND sr.file_path = ANY(%s::text[])
+              AND sr.released_at IS NULL
+              AND (sr.expires_at IS NULL OR sr.expires_at > now())
+            GROUP BY sr.file_path
+            """,
+            (workspace_id, file_paths),
+        )
+        rows = cur.fetchall()
+    return {
+        row[0]: {
+            "active_symbol_claims": int(row[1] or 0),
+            "active_agents": list(row[2] or []),
+        }
+        for row in rows
+    }
+
+
+def dashboard_graph_edges_by_file(
+    conn: Connection,
+    workspace_id: str,
+    file_paths: list[str],
+) -> dict[str, int]:
+    if not file_paths:
+        return {}
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            WITH refs AS (
+                SELECT source.file_path
+                FROM code_edges edge
+                JOIN code_entities source ON source.id = edge.source_entity_id
+                WHERE edge.workspace_id = %s
+                  AND source.file_path = ANY(%s::text[])
+                UNION ALL
+                SELECT target.file_path
+                FROM code_edges edge
+                JOIN code_entities target ON target.id = edge.target_entity_id
+                WHERE edge.workspace_id = %s
+                  AND target.file_path = ANY(%s::text[])
+            )
+            SELECT file_path, count(*)
+            FROM refs
+            GROUP BY file_path
+            """,
+            (workspace_id, file_paths, workspace_id, file_paths),
+        )
+        rows = cur.fetchall()
+    return {row[0]: int(row[1] or 0) for row in rows}
+
+
+def dashboard_handoff_mentions_by_file(
+    conn: Connection,
+    workspace_id: str,
+    file_paths: list[str],
+    limit: int,
+) -> dict[str, int]:
+    if not file_paths:
+        return {}
+    handoffs = list_handoff_summaries(conn, workspace_id, status="open", limit=max(limit, 50))
+    mentions = dict.fromkeys(file_paths, 0)
+    for handoff in handoffs:
+        haystack = " ".join(
+            str(value or "")
+            for value in [
+                handoff.get("summary"),
+                handoff.get("next_steps"),
+                handoff.get("blocked_on"),
+                handoff.get("metadata"),
+            ]
+        )
+        for file_path in file_paths:
+            if file_path and file_path in haystack:
+                mentions[file_path] += 1
+    return mentions
+
+
+def code_risk_score(
+    *,
+    active_file_claims: int,
+    active_symbol_claims: int,
+    changeset_count: int,
+    open_handoff_mentions: int,
+    graph_edges: int,
+) -> int:
+    return (
+        active_file_claims * 5
+        + active_symbol_claims * 3
+        + changeset_count * 2
+        + open_handoff_mentions * 4
+        + min(graph_edges, 10)
+    )
+
+
+def code_risk_level(score: int) -> str:
+    if score >= 7:
+        return "high"
+    if score >= 3:
+        return "medium"
+    return "low"
+
+
+def code_risk_signals(
+    *,
+    active_file_claims: int,
+    active_symbol_claims: int,
+    changeset_count: int,
+    open_handoff_mentions: int,
+    graph_edges: int,
+) -> list[str]:
+    signals = []
+    if active_file_claims:
+        signals.append("active file claim")
+    if active_symbol_claims:
+        signals.append("active symbol claim")
+    if changeset_count:
+        signals.append("recent changes")
+    if open_handoff_mentions:
+        signals.append("mentioned in open handoff")
+    if graph_edges:
+        signals.append("code graph fan-out")
+    return signals or ["tracked"]
+
+
+def code_risk_summary(files: list[dict[str, Any]]) -> dict[str, int]:
+    return {
+        "total_files": len(files),
+        "high": sum(1 for item in files if item.get("risk_level") == "high"),
+        "medium": sum(1 for item in files if item.get("risk_level") == "medium"),
+        "low": sum(1 for item in files if item.get("risk_level") == "low"),
+        "active_claims": sum(
+            int(item.get("active_file_claims") or 0) + int(item.get("active_symbol_claims") or 0)
+            for item in files
+        ),
+    }
 
 
 def dashboard_usage_vs_evidence(

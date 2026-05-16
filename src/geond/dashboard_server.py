@@ -9,6 +9,7 @@ from geond.config import Settings
 from geond.db import connect
 from geond.storage.dashboard import (
     get_agent_activity_events,
+    get_dashboard_code_risk,
     get_dashboard_overview,
     get_dashboard_project_activity,
     get_dashboard_sessions,
@@ -132,6 +133,9 @@ def dashboard_payload(settings: Settings, path: str) -> tuple[int, dict[str, Any
         if endpoint == "project":
             payload = get_dashboard_project_activity(conn, workspace_id, limit=limit)
             return status_for_payload(payload), payload
+        if endpoint == "code-risk":
+            payload = get_dashboard_code_risk(conn, workspace_id, limit=limit)
+            return status_for_payload(payload), payload
         if endpoint == "usage":
             payload = get_dashboard_usage(conn, workspace_id)
             return status_for_payload(payload), payload
@@ -156,6 +160,7 @@ def dashboard_index(settings: Settings | None = None) -> dict[str, Any]:
             "/api/workspaces/{workspace_id}/handoffs",
             "/api/workspaces/{workspace_id}/sessions",
             "/api/workspaces/{workspace_id}/project",
+            "/api/workspaces/{workspace_id}/code-risk",
             "/api/workspaces/{workspace_id}/usage",
         ],
     }
@@ -792,6 +797,7 @@ def mission_control_html() -> str:
       <button class="tab active" type="button" data-view="mission">Mission Control</button>
       <button class="tab" type="button" data-view="sessions">Sessions</button>
       <button class="tab" type="button" data-view="handoffs">Handoffs</button>
+      <button class="tab" type="button" data-view="code-risk">Code Risk</button>
       <button class="tab" type="button" data-view="usage">Usage Evidence</button>
       <button class="tab" type="button" data-view="timeline">Timeline</button>
       <button class="tab" type="button" data-view="trace">Relationships</button>
@@ -854,6 +860,15 @@ def mission_control_html() -> str:
       <div class="session-workspace">
         <div class="session-summary" id="handoff-summary"></div>
         <div class="session-board" id="handoff-board"></div>
+      </div>
+    </section>
+    <section class="view" data-view-panel="code-risk">
+      <div class="session-workspace">
+        <div class="session-summary" id="code-risk-summary"></div>
+        <section>
+          <header><h2>Hot Files</h2></header>
+          <div class="panel"><div class="list" id="code-risk-files"></div></div>
+        </section>
       </div>
     </section>
     <section class="view" data-view-panel="usage">
@@ -937,6 +952,7 @@ def mission_control_html() -> str:
       project: null,
       usage: null,
       handoffs: [],
+      codeRisk: null,
       workspaces: [],
     };
     const qs = new URLSearchParams(location.search);
@@ -957,6 +973,8 @@ def mission_control_html() -> str:
     const sessionBoard = document.querySelector("#session-board");
     const handoffSummary = document.querySelector("#handoff-summary");
     const handoffBoard = document.querySelector("#handoff-board");
+    const codeRiskSummary = document.querySelector("#code-risk-summary");
+    const codeRiskFiles = document.querySelector("#code-risk-files");
     const usageSummary = document.querySelector("#usage-summary");
     const usageSource = document.querySelector("#usage-source");
     const usageEvidence = document.querySelector("#usage-evidence");
@@ -1126,8 +1144,9 @@ def mission_control_html() -> str:
 
     function badgeClass(status) {
       if (["active", "ok", "open", "recorded", "created"].includes(status)) return "ok";
-      if (["expired", "warning"].includes(status)) return "warn";
-      if (["released", "closed", "error", "failed"].includes(status)) return "danger";
+      if (["expired", "warning", "medium"].includes(status)) return "warn";
+      if (["released", "closed", "error", "failed", "high"].includes(status)) return "danger";
+      if (["low"].includes(status)) return "ok";
       return "";
     }
 
@@ -1874,6 +1893,37 @@ def mission_control_html() -> str:
       }
     }
 
+    function renderCodeRiskBoard(payload) {
+      const summary = payload?.summary || {};
+      const files = payload?.files || [];
+      renderStatCards(codeRiskSummary, [
+        ["Files", formatNumber(summary.total_files)],
+        ["High", formatNumber(summary.high)],
+        ["Medium", formatNumber(summary.medium)],
+        ["Low", formatNumber(summary.low)],
+        ["Active Claims", formatNumber(summary.active_claims)],
+      ]);
+      renderList(
+        codeRiskFiles,
+        files,
+        "No code-risk signals for this workspace.",
+        (item) => row(
+          item.file_path,
+          [
+            `score ${formatNumber(item.risk_score)}`,
+            `${formatNumber(item.changeset_count)} changesets`,
+            `${formatNumber(item.active_file_claims)} file claims`,
+            `${formatNumber(item.active_symbol_claims)} symbol claims`,
+            `${formatNumber(item.open_handoff_mentions)} handoffs`,
+            `${formatNumber(item.graph_edges)} graph edges`,
+            (item.risk_signals || []).join(", "),
+          ].filter(Boolean).join(" | "),
+          item.risk_level,
+          item.risk_level
+        )
+      );
+    }
+
     function relationshipPanel(title, rows, emptyText) {
       const panel = document.createElement("section");
       panel.innerHTML = `
@@ -2002,6 +2052,7 @@ def mission_control_html() -> str:
       const overviewUrl = `/api/workspaces/${encoded}/overview?limit=${encodeURIComponent(limit)}`;
       const activityUrl = `/api/workspaces/${encoded}/activity?limit=${encodeURIComponent(limit)}`;
       const projectUrl = `/api/workspaces/${encoded}/project?limit=${encodeURIComponent(limit)}`;
+      const codeRiskUrl = `/api/workspaces/${encoded}/code-risk?limit=${encodeURIComponent(limit)}`;
       const usageUrl = `/api/workspaces/${encoded}/usage`;
       const handoffsUrl = `/api/workspaces/${encoded}/handoffs?limit=${encodeURIComponent(limit)}`;
       const sessionsUrl = [
@@ -2012,6 +2063,7 @@ def mission_control_html() -> str:
       let activityResponse;
       let sessionsResponse;
       let projectResponse;
+      let codeRiskResponse;
       let usageResponse;
       let handoffResponse;
       try {
@@ -2020,6 +2072,7 @@ def mission_control_html() -> str:
           activityResponse,
           sessionsResponse,
           projectResponse,
+          codeRiskResponse,
           usageResponse,
           handoffResponse,
         ] = await Promise.all([
@@ -2027,6 +2080,7 @@ def mission_control_html() -> str:
           fetch(activityUrl),
           fetch(sessionsUrl),
           fetch(projectUrl),
+          fetch(codeRiskUrl),
           fetch(usageUrl),
           fetch(handoffsUrl),
         ]);
@@ -2034,6 +2088,7 @@ def mission_control_html() -> str:
         const activity = await activityResponse.json();
         const sessionPayload = await sessionsResponse.json();
         const projectPayload = await projectResponse.json();
+        const codeRiskPayload = await codeRiskResponse.json();
         const usagePayload = await usageResponse.json();
         const handoffPayload = await handoffResponse.json();
         if (!overviewResponse.ok || overview.status === "not_found") {
@@ -2070,10 +2125,12 @@ def mission_control_html() -> str:
       state.events = events;
       state.sessions = sessions;
       state.project = projectPayload;
+      state.codeRisk = codeRiskPayload;
       state.usage = usagePayload;
       state.handoffs = handoffPayload.handoffs || [];
       renderMetrics(overview.counts || {}, collectAgentKeys(events, sessions, overview).length);
       renderProjectTree(projectPayload);
+      renderCodeRiskBoard(codeRiskPayload);
       renderUsageBoard(usagePayload);
       renderHandoffBoard(handoffPayload);
       renderAgentBoard(events, sessions, overview);
@@ -2118,6 +2175,7 @@ def match_workspace_route(path: str) -> tuple[str, str] | None:
         "handoffs",
         "sessions",
         "project",
+        "code-risk",
         "usage",
     }:
         return None

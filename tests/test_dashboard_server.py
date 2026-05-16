@@ -19,6 +19,10 @@ def test_dashboard_route_matching_and_index() -> None:
     )
     assert match_workspace_route("/api/workspaces/abc-123/sessions") == ("abc-123", "sessions")
     assert match_workspace_route("/api/workspaces/abc-123/project") == ("abc-123", "project")
+    assert match_workspace_route("/api/workspaces/abc-123/code-risk") == (
+        "abc-123",
+        "code-risk",
+    )
     assert match_workspace_route("/api/workspaces/abc-123/usage") == ("abc-123", "usage")
     assert match_workspace_route("/api/workspaces/abc/write") is None
     assert query_limit("limit=5") == 5
@@ -47,6 +51,9 @@ def test_dashboard_root_serves_html_without_database() -> None:
     assert b"Handoffs" in body
     assert b"handoff-summary" in body
     assert b"handoff-board" in body
+    assert b"Code Risk" in body
+    assert b"code-risk-summary" in body
+    assert b"/code-risk" in body
     assert b"Relationships" in body
     assert b"Usage Evidence" in body
     assert b"usage-summary" in body
