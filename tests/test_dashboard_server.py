@@ -67,6 +67,10 @@ def test_dashboard_root_serves_html_without_database() -> None:
     assert b"graph-nodes" in body
     assert b"/lineage" in body
     assert b"Relationships" in body
+    assert b"activity-kind-filter" in body
+    assert b"activity-agent-filter" in body
+    assert b"activity-status-filter" in body
+    assert b"activity_kind" in body
     assert b"Usage Evidence" in body
     assert b"usage-summary" in body
     assert b"/usage" in body

@@ -596,10 +596,23 @@ def get_workspace_lineage_graph(workspace_id: str, limit: int = 100) -> dict[str
 
 
 @mcp.tool()
-def get_agent_activity_events(workspace_id: str, limit: int = 100) -> dict[str, Any]:
+def get_agent_activity_events(
+    workspace_id: str,
+    limit: int = 100,
+    kind: str | None = None,
+    agent: str | None = None,
+    status: str | None = None,
+) -> dict[str, Any]:
     """Return normalized activity events for dashboard, PM-agent, and orchestrator reads."""
     with connect(get_settings()) as conn:
-        return get_agent_activity_events_row(conn, workspace_id, limit=limit)
+        return get_agent_activity_events_row(
+            conn,
+            workspace_id,
+            limit=limit,
+            event_kind=kind,
+            agent_name=agent,
+            status=status,
+        )
 
 
 @mcp.tool()

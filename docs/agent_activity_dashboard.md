@@ -118,7 +118,9 @@ Rows should merge:
 - benchmark runs
 - redaction findings grouped by source
 
-Filters: agent, kind, status, file path, symbol, source, time range.
+Implemented filters: kind, agent, and status on the Timeline tab,
+`/api/workspaces/{id}/activity`, MCP `get_agent_activity_events`, and
+`dashboard-events`. Planned filters: file path, symbol, source, and time range.
 
 ### 4. Collaboration Graph
 
@@ -429,7 +431,7 @@ memory, but visible work state.
 | 0. Product docs | Align on dashboard shape. | This document, README link, backlog entry, and demo-script note exist. |
 | 1. Read model | Expose dashboard-shaped JSON from existing repository functions. | Implemented through `dashboard-overview`, `dashboard-events`, `get_dashboard_overview`, `get_agent_activity_events`, `geond://workspaces/{id}/overview`, and `geond://workspaces/{id}/activity`. |
 | 1.5. Local HTTP API | Serve the same read model over localhost. | Implemented as `geond dashboard serve` with `/health`, `/api/workspaces`, `/api/workspaces/{id}/overview`, `/activity`, `/sessions`, `/project`, `/timeline`, `/lineage`, `/reservations`, and `/handoffs`. |
-| 2. Local UI MVP | Render command center, timeline, agent fleet, handoffs, lineage graph, and usage evidence. | Mission Control, workspace selector, live polling, project-structure activity, horizontally expanding Agent Fleet lanes, session/message cards, reservations, handoff-board status lanes, Code Risk hot files, Changesets review lanes, Graph node/edge drilldowns, lineage counts, Activity Timeline, trace-model tab, `/api/workspaces/{id}/usage`, a Usage Evidence tab, and CLI usage risk signals are served; next add richer filters and drilldowns. |
+| 2. Local UI MVP | Render command center, timeline, agent fleet, handoffs, lineage graph, and usage evidence. | Mission Control, workspace selector, live polling, project-structure activity, horizontally expanding Agent Fleet lanes, session/message cards, reservations, handoff-board status lanes, Code Risk hot files, Changesets review lanes, Graph node/edge drilldowns, lineage counts, filtered Activity Timeline, trace-model tab, `/api/workspaces/{id}/usage`, a Usage Evidence tab, and CLI usage risk signals are served; next add richer detail panes. |
 | 3. Activity projection | Normalize agent activity events for UI and orchestrators. | Agent actions, reservations, handoffs, changesets, and benchmark runs reduce into one ordered event stream. |
 | 4. Hook adapters | Capture real agent lifecycle events. | Codex/Claude Code hook examples record session/tool/stop events without exposing secrets. |
 | 5. PM/orchestrator loop | Use the read model to guide work assignment. | A PM prompt and CLI dry-run can recommend next work, detect blockers, and cite evidence. |

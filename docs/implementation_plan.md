@@ -331,7 +331,8 @@ Tasks:
 - [x] Expand the operational UI with richer handoff board, changeset review,
   and code-risk map views.
 - [x] Expand the operational UI with richer collaboration graph drilldowns.
-- [ ] Add richer filters and detail panes to dashboard review feeds.
+- [x] Add activity kind/agent/status filters to dashboard review feeds.
+- [ ] Add richer detail panes to dashboard review feeds.
 - [x] Add a normalized activity projection so PM agents and orchestrators can
   consume one ordered event stream instead of many tables.
 - [ ] Add optional Codex and Claude Code hook examples that record activity

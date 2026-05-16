@@ -310,6 +310,9 @@ def main() -> None:
     )
     dashboard_events.add_argument("workspace_id_or_uri")
     dashboard_events.add_argument("--limit", type=int, default=100)
+    dashboard_events.add_argument("--kind", dest="event_kind")
+    dashboard_events.add_argument("--agent", dest="agent_name")
+    dashboard_events.add_argument("--status")
 
     dashboard_code_risk = subparsers.add_parser(
         "dashboard-code-risk",
@@ -930,6 +933,9 @@ def main() -> None:
                 conn,
                 args.workspace_id_or_uri,
                 limit=args.limit,
+                event_kind=args.event_kind,
+                agent_name=args.agent_name,
+                status=args.status,
             )
         print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
         return

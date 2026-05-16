@@ -127,11 +127,22 @@ def get_agent_activity_events(
     conn: Connection,
     workspace_id_or_uri: str,
     limit: int = 100,
+    event_kind: str | None = None,
+    agent_name: str | None = None,
+    status: str | None = None,
 ) -> dict[str, Any]:
+    event_kind = event_kind.strip() if event_kind else None
+    agent_name = agent_name.strip() if agent_name else None
+    status = status.strip() if status else None
     workspace = resolve_dashboard_workspace(conn, workspace_id_or_uri)
     if workspace is None:
         return {
             "workspace_id": workspace_id_or_uri,
+            "filters": {
+                "kind": event_kind,
+                "agent_name": agent_name,
+                "status": status,
+            },
             "events": [],
         }
     workspace_id, workspace_uri, workspace_name = workspace
@@ -298,6 +309,9 @@ def get_agent_activity_events(
                 FROM benchmark_runs br
                 WHERE br.workspace_id = %s
             ) events
+                        WHERE (%s::text IS NULL OR kind = %s)
+                            AND (%s::text IS NULL OR agent_name = %s)
+                            AND (%s::text IS NULL OR status = %s)
             ORDER BY occurred_at DESC
             LIMIT %s
             """,
@@ -310,6 +324,12 @@ def get_agent_activity_events(
                 workspace_id,
                 workspace_id,
                 workspace_id,
+                event_kind,
+                event_kind,
+                agent_name,
+                agent_name,
+                status,
+                status,
                 limit,
             ),
         )
@@ -318,6 +338,11 @@ def get_agent_activity_events(
         "workspace_id": workspace_id,
         "workspace_uri": workspace_uri,
         "workspace_name": workspace_name,
+        "filters": {
+            "kind": event_kind,
+            "agent_name": agent_name,
+            "status": status,
+        },
         "events": [activity_event(row) for row in rows],
     }
 

@@ -64,7 +64,7 @@ flowchart LR
 
 ## Planned Next
 
-- Expand the read-only localhost dashboard with deeper filters and drilldowns on top of the current mission-control, agent-lane, session, handoff-board, code-risk, changeset, graph, usage, and timeline views.
+- Expand the read-only localhost dashboard with deeper detail panes on top of the current mission-control, agent-lane, session, handoff-board, code-risk, changeset, graph, usage, filtered timeline, and relationship views.
 - Add normalized activity events so agent lifecycle hooks, CLI workflows, trace adapters, and future orchestrators can read one ordered stream.
 - Continue improving adoption paths with editor commands, TestPyPI/release observation, and smaller local setup options.
 
@@ -492,9 +492,10 @@ Agent collaboration loop:
 5. Human review stays in the web app. The dashboard shows the same evidence as
     a read-only workflow: Agent Lanes for current ownership and blockers,
     Sessions for user prompts and agent replies, Timeline for ordered events,
-    Relationships for agent-to-session/work links, and Project Structure for hot
-    files. The human can decide whether to continue, reassign, inspect a handoff,
-    ask an agent to release a claim, or open the underlying git diff.
+    Graph for bounded lineage nodes and edges, Relationships for
+    agent-to-session/work links, and Project Structure for hot files. The human
+    can decide whether to continue, reassign, inspect a handoff, ask an agent to
+    release a claim, or open the underlying git diff.
 
 MCP clients can also call `record_changeset` with `workspace_id` or
 `workspace_uri` plus a `files` array. Each file entry supports `file_path`,
@@ -524,6 +525,9 @@ handoff-board status lanes, lineage counts, timeline, Usage Evidence
 totals/source rollups, Code Risk hot files, Changesets review lanes,
 Collaboration Graph node/edge drilldowns, and relationship rows that connect
 agents to session evidence and active work.
+The Timeline tab and `/activity` endpoint accept bounded `kind`, `agent`, and
+`status` filters; automation can use the same filters through
+`geond dashboard-events --kind agent_action --agent copilot --status recorded`.
 The `/health` and `/api` responses include safe database metadata so a local
 browser can distinguish Local PostgreSQL from Azure PostgreSQL without exposing
 credentials.

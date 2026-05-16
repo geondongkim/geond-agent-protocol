@@ -124,6 +124,14 @@ def test_dashboard_overview_and_activity_events() -> None:
 
             overview = get_dashboard_overview(conn, workspace_id, limit=10)
             activity = get_agent_activity_events(conn, workspace_uri, limit=20)
+            filtered_activity = get_agent_activity_events(
+                conn,
+                workspace_uri,
+                limit=20,
+                event_kind="agent_action",
+                agent_name="agent-a",
+                status="recorded",
+            )
             sessions = get_dashboard_sessions(conn, workspace_id, limit=10, message_limit=2)
             workspaces = get_dashboard_workspaces(conn, limit=50)
             project = get_dashboard_project_activity(conn, workspace_id, limit=10)
@@ -155,6 +163,13 @@ def test_dashboard_overview_and_activity_events() -> None:
                 event["kind"] == "session" and event["agent_name"] == "codex"
                 for event in activity["events"]
             )
+            assert filtered_activity["filters"] == {
+                "kind": "agent_action",
+                "agent_name": "agent-a",
+                "status": "recorded",
+            }
+            assert [event["kind"] for event in filtered_activity["events"]] == ["agent_action"]
+            assert filtered_activity["events"][0]["agent_name"] == "agent-a"
             assert sessions["status"] == "ok"
             assert sessions["sessions"][0]["agent_name"] == "codex"
             assert sessions["sessions"][0]["messages"][0]["role"] == "assistant_or_tool"

@@ -107,7 +107,15 @@ def dashboard_payload(settings: Settings, path: str) -> tuple[int, dict[str, Any
             payload = get_dashboard_overview(conn, workspace_id, limit=limit)
             return status_for_payload(payload), payload
         if endpoint == "activity":
-            payload = get_agent_activity_events(conn, workspace_id, limit=limit)
+            query = parse_qs(parsed.query)
+            payload = get_agent_activity_events(
+                conn,
+                workspace_id,
+                limit=limit,
+                event_kind=query.get("kind", [None])[0],
+                agent_name=query.get("agent", [None])[0],
+                status=query.get("status", [None])[0],
+            )
             return status_for_payload(payload), payload
         if endpoint == "timeline":
             payload = get_workspace_timeline(conn, workspace_id, limit=limit)
@@ -318,6 +326,25 @@ def mission_control_html() -> str:
       background: #fff;
       color: var(--text);
       border-color: var(--line);
+    }
+    .filter-strip {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(110px, auto));
+      gap: 10px;
+      align-items: end;
+      margin-bottom: 12px;
+    }
+    .filter-strip label {
+      display: grid;
+      gap: 4px;
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    .filter-strip input, .filter-strip select {
+      min-width: 0;
+      background: var(--surface);
     }
     .status-line {
       min-height: 20px;
@@ -754,6 +781,7 @@ def mission_control_html() -> str:
       .toolbar { grid-template-columns: 1fr; width: 100%; }
       main { height: calc(100vh - 145px); padding: 10px; }
       .overview-shell, .split, .lineage, .trace-grid { grid-template-columns: 1fr; }
+      .filter-strip { grid-template-columns: 1fr; }
       .mode-strip { grid-template-columns: 1fr; }
       .session-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -924,6 +952,32 @@ def mission_control_html() -> str:
           <h2>Activity Timeline</h2>
           <span class="badge" id="activity-count">0 events</span>
         </header>
+        <div class="filter-strip" aria-label="Activity filters">
+          <label>
+            Kind
+            <select id="activity-kind-filter">
+              <option value="">All</option>
+              <option value="session">Session</option>
+              <option value="agent_action">Agent Action</option>
+              <option value="file_reservation">File Reservation</option>
+              <option value="symbol_reservation">Symbol Reservation</option>
+              <option value="reservation_event">Reservation Event</option>
+              <option value="handoff_summary">Handoff Summary</option>
+              <option value="changeset">Changeset</option>
+              <option value="benchmark_run">Benchmark Run</option>
+            </select>
+          </label>
+          <label>
+            Agent
+            <input id="activity-agent-filter" type="text" placeholder="any" />
+          </label>
+          <label>
+            Status
+            <input id="activity-status-filter" type="text" placeholder="any" />
+          </label>
+          <button class="secondary" id="activity-filter-apply" type="button">Apply</button>
+          <button class="secondary" id="activity-filter-clear" type="button">Clear</button>
+        </div>
         <div class="timeline" id="timeline"></div>
       </section>
     </section>
@@ -977,6 +1031,7 @@ def mission_control_html() -> str:
       loading: false,
       overview: null,
       events: [],
+      activityFilters: { kind: "", agent: "", status: "" },
       sessions: [],
       project: null,
       usage: null,
@@ -1016,6 +1071,11 @@ def mission_control_html() -> str:
     const usageEvidence = document.querySelector("#usage-evidence");
     const timeline = document.querySelector("#timeline");
     const countBadge = document.querySelector("#activity-count");
+    const activityKindFilter = document.querySelector("#activity-kind-filter");
+    const activityAgentFilter = document.querySelector("#activity-agent-filter");
+    const activityStatusFilter = document.querySelector("#activity-status-filter");
+    const activityFilterApply = document.querySelector("#activity-filter-apply");
+    const activityFilterClear = document.querySelector("#activity-filter-clear");
     const lineageNodes = document.querySelector("#lineage-nodes");
     const lineageEdges = document.querySelector("#lineage-edges");
     const copyApi = document.querySelector("#copy-api");
@@ -1023,6 +1083,9 @@ def mission_control_html() -> str:
     const requestedWorkspace = qs.get("workspace") || "";
     limitInput.value = qs.get("limit") || "100";
     refreshInput.value = qs.get("refresh") || "10";
+    activityKindFilter.value = qs.get("activity_kind") || "";
+    activityAgentFilter.value = qs.get("activity_agent") || "";
+    activityStatusFilter.value = qs.get("activity_status") || "";
 
     document.querySelector("#controls").addEventListener("submit", (event) => {
       event.preventDefault();
@@ -1033,6 +1096,13 @@ def mission_control_html() -> str:
       state.autoRefreshSeconds = Number(refreshInput.value || 0);
       scheduleAutoRefresh();
       updateUrl();
+    });
+    activityFilterApply.addEventListener("click", () => loadDashboard());
+    activityFilterClear.addEventListener("click", () => {
+      activityKindFilter.value = "";
+      activityAgentFilter.value = "";
+      activityStatusFilter.value = "";
+      loadDashboard();
     });
     for (const button of document.querySelectorAll(".tab")) {
       button.addEventListener("click", () => switchView(button.dataset.view));
@@ -1159,13 +1229,33 @@ def mission_control_html() -> str:
       }, state.autoRefreshSeconds * 1000);
     }
 
+    function readActivityFilters() {
+      return {
+        kind: activityKindFilter.value,
+        agent: activityAgentFilter.value.trim(),
+        status: activityStatusFilter.value.trim(),
+      };
+    }
+
+    function setOptionalQueryParam(params, key, value) {
+      if (value) {
+        params.set(key, value);
+      } else {
+        params.delete(key);
+      }
+    }
+
     function updateUrl() {
       const workspace = workspaceInput.value.trim();
       if (!workspace) return;
       const url = new URL(location.href);
+      const filters = state.activityFilters || readActivityFilters();
       url.searchParams.set("workspace", workspace);
       url.searchParams.set("limit", limitInput.value);
       url.searchParams.set("refresh", refreshInput.value);
+      setOptionalQueryParam(url.searchParams, "activity_kind", filters.kind);
+      setOptionalQueryParam(url.searchParams, "activity_agent", filters.agent);
+      setOptionalQueryParam(url.searchParams, "activity_status", filters.status);
       history.replaceState(null, "", url);
     }
 
@@ -1346,7 +1436,11 @@ def mission_control_html() -> str:
 
     function renderTimeline(events) {
       timeline.replaceChildren();
-      countBadge.textContent = `${events.length} events`;
+      const filters = state.activityFilters || {};
+      const filtered = filters.kind || filters.agent || filters.status;
+      countBadge.textContent = filtered
+        ? `${events.length} filtered events`
+        : `${events.length} events`;
       if (!events.length) {
         const empty = document.createElement("div");
         empty.className = "empty";
@@ -2215,11 +2309,16 @@ def mission_control_html() -> str:
       state.loading = true;
       state.workspace = workspace;
       state.limit = limit;
+      state.activityFilters = readActivityFilters();
       updateWorkspaceMeta();
       if (!options.silent) setStatus("Loading dashboard data...");
       const encoded = encodeURIComponent(workspace);
       const overviewUrl = `/api/workspaces/${encoded}/overview?limit=${encodeURIComponent(limit)}`;
-      const activityUrl = `/api/workspaces/${encoded}/activity?limit=${encodeURIComponent(limit)}`;
+      const activityParams = new URLSearchParams({ limit });
+      setOptionalQueryParam(activityParams, "kind", state.activityFilters.kind);
+      setOptionalQueryParam(activityParams, "agent", state.activityFilters.agent);
+      setOptionalQueryParam(activityParams, "status", state.activityFilters.status);
+      const activityUrl = `/api/workspaces/${encoded}/activity?${activityParams.toString()}`;
       const lineageUrl = `/api/workspaces/${encoded}/lineage?limit=${encodeURIComponent(limit)}`;
       const projectUrl = `/api/workspaces/${encoded}/project?limit=${encodeURIComponent(limit)}`;
       const codeRiskUrl = `/api/workspaces/${encoded}/code-risk?limit=${encodeURIComponent(limit)}`;

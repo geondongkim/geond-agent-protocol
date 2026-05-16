@@ -192,6 +192,50 @@ def test_usage_summary_cli_wires_storage(monkeypatch, capsys) -> None:
     }
 
 
+def test_dashboard_events_cli_wires_filters(monkeypatch, capsys) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_connect(settings) -> FakeConnection:  # noqa: ANN001
+        return FakeConnection()
+
+    def fake_get_agent_activity_events(conn, workspace_id_or_uri: str, **kwargs):  # noqa: ANN001, ANN202
+        captured["workspace_id_or_uri"] = workspace_id_or_uri
+        captured.update(kwargs)
+        return {"status": "ok", "events": [{"kind": "agent_action"}]}
+
+    monkeypatch.setattr(cli, "connect", fake_connect)
+    monkeypatch.setattr(cli, "get_agent_activity_events", fake_get_agent_activity_events)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "geond",
+            "dashboard-events",
+            "file:///repo",
+            "--limit",
+            "7",
+            "--kind",
+            "agent_action",
+            "--agent",
+            "copilot",
+            "--status",
+            "recorded",
+        ],
+    )
+
+    cli.main()
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["events"][0]["kind"] == "agent_action"
+    assert captured == {
+        "workspace_id_or_uri": "file:///repo",
+        "limit": 7,
+        "event_kind": "agent_action",
+        "agent_name": "copilot",
+        "status": "recorded",
+    }
+
+
 def test_dashboard_code_risk_cli_wires_storage(monkeypatch, capsys) -> None:
     captured: dict[str, object] = {}
 
