@@ -9,6 +9,7 @@ from geond.config import Settings
 from geond.db import connect
 from geond.storage.dashboard import (
     get_agent_activity_events,
+    get_dashboard_changesets,
     get_dashboard_code_risk,
     get_dashboard_overview,
     get_dashboard_project_activity,
@@ -136,6 +137,9 @@ def dashboard_payload(settings: Settings, path: str) -> tuple[int, dict[str, Any
         if endpoint == "code-risk":
             payload = get_dashboard_code_risk(conn, workspace_id, limit=limit)
             return status_for_payload(payload), payload
+        if endpoint == "changesets":
+            payload = get_dashboard_changesets(conn, workspace_id, limit=limit)
+            return status_for_payload(payload), payload
         if endpoint == "usage":
             payload = get_dashboard_usage(conn, workspace_id)
             return status_for_payload(payload), payload
@@ -161,6 +165,7 @@ def dashboard_index(settings: Settings | None = None) -> dict[str, Any]:
             "/api/workspaces/{workspace_id}/sessions",
             "/api/workspaces/{workspace_id}/project",
             "/api/workspaces/{workspace_id}/code-risk",
+            "/api/workspaces/{workspace_id}/changesets",
             "/api/workspaces/{workspace_id}/usage",
         ],
     }
@@ -798,6 +803,7 @@ def mission_control_html() -> str:
       <button class="tab" type="button" data-view="sessions">Sessions</button>
       <button class="tab" type="button" data-view="handoffs">Handoffs</button>
       <button class="tab" type="button" data-view="code-risk">Code Risk</button>
+      <button class="tab" type="button" data-view="changesets">Changesets</button>
       <button class="tab" type="button" data-view="usage">Usage Evidence</button>
       <button class="tab" type="button" data-view="timeline">Timeline</button>
       <button class="tab" type="button" data-view="trace">Relationships</button>
@@ -869,6 +875,12 @@ def mission_control_html() -> str:
           <header><h2>Hot Files</h2></header>
           <div class="panel"><div class="list" id="code-risk-files"></div></div>
         </section>
+      </div>
+    </section>
+    <section class="view" data-view-panel="changesets">
+      <div class="session-workspace">
+        <div class="session-summary" id="changeset-summary"></div>
+        <div class="session-board" id="changeset-board"></div>
       </div>
     </section>
     <section class="view" data-view-panel="usage">
@@ -953,6 +965,7 @@ def mission_control_html() -> str:
       usage: null,
       handoffs: [],
       codeRisk: null,
+      changesets: [],
       workspaces: [],
     };
     const qs = new URLSearchParams(location.search);
@@ -975,6 +988,8 @@ def mission_control_html() -> str:
     const handoffBoard = document.querySelector("#handoff-board");
     const codeRiskSummary = document.querySelector("#code-risk-summary");
     const codeRiskFiles = document.querySelector("#code-risk-files");
+    const changesetSummary = document.querySelector("#changeset-summary");
+    const changesetBoard = document.querySelector("#changeset-board");
     const usageSummary = document.querySelector("#usage-summary");
     const usageSource = document.querySelector("#usage-source");
     const usageEvidence = document.querySelector("#usage-evidence");
@@ -1924,6 +1939,94 @@ def mission_control_html() -> str:
       );
     }
 
+    function changesetMeta(changeset) {
+      return [
+        changeset.git_commit ? shortId(changeset.git_commit) : null,
+        changeset.branch,
+        changeset.intent,
+        changeset.created_at ? new Date(changeset.created_at).toLocaleString() : null,
+      ].filter(Boolean).join(" | ");
+    }
+
+    function changesetCard(changeset) {
+      const card = document.createElement("article");
+      card.className = "session-card";
+      card.innerHTML = `
+        <div>
+          <div class="title"></div>
+          <div class="meta"></div>
+        </div>
+        <div class="session-facts"></div>
+        <div class="mini-list"></div>`;
+      card.querySelector(".title").textContent = changeset.summary || "Changeset";
+      card.querySelector(".meta").textContent = changesetMeta(changeset);
+      const facts = [
+        ["files", formatNumber(changeset.file_count)],
+        ["linked", formatNumber(changeset.linked_entity_count)],
+        ["+", formatNumber(changeset.total_additions)],
+        ["-", formatNumber(changeset.total_deletions)],
+      ];
+      card.querySelector(".session-facts").replaceChildren(
+        ...facts.map(([label, value]) => {
+          const item = document.createElement("span");
+          item.className = "badge";
+          item.textContent = `${label}: ${value}`;
+          return item;
+        })
+      );
+      const list = card.querySelector(".mini-list");
+      if (!(changeset.files || []).length) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = "No changed files recorded.";
+        list.append(empty);
+        return card;
+      }
+      for (const file of changeset.files.slice(0, 12)) {
+        list.append(row(
+          file.file_path,
+          [`+${file.additions || 0}`, `-${file.deletions || 0}`].join(" | "),
+          file.status || "ok",
+          file.status || "file"
+        ));
+      }
+      return card;
+    }
+
+    function renderChangesetBoard(payload) {
+      const summary = payload?.summary || {};
+      const changesets = payload?.changesets || [];
+      renderStatCards(changesetSummary, [
+        ["Changesets", formatNumber(summary.changesets)],
+        ["Files", formatNumber(summary.files)],
+        ["Linked", formatNumber(summary.linked_entities)],
+        ["Additions", formatNumber(summary.additions)],
+        ["Deletions", formatNumber(summary.deletions)],
+      ]);
+      changesetBoard.replaceChildren();
+      if (!changesets.length) {
+        const lane = document.createElement("section");
+        lane.className = "session-lane";
+        lane.innerHTML = `
+          <div class="lane-head"><h2>No changesets</h2></div>
+          <div class="lane-body"><div class="empty">No changesets recorded.</div></div>`;
+        changesetBoard.append(lane);
+        return;
+      }
+      const grouped = new Map();
+      for (const changeset of changesets) {
+        const key = changeset.branch || "unknown branch";
+        if (!grouped.has(key)) grouped.set(key, []);
+        grouped.get(key).push(changeset);
+      }
+      for (const [branch, branchChangesets] of grouped.entries()) {
+        const lane = laneShell(branch, `${branchChangesets.length} changesets`);
+        const body = lane.querySelector(".lane-body");
+        for (const changeset of branchChangesets) body.append(changesetCard(changeset));
+        changesetBoard.append(lane);
+      }
+    }
+
     function relationshipPanel(title, rows, emptyText) {
       const panel = document.createElement("section");
       panel.innerHTML = `
@@ -2053,6 +2156,9 @@ def mission_control_html() -> str:
       const activityUrl = `/api/workspaces/${encoded}/activity?limit=${encodeURIComponent(limit)}`;
       const projectUrl = `/api/workspaces/${encoded}/project?limit=${encodeURIComponent(limit)}`;
       const codeRiskUrl = `/api/workspaces/${encoded}/code-risk?limit=${encodeURIComponent(limit)}`;
+      const changesetsUrl = [
+        `/api/workspaces/${encoded}/changesets?limit=${encodeURIComponent(limit)}`
+      ].join("");
       const usageUrl = `/api/workspaces/${encoded}/usage`;
       const handoffsUrl = `/api/workspaces/${encoded}/handoffs?limit=${encodeURIComponent(limit)}`;
       const sessionsUrl = [
@@ -2064,6 +2170,7 @@ def mission_control_html() -> str:
       let sessionsResponse;
       let projectResponse;
       let codeRiskResponse;
+      let changesetsResponse;
       let usageResponse;
       let handoffResponse;
       try {
@@ -2073,6 +2180,7 @@ def mission_control_html() -> str:
           sessionsResponse,
           projectResponse,
           codeRiskResponse,
+          changesetsResponse,
           usageResponse,
           handoffResponse,
         ] = await Promise.all([
@@ -2081,6 +2189,7 @@ def mission_control_html() -> str:
           fetch(sessionsUrl),
           fetch(projectUrl),
           fetch(codeRiskUrl),
+          fetch(changesetsUrl),
           fetch(usageUrl),
           fetch(handoffsUrl),
         ]);
@@ -2089,6 +2198,7 @@ def mission_control_html() -> str:
         const sessionPayload = await sessionsResponse.json();
         const projectPayload = await projectResponse.json();
         const codeRiskPayload = await codeRiskResponse.json();
+        const changesetsPayload = await changesetsResponse.json();
         const usagePayload = await usageResponse.json();
         const handoffPayload = await handoffResponse.json();
         if (!overviewResponse.ok || overview.status === "not_found") {
@@ -2126,11 +2236,13 @@ def mission_control_html() -> str:
       state.sessions = sessions;
       state.project = projectPayload;
       state.codeRisk = codeRiskPayload;
+      state.changesets = changesetsPayload.changesets || [];
       state.usage = usagePayload;
       state.handoffs = handoffPayload.handoffs || [];
       renderMetrics(overview.counts || {}, collectAgentKeys(events, sessions, overview).length);
       renderProjectTree(projectPayload);
       renderCodeRiskBoard(codeRiskPayload);
+      renderChangesetBoard(changesetsPayload);
       renderUsageBoard(usagePayload);
       renderHandoffBoard(handoffPayload);
       renderAgentBoard(events, sessions, overview);
@@ -2176,6 +2288,7 @@ def match_workspace_route(path: str) -> tuple[str, str] | None:
         "sessions",
         "project",
         "code-risk",
+        "changesets",
         "usage",
     }:
         return None

@@ -583,6 +583,72 @@ def get_dashboard_code_risk(
     }
 
 
+def get_dashboard_changesets(
+    conn: Connection,
+    workspace_id_or_uri: str,
+    limit: int = 50,
+) -> dict[str, Any]:
+    workspace = resolve_dashboard_workspace(conn, workspace_id_or_uri)
+    if workspace is None:
+        return {
+            "workspace_id": workspace_id_or_uri,
+            "status": "not_found",
+            "summary": {},
+            "changesets": [],
+        }
+    workspace_id, workspace_uri, workspace_name = workspace
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            WITH recent AS (
+                SELECT c.id, c.git_commit, c.branch, c.intent, c.summary,
+                       c.metadata, c.created_at
+                FROM changesets c
+                WHERE c.workspace_id = %s
+                ORDER BY c.created_at DESC
+                LIMIT %s
+            )
+            SELECT
+                r.id::text,
+                r.git_commit,
+                r.branch,
+                r.intent,
+                r.summary,
+                r.metadata,
+                r.created_at,
+                COALESCE(
+                    jsonb_agg(
+                        jsonb_build_object(
+                            'file_path', cf.file_path,
+                            'status', cf.status,
+                            'additions', cf.additions,
+                            'deletions', cf.deletions
+                        )
+                        ORDER BY cf.file_path
+                    ) FILTER (WHERE cf.id IS NOT NULL),
+                    '[]'::jsonb
+                ) AS files,
+                count(DISTINCT celnk.code_entity_id) AS linked_entity_count
+            FROM recent r
+            LEFT JOIN change_files cf ON cf.changeset_id = r.id
+            LEFT JOIN change_entities celnk ON celnk.changeset_id = r.id
+            GROUP BY r.id, r.git_commit, r.branch, r.intent, r.summary, r.metadata, r.created_at
+            ORDER BY r.created_at DESC
+            """,
+            (workspace_id, limit),
+        )
+        rows = cur.fetchall()
+    changesets = [dashboard_changeset(row) for row in rows]
+    return {
+        "workspace_id": workspace_id,
+        "workspace_uri": workspace_uri,
+        "workspace_name": workspace_name,
+        "status": "ok",
+        "summary": dashboard_changesets_summary(changesets),
+        "changesets": changesets,
+    }
+
+
 def get_dashboard_sessions(
     conn: Connection,
     workspace_id_or_uri: str,
@@ -1135,6 +1201,34 @@ def code_risk_summary(files: list[dict[str, Any]]) -> dict[str, int]:
             int(item.get("active_file_claims") or 0) + int(item.get("active_symbol_claims") or 0)
             for item in files
         ),
+    }
+
+
+def dashboard_changeset(row: tuple[Any, ...]) -> dict[str, Any]:
+    files = list(row[7] or [])
+    return {
+        "changeset_id": row[0],
+        "git_commit": row[1],
+        "branch": row[2],
+        "intent": row[3],
+        "summary": row[4],
+        "metadata": row[5] or {},
+        "created_at": row[6].isoformat() if row[6] else None,
+        "files": files,
+        "file_count": len(files),
+        "linked_entity_count": int(row[8] or 0),
+        "total_additions": sum(int(item.get("additions") or 0) for item in files),
+        "total_deletions": sum(int(item.get("deletions") or 0) for item in files),
+    }
+
+
+def dashboard_changesets_summary(changesets: list[dict[str, Any]]) -> dict[str, int]:
+    return {
+        "changesets": len(changesets),
+        "files": sum(int(item.get("file_count") or 0) for item in changesets),
+        "linked_entities": sum(int(item.get("linked_entity_count") or 0) for item in changesets),
+        "additions": sum(int(item.get("total_additions") or 0) for item in changesets),
+        "deletions": sum(int(item.get("total_deletions") or 0) for item in changesets),
     }
 
 

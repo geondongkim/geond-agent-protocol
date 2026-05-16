@@ -64,7 +64,7 @@ flowchart LR
 
 ## Planned Next
 
-- Expand the read-only localhost dashboard with collaboration graph and deeper drilldowns on top of the current mission-control, agent-lane, session, handoff-board, code-risk, usage, and timeline views.
+- Expand the read-only localhost dashboard with collaboration graph and deeper drilldowns on top of the current mission-control, agent-lane, session, handoff-board, code-risk, changeset, usage, and timeline views.
 - Add normalized activity events so agent lifecycle hooks, CLI workflows, trace adapters, and future orchestrators can read one ordered stream.
 - Continue improving adoption paths with editor commands, TestPyPI/release observation, and smaller local setup options.
 
@@ -513,14 +513,15 @@ Read-only endpoints include `/health`,
 `/api/workspaces/{workspace_id}/activity`,
 `/api/workspaces/{workspace_id}/sessions`,
 `/api/workspaces/{workspace_id}/project`,
-`/api/workspaces/{workspace_id}/code-risk`, and
+`/api/workspaces/{workspace_id}/code-risk`,
+`/api/workspaces/{workspace_id}/changesets`, and
 `/api/workspaces/{workspace_id}/usage`. Open
 `http://127.0.0.1:8765/` for the local Command Center with a workspace selector,
 database source badge, live refresh, horizontal Agent Fleet lanes, agent
 switchboard, project-structure activity, session/message cards, reservations,
 handoff-board status lanes, lineage counts, timeline, Usage Evidence
-totals/source rollups, Code Risk hot files, and relationship rows that connect
-agents to session evidence and active work.
+totals/source rollups, Code Risk hot files, Changesets review lanes, and
+relationship rows that connect agents to session evidence and active work.
 The `/health` and `/api` responses include safe database metadata so a local
 browser can distinguish Local PostgreSQL from Azure PostgreSQL without exposing
 credentials.

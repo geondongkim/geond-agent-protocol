@@ -328,8 +328,8 @@ Tasks:
 - [x] Build a compact operational UI with mission-control tabs, horizontally
   expanding agent lanes, session/message cards, reservations, handoffs, lineage
   counts, and activity timeline.
-- [x] Expand the operational UI with richer handoff board and code-risk map
-  views.
+- [x] Expand the operational UI with richer handoff board, changeset review,
+  and code-risk map views.
 - [ ] Expand the operational UI with richer collaboration graph drilldowns.
 - [x] Add a normalized activity projection so PM agents and orchestrators can
   consume one ordered event stream instead of many tables.
