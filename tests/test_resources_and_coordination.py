@@ -397,3 +397,91 @@ def build_answer(prompt):
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM workspaces WHERE id = %s", (workspace_id,))
             conn.commit()
+
+
+def test_agent_actions_and_changesets_can_link_to_sessions() -> None:
+    settings = get_settings()
+    workspace_uri = f"file:///tmp/geond-session-link-test-{uuid4()}"
+
+    try:
+        conn = connect(settings)
+    except psycopg.OperationalError as exc:
+        pytest.skip(f"Postgres integration database is not available: {exc}")
+
+    with conn:
+        try:
+            run_schema_file(conn, SCHEMA)
+        except psycopg.Error as exc:
+            pytest.skip(f"Postgres integration schema is not available: {exc}")
+
+        workspace_id = upsert_workspace(
+            conn,
+            root_uri=workspace_uri,
+            name="session-link-fixture",
+            metadata={"source": "pytest"},
+        )
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO sessions (workspace_id, source, external_id, title, metadata)
+                    VALUES (%s, %s, %s, %s, '{}'::jsonb)
+                    RETURNING id::text
+                    """,
+                    (
+                        workspace_id,
+                        "codex",
+                        "session-link-external",
+                        "Session linkage fixture",
+                    ),
+                )
+                session_id = cur.fetchone()[0]
+            conn.commit()
+
+            action_id = record_agent_action(
+                conn,
+                workspace_id=workspace_id,
+                agent_name="agent-a",
+                action_type="task_start",
+                summary="Start linked work",
+                session_external_id="session-link-external",
+            )
+            changeset = record_changeset(
+                conn,
+                workspace_id=workspace_id,
+                files=[{"file_path": "service.py", "status": "modified"}],
+                summary="Linked change evidence",
+                session_id=session_id,
+            )
+
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT session_id::text FROM agent_actions WHERE id = %s",
+                    (action_id,),
+                )
+                action_session_id = cur.fetchone()[0]
+                cur.execute(
+                    "SELECT session_id::text FROM changesets WHERE id = %s",
+                    (changeset["changeset_id"],),
+                )
+                changeset_session_id = cur.fetchone()[0]
+
+            lineage = get_workspace_lineage(conn, workspace_id)
+            assert action_session_id == session_id
+            assert changeset_session_id == session_id
+            assert any(
+                edge["kind"] == "session_contains"
+                and edge["source"] == f"session:{session_id}"
+                and edge["target"] == f"agent_action:{action_id}"
+                for edge in lineage["edges"]
+            )
+            assert any(
+                edge["kind"] == "session_contains"
+                and edge["source"] == f"session:{session_id}"
+                and edge["target"] == f"changeset:{changeset['changeset_id']}"
+                for edge in lineage["edges"]
+            )
+        finally:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM workspaces WHERE id = %s", (workspace_id,))
+            conn.commit()

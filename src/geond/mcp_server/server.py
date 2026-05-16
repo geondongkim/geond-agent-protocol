@@ -245,6 +245,8 @@ def record_changeset(
     intent: str | None = None,
     summary: str = "",
     metadata: dict[str, Any] | None = None,
+    session_id: str | None = None,
+    session_external_id: str | None = None,
 ) -> dict[str, Any]:
     """Record a changeset with changed files and optional unified diff patches."""
     if not workspace_id and not workspace_uri:
@@ -267,6 +269,8 @@ def record_changeset(
             intent=intent,
             summary=summary,
             metadata=metadata,
+            session_id=session_id,
+            session_external_id=session_external_id,
         )
 
 
@@ -278,6 +282,8 @@ def record_agent_action(
     summary: str,
     intent: str | None = None,
     status: str = "recorded",
+    session_id: str | None = None,
+    session_external_id: str | None = None,
 ) -> dict[str, str]:
     """Record what an agent is doing so other agents can discover it later."""
     with connect(get_settings()) as conn:
@@ -289,6 +295,8 @@ def record_agent_action(
             summary=summary,
             intent=intent,
             status=status,
+            session_id=session_id,
+            session_external_id=session_external_id,
         )
     return {"action_id": action_id}
 

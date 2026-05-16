@@ -22,7 +22,7 @@ from geond.code_graph.tree_sitter_indexer import index_tree_sitter_path
 from geond.code_graph.ts_js_indexer import index_ts_js_path
 from geond.config import get_settings
 from geond.dashboard_server import serve_dashboard
-from geond.db import connect, run_schema_file
+from geond.db import connect, discover_schema_files, run_schema_file, run_schema_migrations
 from geond.doctor import collect_doctor_report, format_doctor_report
 from geond.embeddings import get_embedding_provider
 from geond.install import (
@@ -61,6 +61,7 @@ from geond.storage.repository import (
     list_handoff_summaries,
     list_reservation_events,
     list_workspace_aliases,
+    record_agent_action,
     record_changeset,
     record_handoff_summary,
     record_workspace_fingerprints,
@@ -188,8 +189,20 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="geond")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    migrate = subparsers.add_parser("migrate", help="Apply a SQL schema file")
-    migrate.add_argument("--schema", type=Path, default=Path("schemas/001_initial.sql"))
+    migrate = subparsers.add_parser("migrate", help="Apply SQL schema files")
+    migrate.add_argument(
+        "--schema",
+        dest="schemas",
+        type=Path,
+        action="append",
+        help="Schema file to apply immediately; repeatable. Defaults to schemas/001_initial.sql.",
+    )
+    migrate.add_argument(
+        "--all",
+        action="store_true",
+        help="Apply sorted schema migrations once using schema_migrations.",
+    )
+    migrate.add_argument("--schemas-dir", type=Path, default=Path("schemas"))
 
     doctor = subparsers.add_parser("doctor", help="Check local Geond setup")
     doctor.add_argument("--format", choices=["json", "text"], default="json")
@@ -574,6 +587,19 @@ def main() -> None:
     record_handoff.add_argument("--template", default="standard")
     record_handoff.add_argument("--status", default="open")
 
+    record_action = subparsers.add_parser(
+        "record-agent-action",
+        help="Record what an agent is doing for dashboard and lineage reads",
+    )
+    record_action.add_argument("workspace_id_or_uri")
+    record_action.add_argument("--agent-name", required=True)
+    record_action.add_argument("--action-type", "--action-kind", dest="action_type", required=True)
+    record_action.add_argument("--summary", required=True)
+    record_action.add_argument("--intent")
+    record_action.add_argument("--status", default="recorded")
+    record_action.add_argument("--session-id")
+    record_action.add_argument("--session-external-id")
+
     list_handoffs = subparsers.add_parser("list-handoffs", help="List handoff summaries")
     list_handoffs.add_argument("--workspace-id-or-uri")
     list_handoffs.add_argument("--status")
@@ -631,6 +657,8 @@ def main() -> None:
     record_changeset_cmd.add_argument("--branch")
     record_changeset_cmd.add_argument("--intent")
     record_changeset_cmd.add_argument("--summary", default="")
+    record_changeset_cmd.add_argument("--session-id")
+    record_changeset_cmd.add_argument("--session-external-id")
     record_changeset_cmd.add_argument(
         "--patch-file",
         type=Path,
@@ -773,8 +801,20 @@ def main() -> None:
 
     if args.command == "migrate":
         with connect(get_settings()) as conn:
-            run_schema_file(conn, args.schema)
-        print(json.dumps({"status": "ok", "schema": str(args.schema)}, ensure_ascii=False))
+            if args.all:
+                schemas = discover_schema_files(args.schemas_dir)
+                migrations = run_schema_migrations(conn, schemas)
+                result = {
+                    "status": "ok",
+                    "schemas_dir": str(args.schemas_dir),
+                    "migrations": migrations,
+                }
+            else:
+                schemas = args.schemas or [Path("schemas/001_initial.sql")]
+                for schema in schemas:
+                    run_schema_file(conn, schema)
+                result = {"status": "ok", "schemas": [str(schema) for schema in schemas]}
+        print(json.dumps(result, ensure_ascii=False, indent=2))
         return
 
     if args.command == "benchmark-search":
@@ -852,10 +892,36 @@ def main() -> None:
                 intent=args.intent,
                 summary=args.summary,
                 metadata={"source": "cli"},
+                session_id=args.session_id,
+                session_external_id=args.session_external_id,
             )
         print(
             json.dumps(
                 {"status": "ok", "workspace_id": workspace_id, **result},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
+
+    if args.command == "record-agent-action":
+        with connect(get_settings()) as conn:
+            workspace_id = require_workspace_id(conn, args.workspace_id_or_uri)
+            action_id = record_agent_action(
+                conn,
+                workspace_id=workspace_id,
+                agent_name=args.agent_name,
+                action_type=args.action_type,
+                summary=args.summary,
+                intent=args.intent,
+                status=args.status,
+                metadata={"source": "cli"},
+                session_id=args.session_id,
+                session_external_id=args.session_external_id,
+            )
+        print(
+            json.dumps(
+                {"status": "ok", "workspace_id": workspace_id, "action_id": action_id},
                 ensure_ascii=False,
                 indent=2,
             )

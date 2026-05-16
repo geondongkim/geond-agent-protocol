@@ -25,7 +25,7 @@ services:
         condition: service_healthy
     environment:
       GEOND_DATABASE_URL: postgresql://${POSTGRES_USER:-geond}:${POSTGRES_PASSWORD:-geond_dev_password}@postgres:5432/${POSTGRES_DB:-geond}
-    command: ["geond", "migrate", "--schema", "schemas/001_initial.sql"]
+    command: ["geond", "migrate", "--all"]
 
 volumes:
   geond_postgres_data:

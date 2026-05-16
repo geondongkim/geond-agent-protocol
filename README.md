@@ -80,7 +80,7 @@ flowchart LR
 | Import editor references | `collect-lsp-references`, `import-lsp-references` |
 | Search memory | `search --mode keyword`, `search --mode vector`, or `search --mode hybrid` |
 | Explain code changes | `record-changeset`, `explain-change`, `summarize-changeset` |
-| Coordinate agents | `reserve-files`, `reserve-symbols`, `record-handoff`, `review-context` |
+| Coordinate agents | `record-agent-action`, `reserve-files`, `reserve-symbols`, `record-handoff`, `review-context` |
 | Inspect agent activity | `dashboard-overview`, `dashboard-events` |
 | Serve dashboard API | `uv run geond dashboard serve` |
 | Measure retrieval quality | `benchmark-search`, `benchmark-report` |
@@ -111,6 +111,11 @@ validation status, and improvement plan.
 - [docs/improvement_backlog.md](docs/improvement_backlog.md) lists prioritized next improvements for evidence quality, deployment, retrieval, and adoption.
 - [docs/agent_testbeds.md](docs/agent_testbeds.md) compares the Copilot Chat, Codex, and Claude Code test beds.
 - [docs/agent_activity_dashboard.md](docs/agent_activity_dashboard.md) proposes the local dashboard, live activity model, and PM/orchestration use cases.
+- [docs/geond_mcp_repository_evaluation.md](docs/geond_mcp_repository_evaluation.md) evaluates Geond against an MCP repository selection rubric, including lightweight MCP tradeoffs and enterprise gaps.
+- [docs/agent_operating_loop.md](docs/agent_operating_loop.md) defines the recommended read, reserve, record, and handoff loop for Codex, Claude Code, Copilot, and other agents.
+- [docs/ai_usage_observability.md](docs/ai_usage_observability.md) designs token, prompt, cost, and usage-versus-evidence observability without encouraging tokenmaxxing.
+- [docs/geond_roadmap_backlog.md](docs/geond_roadmap_backlog.md) turns the evaluation into prioritized implementation phases and backlog items.
+- [docs/agent_doc_consumption_guide.md](docs/agent_doc_consumption_guide.md) tells future agents which docs to read for each task type.
 - [docs/vscode_chat_storage_structure.md](docs/vscode_chat_storage_structure.md) documents the first VS Code Copilot Chat test bed.
 - [docs/codex_testbed.md](docs/codex_testbed.md) documents the Codex JSONL test bed.
 - [docs/demo.md](docs/demo.md) walks through the current seed, retrieval, code graph, MCP, coordination, and purge demo.
@@ -170,11 +175,15 @@ On Windows, make sure Docker Desktop is running before this step. On Apple
 Silicon Macs, use native arm64 tooling and avoid forcing `linux/amd64`; see
 [docs/apple_silicon.md](docs/apple_silicon.md).
 
-Apply the initial schema:
+Apply all schema migrations:
 
 ```bash
 docker compose --profile tools run --rm geond-migrate
 ```
+
+For direct local runs, use `uv run geond migrate --all`. The older
+`uv run geond migrate --schema schemas/001_initial.sql` path remains available
+for explicitly reapplying one idempotent schema file during development.
 
 Insert a small sample workspace and session:
 

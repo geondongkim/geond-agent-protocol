@@ -508,26 +508,37 @@ def record_changeset(
     intent: str | None = None,
     summary: str = "",
     metadata: dict[str, Any] | None = None,
+    session_id: str | None = None,
+    session_external_id: str | None = None,
 ) -> dict[str, Any]:
     if not files:
         raise ValueError("at least one changed file is required")
+
+    resolved_session_id = resolve_session_row_id(
+        conn,
+        workspace_id,
+        session_id=session_id,
+        session_external_id=session_external_id,
+    )
 
     with conn.cursor() as cur:
         cur.execute(
             """
             INSERT INTO changesets (
                 workspace_id,
+                session_id,
                 git_commit,
                 branch,
                 intent,
                 summary,
                 metadata
             )
-            VALUES (%s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             RETURNING id::text
             """,
             (
                 workspace_id,
+                resolved_session_id,
                 git_commit,
                 branch,
                 intent,
@@ -1058,7 +1069,16 @@ def record_agent_action(
     intent: str | None = None,
     status: str = "recorded",
     metadata: dict[str, Any] | None = None,
+    session_id: str | None = None,
+    session_external_id: str | None = None,
 ) -> str:
+    resolved_session_id = resolve_session_row_id(
+        conn,
+        workspace_id,
+        session_id=session_id,
+        session_external_id=session_external_id,
+    )
+
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -1075,18 +1095,20 @@ def record_agent_action(
             INSERT INTO agent_actions (
                 workspace_id,
                 agent_id,
+                session_id,
                 action_type,
                 intent,
                 status,
                 summary,
                 metadata
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id::text
             """,
             (
                 workspace_id,
                 agent_id,
+                resolved_session_id,
                 action_type,
                 intent,
                 status,
@@ -1097,6 +1119,43 @@ def record_agent_action(
         action_id = cur.fetchone()[0]
     conn.commit()
     return action_id
+
+
+def resolve_session_row_id(
+    conn: Connection,
+    workspace_id: str,
+    session_id: str | None = None,
+    session_external_id: str | None = None,
+) -> str | None:
+    row_id = (session_id or "").strip()
+    external_id = (session_external_id or "").strip()
+    if not row_id and not external_id:
+        return None
+
+    filters = ["workspace_id = %s"]
+    params: list[str] = [workspace_id]
+    if row_id:
+        filters.append("id::text = %s")
+        params.append(row_id)
+    if external_id:
+        filters.append("external_id = %s")
+        params.append(external_id)
+
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""
+            SELECT id::text
+            FROM sessions
+            WHERE {" AND ".join(filters)}
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """,
+            tuple(params),
+        )
+        row = cur.fetchone()
+    if not row:
+        raise ValueError("session_id or session_external_id was not found in this workspace")
+    return row[0]
 
 
 def upsert_agent(conn: Connection, agent_name: str, kind: str = "coding-agent") -> str:
