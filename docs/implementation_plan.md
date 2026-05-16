@@ -333,7 +333,8 @@ Tasks:
 - [x] Expand the operational UI with richer collaboration graph drilldowns.
 - [x] Add activity kind/agent/status filters to dashboard review feeds.
 - [x] Add expandable Timeline event detail panes.
-- [ ] Add richer cross-view drilldowns to dashboard review feeds.
+- [x] Add related review context to Timeline event detail panes.
+- [ ] Add deeper evidence refs to dashboard review feeds.
 - [x] Add a normalized activity projection so PM agents and orchestrators can
   consume one ordered event stream instead of many tables.
 - [ ] Add optional Codex and Claude Code hook examples that record activity

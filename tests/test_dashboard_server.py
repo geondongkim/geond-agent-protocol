@@ -73,6 +73,8 @@ def test_dashboard_root_serves_html_without_database() -> None:
     assert b"activity_kind" in body
     assert b"event-detail" in body
     assert b"metadata." in body
+    assert b"Related Review Context" in body
+    assert b"Related Graph Node" in body
     assert b"Usage Evidence" in body
     assert b"usage-summary" in body
     assert b"/usage" in body

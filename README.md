@@ -64,7 +64,7 @@ flowchart LR
 
 ## Planned Next
 
-- Expand the read-only localhost dashboard with deeper cross-view drilldowns on top of the current mission-control, agent-lane, session, handoff-board, code-risk, changeset, graph, usage, filtered timeline, and relationship views.
+- Expand the read-only localhost dashboard with deeper evidence refs on top of the current mission-control, agent-lane, session, handoff-board, code-risk, changeset, graph, usage, filtered timeline, and relationship views.
 - Add normalized activity events so agent lifecycle hooks, CLI workflows, trace adapters, and future orchestrators can read one ordered stream.
 - Continue improving adoption paths with editor commands, TestPyPI/release observation, and smaller local setup options.
 
@@ -529,7 +529,8 @@ The Timeline tab and `/activity` endpoint accept bounded `kind`, `agent`, and
 `status` filters; automation can use the same filters through
 `geond dashboard-events --kind agent_action --agent copilot --status recorded`.
 Timeline rows include expandable event details for artifact ids and bounded
-metadata previews.
+metadata previews, plus related review context from loaded sessions, handoffs,
+changesets, and graph nodes.
 The `/health` and `/api` responses include safe database metadata so a local
 browser can distinguish Local PostgreSQL from Azure PostgreSQL without exposing
 credentials.

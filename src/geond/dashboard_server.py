@@ -1339,19 +1339,69 @@ def mission_control_html() -> str:
       return rows;
     }
 
+    function eventArtifactId(event) {
+      return String(event.artifact_id || event.id || "");
+    }
+
+    function matchingLineageNodes(event) {
+      const artifactId = eventArtifactId(event);
+      if (!artifactId) return [];
+      return (state.lineage?.nodes || []).filter((node) => (
+        node.raw_id === artifactId ||
+        node.id === `${event.kind}:${artifactId}` ||
+        node.id === `${event.artifact_type}:${artifactId}`
+      ));
+    }
+
+    function relatedReviewRows(event) {
+      const artifactId = eventArtifactId(event);
+      if (!artifactId) return [];
+      const rows = [];
+      const session = state.sessions.find((item) => (
+        item.session_id === artifactId || item.external_id === artifactId
+      ));
+      if (session) {
+        rows.push(["Related Session", sessionEvidenceMeta(session), "ok", "session"]);
+      }
+      const changeset = state.changesets.find((item) => (
+        item.changeset_id === artifactId || item.git_commit === artifactId
+      ));
+      if (changeset) {
+        rows.push(["Related Changeset", changesetMeta(changeset), "ok", "changeset"]);
+      }
+      const handoff = state.handoffs.find((item) => item.handoff_id === artifactId);
+      if (handoff) {
+        rows.push(["Related Handoff", handoffMeta(handoff), handoff.status || "ok", "handoff"]);
+      }
+      for (const node of matchingLineageNodes(event).slice(0, 3)) {
+        rows.push([
+          "Related Graph Node",
+          [node.kind, node.title || node.raw_id, node.status].filter(Boolean).join(" | "),
+          node.status || "ok",
+          "graph",
+        ]);
+      }
+      if (!rows.length) return [];
+      return [["Related Review Context", `${rows.length} matches`, "ok", "links"], ...rows];
+    }
+
     function appendEventDetails(item, event) {
       const details = document.createElement("details");
       details.className = "event-detail";
       details.innerHTML = `<summary>Details</summary><div class="mini-list"></div>`;
       const list = details.querySelector(".mini-list");
-      const rows = eventDetailRows(event);
+      const rows = [...eventDetailRows(event), ...relatedReviewRows(event)];
       if (!rows.length) {
         const empty = document.createElement("div");
         empty.className = "empty";
         empty.textContent = "No event details.";
         list.append(empty);
       } else {
-        list.replaceChildren(...rows.map(([title, value]) => row(title, value, "ok", "detail")));
+        list.replaceChildren(
+          ...rows.map(([title, value, status, label]) => (
+            row(title, value, status || "ok", label || "detail")
+          ))
+        );
       }
       item.append(details);
     }
