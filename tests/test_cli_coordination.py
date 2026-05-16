@@ -244,6 +244,37 @@ def test_dashboard_changesets_cli_wires_storage(monkeypatch, capsys) -> None:
     assert captured == {"workspace_id_or_uri": "file:///repo", "limit": 9}
 
 
+def test_dashboard_graph_cli_wires_lineage(monkeypatch, capsys) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_connect(settings) -> FakeConnection:  # noqa: ANN001
+        return FakeConnection()
+
+    def fake_get_workspace_lineage(conn, workspace_id_or_uri: str, limit: int):  # noqa: ANN001
+        captured["workspace_id_or_uri"] = workspace_id_or_uri
+        captured["limit"] = limit
+        return {
+            "workspace_id": "workspace-1",
+            "nodes": [{"kind": "agent", "id": "agent:codex"}],
+            "edges": [{"kind": "precedes", "source": "a", "target": "b"}],
+        }
+
+    monkeypatch.setattr(cli, "connect", fake_connect)
+    monkeypatch.setattr(cli, "get_workspace_lineage", fake_get_workspace_lineage)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["geond", "dashboard-graph", "file:///repo", "--limit", "11"],
+    )
+
+    cli.main()
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["nodes"][0]["kind"] == "agent"
+    assert output["edges"][0]["kind"] == "precedes"
+    assert captured == {"workspace_id_or_uri": "file:///repo", "limit": 11}
+
+
 def test_usage_by_agent_cli_outputs_agent_rollup(monkeypatch, capsys) -> None:
     def fake_connect(settings) -> FakeConnection:  # noqa: ANN001
         return FakeConnection()

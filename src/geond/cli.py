@@ -92,6 +92,7 @@ from geond.storage.repository import (
     suggest_workspace_aliases,
     upsert_workspace,
 )
+from geond.storage.resources import get_workspace_lineage
 from geond.storage.usage import (
     build_usage_risk_signals,
     format_usage_group_markdown,
@@ -323,6 +324,13 @@ def main() -> None:
     )
     dashboard_changesets.add_argument("workspace_id_or_uri")
     dashboard_changesets.add_argument("--limit", type=int, default=50)
+
+    dashboard_graph = subparsers.add_parser(
+        "dashboard-graph",
+        help="Return bounded dashboard lineage graph nodes and edges for one workspace",
+    )
+    dashboard_graph.add_argument("workspace_id_or_uri")
+    dashboard_graph.add_argument("--limit", type=int, default=100)
 
     dashboard = subparsers.add_parser("dashboard", help="Run local dashboard commands")
     dashboard_subparsers = dashboard.add_subparsers(dest="dashboard_command", required=True)
@@ -939,6 +947,16 @@ def main() -> None:
     if args.command == "dashboard-changesets":
         with connect(get_settings()) as conn:
             result = get_dashboard_changesets(
+                conn,
+                args.workspace_id_or_uri,
+                limit=args.limit,
+            )
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        return
+
+    if args.command == "dashboard-graph":
+        with connect(get_settings()) as conn:
+            result = get_workspace_lineage(
                 conn,
                 args.workspace_id_or_uri,
                 limit=args.limit,

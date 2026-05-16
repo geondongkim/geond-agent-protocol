@@ -804,6 +804,7 @@ def mission_control_html() -> str:
       <button class="tab" type="button" data-view="handoffs">Handoffs</button>
       <button class="tab" type="button" data-view="code-risk">Code Risk</button>
       <button class="tab" type="button" data-view="changesets">Changesets</button>
+      <button class="tab" type="button" data-view="graph">Graph</button>
       <button class="tab" type="button" data-view="usage">Usage Evidence</button>
       <button class="tab" type="button" data-view="timeline">Timeline</button>
       <button class="tab" type="button" data-view="trace">Relationships</button>
@@ -881,6 +882,22 @@ def mission_control_html() -> str:
       <div class="session-workspace">
         <div class="session-summary" id="changeset-summary"></div>
         <div class="session-board" id="changeset-board"></div>
+      </div>
+    </section>
+    <section class="view" data-view-panel="graph">
+      <div class="trace-grid">
+        <section>
+          <header><h2>Graph Summary</h2></header>
+          <div class="panel"><div class="session-summary" id="graph-summary"></div></div>
+        </section>
+        <section>
+          <header><h2>Graph Nodes</h2></header>
+          <div class="panel"><div class="list" id="graph-nodes"></div></div>
+        </section>
+        <section>
+          <header><h2>Graph Edges</h2></header>
+          <div class="panel"><div class="list" id="graph-edges"></div></div>
+        </section>
       </div>
     </section>
     <section class="view" data-view-panel="usage">
@@ -966,6 +983,7 @@ def mission_control_html() -> str:
       handoffs: [],
       codeRisk: null,
       changesets: [],
+      lineage: null,
       workspaces: [],
     };
     const qs = new URLSearchParams(location.search);
@@ -990,6 +1008,9 @@ def mission_control_html() -> str:
     const codeRiskFiles = document.querySelector("#code-risk-files");
     const changesetSummary = document.querySelector("#changeset-summary");
     const changesetBoard = document.querySelector("#changeset-board");
+    const graphSummary = document.querySelector("#graph-summary");
+    const graphNodes = document.querySelector("#graph-nodes");
+    const graphEdges = document.querySelector("#graph-edges");
     const usageSummary = document.querySelector("#usage-summary");
     const usageSource = document.querySelector("#usage-source");
     const usageEvidence = document.querySelector("#usage-evidence");
@@ -2027,6 +2048,51 @@ def mission_control_html() -> str:
       }
     }
 
+    function graphCounts(items, key) {
+      return items.reduce((counts, item) => {
+        const value = item[key] || "unknown";
+        counts[value] = (counts[value] || 0) + 1;
+        return counts;
+      }, {});
+    }
+
+    function renderGraphDrilldown(payload) {
+      const nodes = payload?.nodes || [];
+      const edges = payload?.edges || [];
+      const nodeKinds = graphCounts(nodes, "kind");
+      const edgeKinds = graphCounts(edges, "kind");
+      renderStatCards(graphSummary, [
+        ["Nodes", formatNumber(nodes.length)],
+        ["Edges", formatNumber(edges.length)],
+        ["Agents", formatNumber(nodeKinds.agent)],
+        ["Sessions", formatNumber(nodeKinds.session)],
+        ["Changesets", formatNumber(nodeKinds.changeset)],
+        ["Handoffs", formatNumber(nodeKinds.handoff_summary)],
+      ]);
+      renderList(
+        graphNodes,
+        nodes.slice(0, 80),
+        "No lineage nodes for this workspace.",
+        (node) => row(
+          node.title || node.raw_id || node.id,
+          [node.kind, node.source, node.status, node.occurred_at].filter(Boolean).join(" | "),
+          node.status || "ok",
+          node.kind
+        )
+      );
+      renderList(
+        graphEdges,
+        edges.slice(0, 120),
+        "No lineage edges for this workspace.",
+        (edge) => row(
+          edge.kind || "edge",
+          `${edge.source || "unknown"} -> ${edge.target || "unknown"}`,
+          edge.kind === "precedes" ? "warning" : "ok",
+          formatNumber(edgeKinds[edge.kind || "unknown"])
+        )
+      );
+    }
+
     function relationshipPanel(title, rows, emptyText) {
       const panel = document.createElement("section");
       panel.innerHTML = `
@@ -2154,6 +2220,7 @@ def mission_control_html() -> str:
       const encoded = encodeURIComponent(workspace);
       const overviewUrl = `/api/workspaces/${encoded}/overview?limit=${encodeURIComponent(limit)}`;
       const activityUrl = `/api/workspaces/${encoded}/activity?limit=${encodeURIComponent(limit)}`;
+      const lineageUrl = `/api/workspaces/${encoded}/lineage?limit=${encodeURIComponent(limit)}`;
       const projectUrl = `/api/workspaces/${encoded}/project?limit=${encodeURIComponent(limit)}`;
       const codeRiskUrl = `/api/workspaces/${encoded}/code-risk?limit=${encodeURIComponent(limit)}`;
       const changesetsUrl = [
@@ -2167,6 +2234,7 @@ def mission_control_html() -> str:
       ].join("&");
       let overviewResponse;
       let activityResponse;
+      let lineageResponse;
       let sessionsResponse;
       let projectResponse;
       let codeRiskResponse;
@@ -2177,6 +2245,7 @@ def mission_control_html() -> str:
         [
           overviewResponse,
           activityResponse,
+          lineageResponse,
           sessionsResponse,
           projectResponse,
           codeRiskResponse,
@@ -2186,6 +2255,7 @@ def mission_control_html() -> str:
         ] = await Promise.all([
           fetch(overviewUrl),
           fetch(activityUrl),
+          fetch(lineageUrl),
           fetch(sessionsUrl),
           fetch(projectUrl),
           fetch(codeRiskUrl),
@@ -2195,6 +2265,7 @@ def mission_control_html() -> str:
         ]);
         const overview = await overviewResponse.json();
         const activity = await activityResponse.json();
+        const lineagePayload = await lineageResponse.json();
         const sessionPayload = await sessionsResponse.json();
         const projectPayload = await projectResponse.json();
         const codeRiskPayload = await codeRiskResponse.json();
@@ -2234,6 +2305,7 @@ def mission_control_html() -> str:
       state.overview = overview;
       state.events = events;
       state.sessions = sessions;
+      state.lineage = lineagePayload;
       state.project = projectPayload;
       state.codeRisk = codeRiskPayload;
       state.changesets = changesetsPayload.changesets || [];
@@ -2241,6 +2313,7 @@ def mission_control_html() -> str:
       state.handoffs = handoffPayload.handoffs || [];
       renderMetrics(overview.counts || {}, collectAgentKeys(events, sessions, overview).length);
       renderProjectTree(projectPayload);
+      renderGraphDrilldown(lineagePayload);
       renderCodeRiskBoard(codeRiskPayload);
       renderChangesetBoard(changesetsPayload);
       renderUsageBoard(usagePayload);

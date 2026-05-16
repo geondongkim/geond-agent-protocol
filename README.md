@@ -64,7 +64,7 @@ flowchart LR
 
 ## Planned Next
 
-- Expand the read-only localhost dashboard with collaboration graph and deeper drilldowns on top of the current mission-control, agent-lane, session, handoff-board, code-risk, changeset, usage, and timeline views.
+- Expand the read-only localhost dashboard with deeper filters and drilldowns on top of the current mission-control, agent-lane, session, handoff-board, code-risk, changeset, graph, usage, and timeline views.
 - Add normalized activity events so agent lifecycle hooks, CLI workflows, trace adapters, and future orchestrators can read one ordered stream.
 - Continue improving adoption paths with editor commands, TestPyPI/release observation, and smaller local setup options.
 
@@ -81,7 +81,7 @@ flowchart LR
 | Search memory | `search --mode keyword`, `search --mode vector`, or `search --mode hybrid` |
 | Explain code changes | `record-changeset`, `explain-change`, `summarize-changeset` |
 | Coordinate agents | `start-task`, `finish-task`, `record-agent-action`, `reserve-files`, `reserve-symbols`, `record-handoff`, `review-context` |
-| Inspect agent activity | `dashboard-overview`, `dashboard-events`, `dashboard-code-risk`, `dashboard-changesets` |
+| Inspect agent activity | `dashboard-overview`, `dashboard-events`, `dashboard-code-risk`, `dashboard-changesets`, `dashboard-graph` |
 | Inspect AI usage | `usage-summary`, `usage-by-agent`, `usage-by-model`, `usage-risk-signals`, dashboard Usage Evidence tab and `/api/workspaces/{id}/usage` |
 | Serve dashboard API | `uv run geond dashboard serve` |
 | Measure retrieval quality | `benchmark-search`, `benchmark-report` |
@@ -514,22 +514,24 @@ Read-only endpoints include `/health`,
 `/api/workspaces/{workspace_id}/sessions`,
 `/api/workspaces/{workspace_id}/project`,
 `/api/workspaces/{workspace_id}/code-risk`,
-`/api/workspaces/{workspace_id}/changesets`, and
+`/api/workspaces/{workspace_id}/changesets`,
+`/api/workspaces/{workspace_id}/lineage`, and
 `/api/workspaces/{workspace_id}/usage`. Open
 `http://127.0.0.1:8765/` for the local Command Center with a workspace selector,
 database source badge, live refresh, horizontal Agent Fleet lanes, agent
 switchboard, project-structure activity, session/message cards, reservations,
 handoff-board status lanes, lineage counts, timeline, Usage Evidence
-totals/source rollups, Code Risk hot files, Changesets review lanes, and
-relationship rows that connect agents to session evidence and active work.
+totals/source rollups, Code Risk hot files, Changesets review lanes,
+Collaboration Graph node/edge drilldowns, and relationship rows that connect
+agents to session evidence and active work.
 The `/health` and `/api` responses include safe database metadata so a local
 browser can distinguish Local PostgreSQL from Azure PostgreSQL without exposing
 credentials.
 Agent lanes are the operational coordination surface: ownership, blockers,
 handoffs, and current claims. Sessions are the transcript evidence surface: user
 prompts, captured prompts, agent replies, readable excerpts, and technical trace
-counts. The Relationships tab keeps the two connected without turning the
-dashboard into an unbounded graph.
+counts. The Relationships tab keeps the two connected, while the Graph tab shows
+a bounded lineage node/edge drilldown instead of an unbounded graph canvas.
 
 ![Azure-backed Geond dashboard](docs/assets/geond_dashboard_azure_collaboration.gif)
 

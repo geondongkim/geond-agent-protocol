@@ -27,6 +27,7 @@ def test_dashboard_route_matching_and_index() -> None:
         "abc-123",
         "changesets",
     )
+    assert match_workspace_route("/api/workspaces/abc-123/lineage") == ("abc-123", "lineage")
     assert match_workspace_route("/api/workspaces/abc-123/usage") == ("abc-123", "usage")
     assert match_workspace_route("/api/workspaces/abc/write") is None
     assert query_limit("limit=5") == 5
@@ -61,6 +62,10 @@ def test_dashboard_root_serves_html_without_database() -> None:
     assert b"Changesets" in body
     assert b"changeset-summary" in body
     assert b"/changesets" in body
+    assert b"Graph" in body
+    assert b"graph-summary" in body
+    assert b"graph-nodes" in body
+    assert b"/lineage" in body
     assert b"Relationships" in body
     assert b"Usage Evidence" in body
     assert b"usage-summary" in body
