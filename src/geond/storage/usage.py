@@ -7,6 +7,7 @@ from typing import Any
 from psycopg import Connection
 from psycopg.types.json import Jsonb
 
+from geond.adapters.claude_code import ParsedClaudeCodeSession
 from geond.adapters.codex import ParsedCodexSession
 from geond.storage.pricing import estimate_usage_cost_usd, lookup_model_pricing
 from geond.storage.repository import resolve_session_row_id, resolve_workspace_id, upsert_agent
@@ -300,6 +301,82 @@ def record_codex_usage_events(
     ]
 
 
+def record_claude_code_usage_events(
+    conn: Connection,
+    *,
+    workspace_id: str,
+    session: ParsedClaudeCodeSession,
+    session_row_id: str | None = None,
+) -> list[str]:
+    if not usage_table_exists(conn):
+        return []
+
+    provider = "anthropic"
+    model = claude_model_from_session(session)
+    usage_ids: list[str] = []
+    for event in session.events:
+        for usage_index, usage in enumerate(extract_token_usage_candidates(event.raw)):
+            if not has_token_usage(usage):
+                continue
+            usage_ids.append(
+                insert_usage_event(
+                    conn,
+                    workspace_id=workspace_id,
+                    session_id=session_row_id,
+                    agent_name="claude-code",
+                    source="claude-code",
+                    provider=provider,
+                    model=model,
+                    operation=event.record_type,
+                    input_tokens=usage.get("input_tokens"),
+                    output_tokens=usage.get("output_tokens"),
+                    cached_input_tokens=usage.get("cached_input_tokens"),
+                    reasoning_tokens=usage.get("reasoning_tokens"),
+                    total_tokens=usage.get("total_tokens"),
+                    estimated=False,
+                    source_record_id=(
+                        f"claude-code:{session.session_id}:{event.ordinal}:usage:{usage_index}"
+                    ),
+                    metadata={
+                        "source": "claude_code_import",
+                        "accuracy": "provider_reported",
+                        "event_ordinal": event.ordinal,
+                    },
+                )
+            )
+
+    if usage_ids:
+        return usage_ids
+
+    estimated = estimate_claude_code_message_usage(session)
+    if not has_token_usage(estimated):
+        return []
+    return [
+        insert_usage_event(
+            conn,
+            workspace_id=workspace_id,
+            session_id=session_row_id,
+            agent_name="claude-code",
+            source="claude-code",
+            provider=provider,
+            model=model,
+            operation="session_message_estimate",
+            input_tokens=estimated.get("input_tokens"),
+            output_tokens=estimated.get("output_tokens"),
+            total_tokens=estimated.get("total_tokens"),
+            estimated=True,
+            source_record_id=f"claude-code:{session.session_id}:estimated_messages",
+            metadata={
+                "source": "claude_code_import",
+                "accuracy": "adapter_estimated",
+                "estimator": "ceil_char_count_div_4_by_role",
+                "message_count": len(session.messages),
+                "excludes": ["thinking_blocks", "tool_only_blocks"],
+            },
+        )
+    ]
+
+
 def format_usage_summary_markdown(summary: dict[str, Any]) -> str:
     if summary.get("status") == "workspace_not_found":
         return (
@@ -459,6 +536,43 @@ def estimate_codex_message_usage(session: ParsedCodexSession) -> dict[str, int |
         "reasoning_tokens": None,
         "total_tokens": total_tokens or None,
     }
+
+
+def estimate_claude_code_message_usage(
+    session: ParsedClaudeCodeSession,
+) -> dict[str, int | None]:
+    input_tokens = 0
+    output_tokens = 0
+    for message in session.messages:
+        estimated_tokens = estimate_text_tokens(message.content)
+        if message.role == "assistant":
+            output_tokens += estimated_tokens
+        else:
+            input_tokens += estimated_tokens
+    total_tokens = input_tokens + output_tokens
+    return {
+        "input_tokens": input_tokens or None,
+        "output_tokens": output_tokens or None,
+        "cached_input_tokens": None,
+        "reasoning_tokens": None,
+        "total_tokens": total_tokens or None,
+    }
+
+
+def claude_model_from_session(session: ParsedClaudeCodeSession) -> str | None:
+    metadata_model = string_or_none(session.metadata.get("model"))
+    if metadata_model:
+        return metadata_model
+    for event in session.events:
+        model = string_or_none(event.raw.get("model"))
+        if model:
+            return model
+        message = event.raw.get("message")
+        if isinstance(message, dict):
+            model = string_or_none(message.get("model"))
+            if model:
+                return model
+    return None
 
 
 def estimate_text_tokens(text: str | None) -> int:

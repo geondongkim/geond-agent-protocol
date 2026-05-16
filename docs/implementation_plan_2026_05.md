@@ -39,6 +39,7 @@
 - `llm_usage_events` storage slice를 시작했습니다. `schemas/003_llm_usage.sql`, `src/geond/storage/usage.py`, `usage-summary` CLI가 추가되어 importer 작업 전에 수동/테스트 usage event를 요약할 수 있습니다.
 - `model_pricing` storage slice를 시작했습니다. `schemas/004_model_pricing.sql`과 `src/geond/storage/pricing.py`가 추가되었고, usage event insert는 provider/model 가격이 있을 때 `estimated_cost_usd`와 `priced_at`을 스냅샷합니다.
 - Codex importer usage extraction을 시작했습니다. `import-codex`는 provider usage block이 있으면 exact row를 쓰고, 없으면 메시지 텍스트 기반 session estimate를 stable `source_record_id`로 기록합니다.
+- Claude Code importer usage extraction을 시작했습니다. `import-claude-code`도 provider usage block 우선, text-message estimate fallback, thinking/tool-only block 제외, stable `source_record_id` 계약을 따릅니다.
 - D-6은 Python rule engine + SQL rollup helper 방향으로 수정합니다. 순수 SQL view 단독 구현은 v1 기본안에서 제외합니다.
 - Usage schema 번호는 한 칸 밀립니다. collaboration linkage가 `002`, `llm_usage_events`는 후속 `003`, pricing은 그 다음 migration으로 둡니다.
 

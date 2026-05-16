@@ -88,6 +88,7 @@ from geond.storage.repository import (
 )
 from geond.storage.usage import (
     format_usage_summary_markdown,
+    record_claude_code_usage_events,
     record_codex_usage_events,
     summarize_usage,
 )
@@ -1114,11 +1115,18 @@ def main() -> None:
                     metadata={"source": "cli", "import_source": "claude-code"},
                 )
                 session_row_id = store_claude_code_session(conn, workspace_id, session)
+                usage_events = record_claude_code_usage_events(
+                    conn,
+                    workspace_id=workspace_id,
+                    session=session,
+                    session_row_id=session_row_id,
+                )
                 imported.append(
                     {
                         "workspace_id": workspace_id,
                         "session_id": session_row_id,
                         "external_id": session.session_id,
+                        "usage_events": usage_events,
                     }
                 )
         print(

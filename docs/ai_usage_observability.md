@@ -124,10 +124,11 @@ Codex importer:
 
 Claude Code importer:
 
-- preserve model and tool call metadata
-- extract usage from message metadata if present
-- treat thinking blocks carefully; do not expose private chain-of-thought as usage evidence
-- store usage estimates without raw hidden reasoning text
+- preserves model and tool call metadata
+- extracts usage from message metadata if present
+- treats thinking blocks carefully; private chain-of-thought is not stored as usage evidence
+- stores text-message estimates without raw hidden reasoning text
+- uses stable `source_record_id` values for idempotent reimports
 
 VS Code Copilot importer:
 

@@ -136,7 +136,7 @@ Acceptance criteria:
 
 ## 6.5. Codex Test Bed
 
-Status: parser, CLI, DB import, redaction, and fixture path added.
+Status: parser, CLI, DB import, redaction, usage estimate import, and fixture path added.
 
 Tasks:
 
@@ -168,6 +168,7 @@ Tasks:
 - [x] Import Claude Code sessions into shared `sessions`, `events`, and `messages` tables.
 - [x] Derive workspace identity from JSONL `cwd` when CLI args are omitted.
 - [x] Add sanitized Claude Code fixture tests and DB import tests.
+- [x] Record `llm_usage_events` from provider usage blocks or text-message estimates.
 
 Acceptance criteria:
 
