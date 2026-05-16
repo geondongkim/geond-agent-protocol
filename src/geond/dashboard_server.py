@@ -2175,21 +2175,57 @@ def mission_control_html() -> str:
         codeRiskFiles,
         files,
         "No code-risk signals for this workspace.",
-        (item) => row(
-          item.file_path,
-          [
-            `score ${formatNumber(item.risk_score)}`,
-            `${formatNumber(item.changeset_count)} changesets`,
-            `${formatNumber(item.active_file_claims)} file claims`,
-            `${formatNumber(item.active_symbol_claims)} symbol claims`,
-            `${formatNumber(item.open_handoff_mentions)} handoffs`,
-            `${formatNumber(item.graph_edges)} graph edges`,
-            (item.risk_signals || []).join(", "),
-          ].filter(Boolean).join(" | "),
-          item.risk_level,
-          item.risk_level
-        )
+        codeRiskCard
       );
+    }
+
+    function codeRiskCard(item) {
+      const card = document.createElement("article");
+      card.className = "session-card";
+      card.innerHTML = `
+        <div>
+          <div class="title"></div>
+          <div class="meta"></div>
+        </div>
+        <div class="session-facts"></div>
+        <div class="mini-list"></div>`;
+      card.querySelector(".title").textContent = item.file_path;
+      card.querySelector(".meta").textContent = [
+        `score ${formatNumber(item.risk_score)}`,
+        item.latest_changed_at ? new Date(item.latest_changed_at).toLocaleString() : null,
+        (item.risk_signals || []).join(", "),
+      ].filter(Boolean).join(" | ");
+      const facts = [
+        ["risk", item.risk_level || "low", item.risk_level || "low"],
+        ["agents", (item.active_agents || []).join(", ") || "none"],
+        ["signals", formatNumber((item.risk_signals || []).length)],
+      ];
+      card.querySelector(".session-facts").replaceChildren(
+        ...facts.map(([label, value, status]) => {
+          const fact = document.createElement("span");
+          fact.className = `badge ${badgeClass(status)}`;
+          fact.textContent = `${label}: ${value}`;
+          return fact;
+        })
+      );
+      const rows = [
+        ["File Claims", formatNumber(item.active_file_claims), item.active_file_claims],
+        ["Symbol Claims", formatNumber(item.active_symbol_claims), item.active_symbol_claims],
+        ["Recent Changes", formatNumber(item.changeset_count), item.changeset_count],
+        [
+          "Open Handoff Mentions",
+          formatNumber(item.open_handoff_mentions),
+          item.open_handoff_mentions,
+        ],
+        ["Code Graph Fan-out", formatNumber(item.graph_edges), item.graph_edges],
+        ...((item.risk_signals || []).map((signal) => ["Risk Signal", signal, item.risk_level])),
+      ];
+      card.querySelector(".mini-list").replaceChildren(
+        ...rows.map(([title, value, active]) => (
+          row(title, value, active ? item.risk_level || "warning" : "ok", "evidence")
+        ))
+      );
+      return card;
     }
 
     function changesetMeta(changeset) {

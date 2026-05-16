@@ -64,7 +64,7 @@ flowchart LR
 
 ## Planned Next
 
-- Expand the read-only localhost dashboard with deeper code evidence refs on top of the current mission-control, agent-lane, session, handoff-board, code-risk, changeset, graph, usage, filtered timeline, and relationship views.
+- Expand the read-only localhost dashboard with focused review filters on top of the current mission-control, agent-lane, session, handoff-board, code-risk, changeset, graph, usage, filtered timeline, and relationship views.
 - Add normalized activity events so agent lifecycle hooks, CLI workflows, trace adapters, and future orchestrators can read one ordered stream.
 - Continue improving adoption paths with editor commands, TestPyPI/release observation, and smaller local setup options.
 
@@ -533,6 +533,8 @@ metadata previews, plus related review context from loaded sessions, handoffs,
 changesets, and graph nodes.
 Usage Evidence rows separate conversation, work, and validation evidence refs so
 reviewers can see whether token spend has matching outputs and checks.
+Code Risk cards expose file claims, symbol claims, recent changes, handoff
+mentions, graph fan-out, and risk signals as bounded evidence rows.
 The `/health` and `/api` responses include safe database metadata so a local
 browser can distinguish Local PostgreSQL from Azure PostgreSQL without exposing
 credentials.

@@ -58,6 +58,8 @@ def test_dashboard_root_serves_html_without_database() -> None:
     assert b"handoff-board" in body
     assert b"Code Risk" in body
     assert b"code-risk-summary" in body
+    assert b"Code Graph Fan-out" in body
+    assert b"Risk Signal" in body
     assert b"/code-risk" in body
     assert b"Changesets" in body
     assert b"changeset-summary" in body
