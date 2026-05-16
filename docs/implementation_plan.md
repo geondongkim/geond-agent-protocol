@@ -332,7 +332,8 @@ Tasks:
   and code-risk map views.
 - [x] Expand the operational UI with richer collaboration graph drilldowns.
 - [x] Add activity kind/agent/status filters to dashboard review feeds.
-- [ ] Add richer detail panes to dashboard review feeds.
+- [x] Add expandable Timeline event detail panes.
+- [ ] Add richer cross-view drilldowns to dashboard review feeds.
 - [x] Add a normalized activity projection so PM agents and orchestrators can
   consume one ordered event stream instead of many tables.
 - [ ] Add optional Codex and Claude Code hook examples that record activity

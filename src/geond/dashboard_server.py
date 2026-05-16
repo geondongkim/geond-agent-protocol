@@ -754,6 +754,20 @@ def mission_control_html() -> str:
       color: var(--muted);
       font-size: 12px;
     }
+    .event-detail {
+      grid-column: 1 / -1;
+      margin-top: 2px;
+    }
+    .event-detail > summary {
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 650;
+      list-style-position: inside;
+    }
+    .event-detail > .mini-list {
+      margin-top: 8px;
+    }
     .empty {
       padding: 18px;
       color: var(--muted);
@@ -1300,6 +1314,48 @@ def mission_control_html() -> str:
       for (const item of items) target.append(mapper(item));
     }
 
+    function compactDetailValue(value) {
+      if (value === null || value === undefined || value === "") return "n/a";
+      if (typeof value === "object") {
+        try {
+          return JSON.stringify(value).slice(0, 280);
+        } catch {
+          return "[object]";
+        }
+      }
+      return String(value).slice(0, 280);
+    }
+
+    function eventDetailRows(event) {
+      const rows = [
+        ["Event ID", event.id],
+        ["Artifact", [event.artifact_type, event.artifact_id].filter(Boolean).join(":")],
+        ["Agent", event.agent_name],
+        ["Occurred", event.occurred_at],
+      ].filter(([, value]) => value);
+      for (const [key, value] of Object.entries(event.metadata || {}).slice(0, 8)) {
+        rows.push([`metadata.${key}`, compactDetailValue(value)]);
+      }
+      return rows;
+    }
+
+    function appendEventDetails(item, event) {
+      const details = document.createElement("details");
+      details.className = "event-detail";
+      details.innerHTML = `<summary>Details</summary><div class="mini-list"></div>`;
+      const list = details.querySelector(".mini-list");
+      const rows = eventDetailRows(event);
+      if (!rows.length) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = "No event details.";
+        list.append(empty);
+      } else {
+        list.replaceChildren(...rows.map(([title, value]) => row(title, value, "ok", "detail")));
+      }
+      item.append(details);
+    }
+
     function fileActivityIcon(file) {
       if (file.active_file_claims) return "●";
       if (file.changeset_count) return "◆";
@@ -1464,6 +1520,7 @@ def mission_control_html() -> str:
           event.artifact_type
         ].filter(Boolean).join(" | ");
         item.querySelector(".badge").textContent = event.status || event.kind;
+        appendEventDetails(item, event);
         timeline.append(item);
       }
     }
