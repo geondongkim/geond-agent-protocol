@@ -35,6 +35,8 @@
 - D-2는 versioned migrations로 확정했습니다. 첫 구현은 `geond migrate --all`과 `schema_migrations` 기반 idempotent runner를 추가하고, `schemas/002_collaboration_linkage.sql`로 action/changeset session linkage indexes를 추가했습니다.
 - `record-agent-action` CLI primitive를 먼저 추가했습니다. `--action-type`과 기존 문서의 `--action-kind`는 같은 옵션으로 동작합니다.
 - `record-agent-action`과 `record-changeset`은 `--session-id` 또는 `--session-external-id`를 받아 imported session evidence에 명시적으로 연결할 수 있습니다.
+- `start-task` / `finish-task` wrapper를 구현했습니다. `cli.py`는 parser/dispatch만 맡고, orchestration은 `src/geond/cli_tasks.py`로 분리했습니다.
+- `llm_usage_events` storage slice를 시작했습니다. `schemas/003_llm_usage.sql`, `src/geond/storage/usage.py`, `usage-summary` CLI가 추가되어 importer 작업 전에 수동/테스트 usage event를 요약할 수 있습니다.
 - D-6은 Python rule engine + SQL rollup helper 방향으로 수정합니다. 순수 SQL view 단독 구현은 v1 기본안에서 제외합니다.
 - Usage schema 번호는 한 칸 밀립니다. collaboration linkage가 `002`, `llm_usage_events`는 후속 `003`, pricing은 그 다음 migration으로 둡니다.
 

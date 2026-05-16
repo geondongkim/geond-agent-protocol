@@ -6,6 +6,7 @@ from uuid import uuid4
 import psycopg
 import pytest
 
+from geond.cli_tasks import finish_task, start_task
 from geond.code_graph.python_indexer import index_python_file
 from geond.config import get_settings
 from geond.db import connect, run_schema_file
@@ -481,6 +482,89 @@ def test_agent_actions_and_changesets_can_link_to_sessions() -> None:
                 and edge["target"] == f"changeset:{changeset['changeset_id']}"
                 for edge in lineage["edges"]
             )
+        finally:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM workspaces WHERE id = %s", (workspace_id,))
+            conn.commit()
+
+
+def test_start_and_finish_task_wrappers_record_operating_loop() -> None:
+    settings = get_settings()
+    workspace_uri = f"file:///tmp/geond-task-wrapper-test-{uuid4()}"
+
+    try:
+        conn = connect(settings)
+    except psycopg.OperationalError as exc:
+        pytest.skip(f"Postgres integration database is not available: {exc}")
+
+    with conn:
+        try:
+            run_schema_file(conn, SCHEMA)
+        except psycopg.Error as exc:
+            pytest.skip(f"Postgres integration schema is not available: {exc}")
+
+        workspace_id = upsert_workspace(
+            conn,
+            root_uri=workspace_uri,
+            name="task-wrapper-fixture",
+            metadata={"source": "pytest"},
+        )
+        try:
+            dry_run = start_task(
+                conn,
+                workspace_id,
+                agent_name="agent-a",
+                intent="Add operating loop wrappers",
+                file_paths=["src/geond/cli_tasks.py"],
+                reserve=True,
+                dry_run=True,
+            )
+            before_events = list_reservation_events(conn, workspace_id)
+            after_dry_run = list_reservation_events(conn, workspace_id)
+            started = start_task(
+                conn,
+                workspace_id,
+                agent_name="agent-a",
+                intent="Add operating loop wrappers",
+                file_paths=["src/geond/cli_tasks.py"],
+                reserve=True,
+            )
+            active = list_active_file_reservations(
+                conn,
+                workspace_id,
+                ["src/geond/cli_tasks.py"],
+            )
+            finished = finish_task(
+                conn,
+                workspace_id,
+                agent_name="agent-a",
+                summary="Added operating loop wrappers.",
+                changed_files=[{"file_path": "src/geond/cli_tasks.py", "status": "added"}],
+                tested_commands=["uv run pytest tests/test_cli_tasks.py"],
+                remaining_risks=["Usage accounting remains a follow-up phase."],
+                reservation_mode="release",
+            )
+            after_release = list_active_file_reservations(
+                conn,
+                workspace_id,
+                ["src/geond/cli_tasks.py"],
+            )
+            handoffs = list_handoff_summaries(conn, workspace_id, status="open")
+            events = list_reservation_events(conn, workspace_id)
+
+            assert dry_run["status"] == "dry_run"
+            assert dry_run["action_id"] is None
+            assert after_dry_run == before_events
+            assert started["status"] == "ok"
+            assert started["action_id"]
+            assert active[0]["agent_name"] == "agent-a"
+            assert finished["status"] == "ok"
+            assert finished["action_id"]
+            assert finished["changeset"]["changeset_id"]
+            assert finished["handoff_id"]
+            assert after_release == []
+            assert handoffs[0]["handoff_id"] == finished["handoff_id"]
+            assert {event["action"] for event in events} >= {"created", "released"}
         finally:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM workspaces WHERE id = %s", (workspace_id,))

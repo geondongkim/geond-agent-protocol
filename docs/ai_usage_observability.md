@@ -22,8 +22,8 @@ Tokenmaxxing means optimizing for high AI token consumption as a status or perfo
 | Changeset count | Available | `changesets` |
 | Benchmark run count | Available | `benchmark_runs` |
 | Model/provider metadata | Partially available | session metadata and benchmark metadata |
-| Exact input/output token count | Not normalized yet | needs `llm_usage_events` |
-| Estimated cost | Not normalized yet | needs model pricing and token accounting |
+| Exact input/output token count | Schema and summary storage started | `llm_usage_events` |
+| Estimated cost | Storage column available; pricing registry pending | `llm_usage_events.estimated_cost_usd` |
 | Tokenmaxxing detection | Not implemented yet | needs usage versus evidence scoring |
 
 ## Why Raw Token Counts Are Dangerous
@@ -59,6 +59,11 @@ Bad PM questions:
 - Which individual is lowest on the AI leaderboard?
 
 ## Proposed Data Model
+
+Implementation started in `schemas/003_llm_usage.sql`. The schema includes
+`source_record_id`, `priced_at`, workspace/session/agent/model indexes, and a
+partial unique index on `(source, source_record_id)` for idempotent importer
+replays.
 
 ```sql
 CREATE TABLE llm_usage_events (

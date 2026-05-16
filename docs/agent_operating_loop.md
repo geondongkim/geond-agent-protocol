@@ -152,13 +152,15 @@ uv run geond record-handoff "<workspace-id>" `
   --risk "Token usage may be estimated when provider metadata is missing."
 ```
 
-## Proposed Convenience Commands
+## Convenience Commands
 
-The current CLI already exposes primitive operations, but agents will forget steps. Add wrapper commands to reduce drift.
+The CLI exposes primitive operations and wrapper commands. Use the wrappers when
+starting or finishing normal coding work, then drop down to the primitives for
+special cases.
 
 ### `start-task`
 
-Proposed command:
+Command:
 
 ```powershell
 uv run geond start-task "<workspace-id-or-uri>" `
@@ -179,12 +181,13 @@ Expected internal behavior:
 
 ### `finish-task`
 
-Proposed command:
+Command:
 
 ```powershell
 uv run geond finish-task "<workspace-id-or-uri>" `
   --agent-name "codex" `
   --summary "Added token usage read model tests." `
+  --changeset-file "tests/test_usage_dashboard.py:modified" `
   --tested-command "uv run pytest tests/test_usage_dashboard.py" `
   --next-action "Expose usage signals in dashboard UI." `
   --release-reservations

@@ -80,8 +80,9 @@ flowchart LR
 | Import editor references | `collect-lsp-references`, `import-lsp-references` |
 | Search memory | `search --mode keyword`, `search --mode vector`, or `search --mode hybrid` |
 | Explain code changes | `record-changeset`, `explain-change`, `summarize-changeset` |
-| Coordinate agents | `record-agent-action`, `reserve-files`, `reserve-symbols`, `record-handoff`, `review-context` |
+| Coordinate agents | `start-task`, `finish-task`, `record-agent-action`, `reserve-files`, `reserve-symbols`, `record-handoff`, `review-context` |
 | Inspect agent activity | `dashboard-overview`, `dashboard-events` |
+| Inspect AI usage | `usage-summary` |
 | Serve dashboard API | `uv run geond dashboard serve` |
 | Measure retrieval quality | `benchmark-search`, `benchmark-report` |
 | Serve MCP | `uv run geond-mcp` |

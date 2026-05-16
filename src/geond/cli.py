@@ -11,6 +11,12 @@ from geond.adapters.claude_code import to_summary as claude_code_to_summary
 from geond.adapters.codex import parse_storage as parse_codex_storage
 from geond.adapters.codex import to_summary as codex_to_summary
 from geond.adapters.vscode_copilot import parse_storage, to_summary
+from geond.cli_tasks import (
+    finish_task,
+    format_task_result_markdown,
+    parse_changed_files,
+    start_task,
+)
 from geond.code_graph.lsp_collector import (
     collect_lsp_references,
     list_lsp_server_profiles,
@@ -80,6 +86,7 @@ from geond.storage.repository import (
     suggest_workspace_aliases,
     upsert_workspace,
 )
+from geond.storage.usage import format_usage_summary_markdown, summarize_usage
 from geond.workspace_identity import (
     discover_workspace_fingerprints,
     workspace_uri_from_path_or_uri,
@@ -296,6 +303,16 @@ def main() -> None:
     dashboard_serve.add_argument("--host", default="127.0.0.1")
     dashboard_serve.add_argument("--port", type=int, default=8765)
     dashboard_serve.add_argument("--open", action="store_true", help="Open the dashboard URL")
+
+    usage_summary = subparsers.add_parser(
+        "usage-summary",
+        help="Summarize normalized LLM usage events for one workspace",
+    )
+    usage_summary.add_argument("workspace_id_or_uri")
+    usage_summary.add_argument("--source")
+    usage_summary.add_argument("--provider")
+    usage_summary.add_argument("--model")
+    usage_summary.add_argument("--format", choices=["json", "markdown"], default="json")
 
     parse_vscode = subparsers.add_parser(
         "parse-vscode", help="Parse VS Code Copilot Chat storage without writing to DB"
@@ -518,6 +535,68 @@ def main() -> None:
     review_context.add_argument("--agent-name")
     review_context.add_argument("--limit", type=int, default=5)
     review_context.add_argument("--format", choices=["json", "markdown"], default="json")
+
+    start_task_cmd = subparsers.add_parser(
+        "start-task",
+        help="Read coordination context, record task_start, and optionally reserve work",
+    )
+    start_task_cmd.add_argument("workspace_id_or_uri")
+    start_task_cmd.add_argument("--agent-name", required=True)
+    start_task_cmd.add_argument("--intent", required=True)
+    start_task_cmd.add_argument("--file", dest="files", action="append")
+    start_task_cmd.add_argument("--symbol", dest="symbols", action="append")
+    start_task_cmd.add_argument("--reserve", action="store_true")
+    start_task_cmd.add_argument("--ttl-minutes", type=int, default=120)
+    start_task_cmd.add_argument("--override-reason")
+    start_task_cmd.add_argument("--dry-run", action="store_true")
+    start_task_cmd.add_argument("--limit", type=int, default=5)
+    start_task_cmd.add_argument("--session-id")
+    start_task_cmd.add_argument("--session-external-id")
+    start_task_cmd.add_argument("--format", choices=["json", "markdown"], default="json")
+
+    finish_task_cmd = subparsers.add_parser(
+        "finish-task",
+        help="Record task_finish, optional changeset evidence, handoff, and reservation updates",
+    )
+    finish_task_cmd.add_argument("workspace_id_or_uri")
+    finish_task_cmd.add_argument("--agent-name", required=True)
+    finish_task_cmd.add_argument("--summary", required=True)
+    finish_task_cmd.add_argument("--intent")
+    finish_task_cmd.add_argument("--changeset-file", dest="changeset_files", action="append")
+    finish_task_cmd.add_argument("--git-commit")
+    finish_task_cmd.add_argument("--branch")
+    finish_task_cmd.add_argument("--to-agent")
+    finish_task_cmd.add_argument("--next-step", dest="next_steps", action="append")
+    finish_task_cmd.add_argument("--next-action")
+    finish_task_cmd.add_argument("--blocked-on", dest="blocked_on", action="append")
+    finish_task_cmd.add_argument("--tested-command", dest="tested_commands", action="append")
+    finish_task_cmd.add_argument("--risk", dest="remaining_risks", action="append")
+    reservation_mode = finish_task_cmd.add_mutually_exclusive_group()
+    reservation_mode.add_argument(
+        "--release-reservations",
+        dest="reservation_mode",
+        action="store_const",
+        const="release",
+    )
+    reservation_mode.add_argument(
+        "--renew-reservations",
+        dest="reservation_mode",
+        action="store_const",
+        const="renew",
+    )
+    reservation_mode.add_argument(
+        "--keep-reservations",
+        dest="reservation_mode",
+        action="store_const",
+        const="keep",
+    )
+    finish_task_cmd.set_defaults(reservation_mode="keep")
+    finish_task_cmd.add_argument("--ttl-minutes", type=int, default=120)
+    finish_task_cmd.add_argument("--dry-run", action="store_true")
+    finish_task_cmd.add_argument("--limit", type=int, default=50)
+    finish_task_cmd.add_argument("--session-id")
+    finish_task_cmd.add_argument("--session-external-id")
+    finish_task_cmd.add_argument("--format", choices=["json", "markdown"], default="json")
 
     reserve_files_cmd = subparsers.add_parser("reserve-files", help="Reserve files for agent work")
     reserve_files_cmd.add_argument("workspace_id")
@@ -797,6 +876,21 @@ def main() -> None:
             port=args.port,
             open_url=args.open,
         )
+        return
+
+    if args.command == "usage-summary":
+        with connect(get_settings()) as conn:
+            result = summarize_usage(
+                conn,
+                args.workspace_id_or_uri,
+                source=args.source,
+                provider=args.provider,
+                model=args.model,
+            )
+        if args.format == "markdown":
+            print(format_usage_summary_markdown(result))
+        else:
+            print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
         return
 
     if args.command == "migrate":
@@ -1374,6 +1468,59 @@ def main() -> None:
             print(format_context_review_markdown(result))
         else:
             print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "start-task":
+        with connect(get_settings()) as conn:
+            result = start_task(
+                conn,
+                workspace_id_or_uri=args.workspace_id_or_uri,
+                agent_name=args.agent_name,
+                intent=args.intent,
+                file_paths=args.files,
+                symbols=args.symbols,
+                reserve=args.reserve,
+                ttl_minutes=args.ttl_minutes,
+                override_reason=args.override_reason,
+                dry_run=args.dry_run,
+                limit=args.limit,
+                session_id=args.session_id,
+                session_external_id=args.session_external_id,
+            )
+        if args.format == "markdown":
+            print(format_task_result_markdown(result))
+        else:
+            print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        return
+
+    if args.command == "finish-task":
+        with connect(get_settings()) as conn:
+            result = finish_task(
+                conn,
+                workspace_id_or_uri=args.workspace_id_or_uri,
+                agent_name=args.agent_name,
+                summary=args.summary,
+                intent=args.intent,
+                changed_files=parse_changed_files(args.changeset_files),
+                git_commit=args.git_commit,
+                branch=args.branch,
+                to_agent_name=args.to_agent,
+                next_steps=args.next_steps,
+                next_action=args.next_action,
+                blocked_on=args.blocked_on,
+                tested_commands=args.tested_commands,
+                remaining_risks=args.remaining_risks,
+                reservation_mode=args.reservation_mode,
+                ttl_minutes=args.ttl_minutes,
+                dry_run=args.dry_run,
+                limit=args.limit,
+                session_id=args.session_id,
+                session_external_id=args.session_external_id,
+            )
+        if args.format == "markdown":
+            print(format_task_result_markdown(result))
+        else:
+            print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
         return
 
     if args.command == "reserve-files":
