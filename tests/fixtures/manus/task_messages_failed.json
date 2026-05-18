@@ -3,27 +3,41 @@
   "messages": [
     {
       "id": "msg-101",
-      "role": "user",
-      "content": "Run the pending database migrations on production.",
-      "created_at": "2026-05-19T11:00:00Z"
+      "type": "user_message",
+      "timestamp": "1747654800000",
+      "user_message": {
+        "content": "Run the pending database migrations on production.",
+        "message_type": "text",
+        "attachments": []
+      }
     },
     {
       "id": "msg-102",
-      "role": "assistant",
-      "content": "Starting migration. Connecting to production database.",
-      "created_at": "2026-05-19T11:00:05Z"
+      "type": "assistant_message",
+      "timestamp": "1747654802000",
+      "assistant_message": {
+        "content": "Starting migration. Connecting to production database.",
+        "attachments": []
+      }
     },
     {
       "id": "msg-103",
-      "role": "tool",
-      "content": "run_migration() -> Error: connection timeout after 30s. Host: db.prod.internal:5432",
-      "created_at": "2026-05-19T11:03:20Z"
+      "type": "status_update",
+      "timestamp": "1747655000000",
+      "status_update": {
+        "agent_status": "running",
+        "brief": "Attempting database connection",
+        "description": "Connecting to db.prod.internal:5432"
+      }
     },
     {
       "id": "msg-104",
-      "role": "assistant",
-      "content": "Migration failed due to a connection timeout. The production database host was unreachable. No changes were applied. Please check network connectivity and retry.",
-      "created_at": "2026-05-19T11:03:22Z"
+      "type": "assistant_message",
+      "timestamp": "1747655002000",
+      "assistant_message": {
+        "content": "Migration failed due to a connection timeout. The production database host was unreachable. No changes were applied. Please check network connectivity and retry.",
+        "attachments": []
+      }
     }
   ]
 }

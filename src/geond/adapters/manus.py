@@ -6,6 +6,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any
 
 SOURCE = "manus"
@@ -15,6 +16,9 @@ AGENT_NAME = "Manus"
 _MANUS_API_BASE = "https://api.manus.ai"
 _MAX_RETRIES = 3
 _RETRY_BASE_SECONDS = 1.0
+
+# Message types included as readable content (status_update is internal noise)
+_CONTENT_MESSAGE_TYPES = {"user_message", "assistant_message"}
 
 
 @dataclass(frozen=True)
@@ -47,37 +51,42 @@ def normalize_task(
     task_detail: dict[str, Any],
     task_messages: dict[str, Any] | None = None,
 ) -> ParsedManusTask:
-    """Convert raw Manus API JSON into a ParsedManusTask."""
-    task_id = str(task_detail.get("task_id", ""))
+    """Convert raw Manus API JSON into a ParsedManusTask.
+
+    Accepts both the real API v2 shape (id/title) and the fixture/legacy shape
+    (task_id/task_title) so fixtures and live imports use the same path.
+    """
+    # Support both real API (`id`) and fixture/legacy (`task_id`) field names
+    task_id = str(task_detail.get("id") or task_detail.get("task_id") or "")
+    title = str(task_detail.get("title") or task_detail.get("task_title") or task_id)
+
     raw_messages = (task_messages or {}).get("messages") or []
     messages = _normalize_messages(task_id, raw_messages)
 
     connector_ids = [str(c) for c in (task_detail.get("connectors") or []) if c]
 
-    extra_meta = {
-        k: v
-        for k, v in task_detail.items()
-        if k
-        not in {
-            "task_id",
-            "task_title",
-            "status",
-            "created_at",
-            "updated_at",
-            "task_url",
-            "share_url",
-            "share_visibility",
-            "project_id",
-            "connectors",
-        }
+    _known = {
+        "id",
+        "task_id",
+        "title",
+        "task_title",
+        "status",
+        "created_at",
+        "updated_at",
+        "task_url",
+        "share_url",
+        "share_visibility",
+        "project_id",
+        "connectors",
     }
+    extra_meta = {k: v for k, v in task_detail.items() if k not in _known}
 
     return ParsedManusTask(
         task_id=task_id,
-        title=str(task_detail.get("task_title") or task_id),
+        title=title,
         status=str(task_detail.get("status") or "unknown"),
-        created_at=task_detail.get("created_at"),
-        updated_at=task_detail.get("updated_at"),
+        created_at=_parse_timestamp(task_detail.get("created_at")),
+        updated_at=_parse_timestamp(task_detail.get("updated_at")),
         task_url=task_detail.get("task_url"),
         share_url=task_detail.get("share_url"),
         share_visibility=str(task_detail.get("share_visibility") or "private"),
@@ -92,27 +101,70 @@ def normalize_task(
     )
 
 
+def _parse_timestamp(value: Any) -> str | None:
+    """Convert Unix ms/s timestamp string or ISO string to ISO 8601."""
+    if not value:
+        return None
+    s = str(value).strip()
+    # Already ISO
+    if "T" in s or "-" in s:
+        return s
+    # Unix timestamp: > 1e12 means milliseconds
+    try:
+        ts = int(s)
+        if ts > 10_000_000_000:
+            ts = ts // 1000
+        return datetime.fromtimestamp(ts, tz=UTC).isoformat()
+    except (ValueError, OSError):
+        return s
+
+
 def _normalize_messages(
     task_id: str,
     raw_messages: list[dict[str, Any]],
 ) -> list[ParsedManusMessage]:
     result: list[ParsedManusMessage] = []
-    for ordinal, raw in enumerate(raw_messages, start=1):
+    ordinal = 0
+    for raw in raw_messages:
         if not isinstance(raw, dict):
             continue
+        msg_type = raw.get("type", "")
+
+        if msg_type == "user_message":
+            role = "user"
+            payload = raw.get("user_message") or {}
+            content = str(payload.get("content") or "")
+        elif msg_type == "assistant_message":
+            role = "assistant"
+            payload = raw.get("assistant_message") or {}
+            content = str(payload.get("content") or "")
+        elif msg_type == "status_update":
+            # Include status updates as tool-role so they're browseable but
+            # filtered from readable excerpts.
+            role = "assistant_or_tool"
+            su = raw.get("status_update") or {}
+            content = su.get("brief") or su.get("description") or ""
+        elif "role" in raw:
+            # Fixture / legacy flat format
+            role = _normalize_role(raw.get("role"))
+            content = str(raw.get("content") or "")
+        else:
+            role = "assistant_or_tool"
+            content = ""
+
+        ordinal += 1
         message_id = str(raw.get("id") or f"{task_id}:{ordinal}")
-        role = _normalize_role(raw.get("role"))
-        content = str(raw.get("content") or "")
+        created_at = _parse_timestamp(raw.get("timestamp") or raw.get("created_at"))
+
+        safe_raw = {k: v for k, v in raw.items() if k not in {"id", "timestamp"}}
         result.append(
             ParsedManusMessage(
                 ordinal=ordinal,
                 message_id=message_id,
                 role=role,
                 content=content,
-                created_at=raw.get("created_at"),
-                raw={
-                    k: v for k, v in raw.items() if k not in {"id", "content", "role", "created_at"}
-                },
+                created_at=created_at,
+                raw=safe_raw,
             )
         )
     return result
@@ -203,13 +255,24 @@ class ManusApiClient:
         raise last_exc
 
     def get_task(self, task_id: str) -> dict[str, Any]:
-        return self._request("v2/task.detail", {"task_id": task_id})
+        resp = self._request("v2/task.detail", {"task_id": task_id})
+        # Unwrap the nested task object returned by the API
+        return resp.get("task") or resp
 
     def get_task_messages(self, task_id: str, limit: int = 200) -> dict[str, Any]:
-        return self._request(
-            "v2/task.listMessages",
-            {"task_id": task_id, "order": "asc", "limit": str(limit)},
-        )
+        """Fetch messages, following pagination if has_more is True."""
+        all_messages: list[dict[str, Any]] = []
+        params: dict[str, str] = {"task_id": task_id, "order": "asc", "limit": str(limit)}
+        while True:
+            resp = self._request("v2/task.listMessages", params)
+            all_messages.extend(resp.get("messages") or [])
+            if not resp.get("has_more"):
+                break
+            cursor = resp.get("next_cursor")
+            if not cursor:
+                break
+            params = {**params, "cursor": cursor}
+        return {"messages": all_messages, "task_id": task_id}
 
     def list_tasks(self, limit: int = 20) -> dict[str, Any]:
         return self._request("v2/task.list", {"limit": str(limit)})

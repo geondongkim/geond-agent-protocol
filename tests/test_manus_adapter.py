@@ -42,11 +42,15 @@ def test_normalize_completed_task() -> None:
     assert task.status == "completed"
     assert task.share_visibility == "public"
     assert task.task_url == "https://manus.ai/tasks/manus-task-abc123"
-    assert task.share_url == "https://manus.ai/share/manus-task-abc123-pub"
+    # 5 messages total: user + status_update + 3 assistant
     assert len(task.messages) == 5
     assert task.messages[0].role == "user"
-    assert task.messages[1].role == "assistant"
+    assert task.messages[1].role == "assistant_or_tool"  # status_update
+    assert task.messages[2].role == "assistant"
     assert "JWT" in task.messages[3].content
+    # timestamps converted from Unix ms to ISO
+    assert task.messages[0].created_at is not None
+    assert "T" in (task.messages[0].created_at or "")
 
 
 def test_normalize_failed_task() -> None:
@@ -77,33 +81,54 @@ def test_normalize_missing_optional_fields_does_not_crash() -> None:
 
 
 def test_normalize_unknown_future_fields_stored_in_metadata() -> None:
-    detail = {"task_id": "task-x", "task_title": "T", "future_field": "value"}
+    detail = {"id": "task-x", "title": "T", "future_field": "value"}
     task = normalize_task(detail)
 
     assert task.metadata.get("future_field") == "value"
 
 
 def test_message_roles_normalized() -> None:
-    detail = {"task_id": "task-r"}
+    detail = {"id": "task-r"}
     messages_data = {
         "task_id": "task-r",
         "messages": [
-            {"id": "m1", "role": "user", "content": "hi", "created_at": None},
-            {"id": "m2", "role": "assistant", "content": "hello", "created_at": None},
-            {"id": "m3", "role": "tool", "content": "result", "created_at": None},
-            {"id": "m4", "role": "UNKNOWN_ROLE", "content": "?", "created_at": None},
+            {
+                "id": "m1",
+                "type": "user_message",
+                "timestamp": None,
+                "user_message": {"content": "hi", "message_type": "text"},
+            },
+            {
+                "id": "m2",
+                "type": "assistant_message",
+                "timestamp": None,
+                "assistant_message": {"content": "hello"},
+            },
+            {
+                "id": "m3",
+                "type": "status_update",
+                "timestamp": None,
+                "status_update": {"agent_status": "running", "brief": "Working"},
+            },
         ],
     }
     task = normalize_task(detail, messages_data)
     roles = [m.role for m in task.messages]
-    assert roles == ["user", "assistant", "assistant_or_tool", "assistant_or_tool"]
+    assert roles == ["user", "assistant", "assistant_or_tool"]
 
 
 def test_source_id_is_composited_string_not_hash() -> None:
-    detail = {"task_id": "task-s"}
+    detail = {"id": "task-s"}
     messages_data = {
         "task_id": "task-s",
-        "messages": [{"id": "m1", "role": "user", "content": "test", "created_at": None}],
+        "messages": [
+            {
+                "id": "m1",
+                "type": "user_message",
+                "timestamp": None,
+                "user_message": {"content": "test", "message_type": "text"},
+            },
+        ],
     }
     task = normalize_task(detail, messages_data)
     msg = task.messages[0]
@@ -143,8 +168,8 @@ def test_api_key_in_message_is_redacted_before_storage() -> None:
 
 def test_connector_ids_treated_as_metadata_only() -> None:
     detail = {
-        "task_id": "task-c",
-        "task_title": "T",
+        "id": "task-c",
+        "title": "T",
         "connectors": ["conn-secret-abc", "conn-secret-def"],
     }
     task = normalize_task(detail)

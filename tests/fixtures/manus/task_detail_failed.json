@@ -1,12 +1,12 @@
 {
-  "task_id": "manus-task-def456",
-  "task_title": "Run database migration on production",
+  "id": "manus-task-def456",
+  "title": "Run database migration on production",
   "status": "failed",
   "share_visibility": "private",
   "task_url": "https://manus.ai/tasks/manus-task-def456",
-  "share_url": "https://manus.ai/share/manus-task-def456-priv",
-  "created_at": "2026-05-19T11:00:00Z",
-  "updated_at": "2026-05-19T11:03:22Z",
-  "project_id": "proj-xyz789",
-  "connectors": ["conn-db-prod-001"]
+  "created_at": "1747654800",
+  "updated_at": "1747655002",
+  "agent_profile": "manus-1.6-lite",
+  "task_type": "standard",
+  "credit_usage": "12"
 }
