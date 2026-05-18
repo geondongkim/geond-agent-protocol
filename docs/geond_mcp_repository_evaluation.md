@@ -2,16 +2,16 @@
 
 ## Purpose
 
-This document evaluates `geond-agent-protocol` against an open-source MCP repository rubric focused on independent core engines, MCP or Codex Skill wrappers, enterprise risk, cost control, and extensible agent workflows.
+This document evaluates `geond-agent-protocol` against an open-source MCP repository rubric focused on independent core engines, MCP or Codex Skill wrappers, enterprise risk, cost control, and extensible heterogeneous agent workflows.
 
-Use it when deciding whether Geond is a good substrate for cross-agent development memory, Codex/Claude/Copilot interoperability, PM-facing operational visibility, enterprise-oriented MCP adoption, or future AI usage observability.
+Use it when deciding whether Geond is a good substrate for cross-agent shared context, Codex/Claude/Copilot interoperability, PM-facing operational visibility, enterprise-oriented MCP adoption, cross-functional work evidence, or future AI usage observability.
 
 ## Scope
 
 Repository root:
 
 ```text
-C:\Users\EL035\dataschool\RealMe_OPIc
+C:\Users\EL035\dataschool\geond-agent-protocol
 ```
 
 GitHub remote:
@@ -28,7 +28,7 @@ Compared scenarios:
 
 ## Executive Summary
 
-Geond is stronger than a typical one-purpose MCP server because it is not just a tool wrapper. It is a local-first development memory and coordination substrate with a Python CLI, stdio MCP server, session importers, Postgres/pgvector storage, redaction, search, code graph indexing, reservations, structured handoffs, changesets, dashboard read models, and a local dashboard UI.
+Geond is stronger than a typical one-purpose MCP server because it is not just a tool wrapper. It is a local-first shared context and coordination substrate with a Python CLI, stdio MCP server, session importers, Postgres/pgvector storage, redaction, search, code graph indexing, reservations, structured handoffs, changesets, dashboard read models, and a local dashboard UI. Its current adapters are repository-centered, while the protocol and dashboard model are positioned for planning, product, design, QA, marketing, operations, engineering, review, security, documentation, deployment, and orchestration agents.
 
 The repository fits the "independent core engine plus MCP or Skill wrapper" strategy well. The weakest areas are enterprise IAM, complete MCP call auditing, and lightweight deployment compared with single-binary MCP tools.
 
@@ -66,7 +66,7 @@ This comparison assumes a minimal single-binary or small Node/Rust/Go MCP server
 | Durable memory | Usually ad hoc or file-based. | Strong. Sessions, messages, events, changesets, handoffs, and reservations are normalized. |
 | Multi-agent coordination | Usually not built in. | Strong. Reservations, handoffs, lineage, activity events, and dashboard are central concepts. |
 | PM dashboard | Usually absent. | Built in as a read-only local dashboard. |
-| Shared team memory | Requires extra infrastructure. | Natural with shared Postgres or Azure PostgreSQL. |
+| Shared team memory | Requires extra infrastructure. | Natural with shared Postgres or Azure PostgreSQL while each agent process stays local. |
 | Enterprise governance | Depends on custom work. | Better data model foundation, but IAM and audit streaming still need work. |
 
 ## Performance Judgment
@@ -75,7 +75,7 @@ Geond is not optimized for the fastest possible first MCP response. It is optimi
 
 Use a lightweight single-binary MCP when the tool is stateless, wraps one API or one CLI, startup latency matters more than memory quality, and there is no need for shared workspace history.
 
-Use Geond when agents need prior session evidence, multiple agents may work in one repository, handoffs and reservations matter, PMs need dashboard visibility, or a team wants queryable memory across Codex, Claude Code, Copilot, and MCP clients.
+Use Geond when agents need prior session evidence, multiple agents may work in one repository or project workspace, handoffs and reservations matter, PMs need dashboard visibility, or a team wants queryable memory across Codex, Claude Code, Copilot, MCP clients, and future non-development adapters.
 
 ## Enterprise Gaps
 

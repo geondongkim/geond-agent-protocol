@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document defines how Codex, Claude Code, VS Code Copilot, Continue, or another MCP-capable agent should use Geond during real development work.
+This document defines how Codex, Claude Code, VS Code Copilot, Continue, or another MCP-capable agent should use Geond during real project work. The first concrete adapters focus on repository development, but the loop also applies to planning, product, design, QA, marketing, support, operations, security, documentation, deployment, PM, and orchestration agents that need shared evidence.
 
 The goal is to prevent Geond from becoming only a passive transcript archive. Agents should use it as an active operating loop:
 
@@ -26,8 +26,8 @@ Read this file before:
 
 ## Recommended Start Sequence
 
-Every development agent that may change, review, or coordinate work should start
-with this sequence when Geond is available.
+Every agent that may change, review, validate, publish, or coordinate work
+should start with this sequence when Geond is available.
 
 ```text
 1. Import recent sessions for the relevant source.

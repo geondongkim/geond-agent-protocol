@@ -4,11 +4,11 @@
 
 ## 1. Product Thesis
 
-여러 소프트웨어 개발 AI 에이전트(코딩, 리뷰, 테스트, 문서화, 보안, 배포, PM/오케스트레이션)가 같은 프로젝트에서 일할 때 가장 큰 병목은 모델 성능보다 “맥락의 단절”이다. Geond는 에이전트들이 공유할 수 있는 로컬-first 개발 기억 계층을 제공한다.
+기획, 제품관리, 디자인, QA, 마케팅, 고객지원, 운영, 코딩, 리뷰, 테스트, 문서화, 보안, 배포, PM/오케스트레이션 등 서로 다른 역할의 AI 에이전트가 같은 프로젝트에서 일할 때 가장 큰 병목은 모델 성능보다 “맥락의 단절”이다. Geond는 에이전트들이 공유할 수 있는 로컬-first, cloud-capable 컨텍스트 및 협업 조정 계층을 제공한다.
 
 첫 번째로 증명할 장면:
 
-> 한 에이전트가 남긴 채팅, 코드 변경, 파일 스냅샷, 심볼 그래프를 다른 MCP 클라이언트가 즉시 조회해 “왜 이 코드가 이렇게 바뀌었는지” 설명한다.
+> 한 에이전트가 남긴 채팅, 코드 변경, 파일 스냅샷, 심볼 그래프, 예약, 검증 결과, 핸드오프를 다른 MCP 클라이언트가 즉시 조회해 “왜 이 산출물이 이렇게 바뀌었고 누가 무엇을 이어야 하는지” 설명한다.
 
 ## 2. MVP Scope
 
@@ -31,7 +31,7 @@
 - 자체 코딩/리뷰/테스트/보안/문서화/배포/PM 에이전트
 - 실시간 파일 감시
 - fine-tuning
-- 원격 동기화 서버
+- 필수 원격 동기화 서버. 단, 의도적으로 공유 PostgreSQL profile을 쓰는 팀 협업 실시예는 지원한다.
 - 팀 계정/권한 관리
 - 모든 언어 지원
 
@@ -398,13 +398,14 @@ See [docs/improvement_backlog.md](improvement_backlog.md) for the deeper priorit
 
 ## 15. Patent Draft Alignment Notes
 
-The patent draft describes the broader invention as a heterogeneous
-software-development agent coordination layer. The current repository supports
-the main evidence path: multi-source session import, redaction, Postgres/pgvector
-storage, code graph indexing, LSP reference import, changeset-to-symbol links,
-file/symbol reservations, conflict policies, reservation audit events,
-structured handoffs, context review, workspace lineage, and the read-only
-dashboard.
+The patent draft describes the broader invention as a heterogeneous AI agent
+coordination layer for digital assets and work outputs, not only as a software
+development agent tool. The current repository supports the strongest
+repository-centered evidence path: multi-source session import, redaction,
+Postgres/pgvector storage, code graph indexing, LSP reference import,
+changeset-to-symbol links, file/symbol reservations, conflict policies,
+reservation audit events, structured handoffs, context review, workspace
+lineage, cloud/shared PostgreSQL profiles, and the read-only dashboard.
 
 Items that should remain described as optional embodiments, planned slices, or
 partial implementations until completed:
@@ -419,6 +420,14 @@ partial implementations until completed:
 - Focused dashboard review filters beyond the implemented timeline filters,
   related detail panes, and review feeds.
 - Enterprise IAM, row-level security, and dedicated MCP call audit streams.
+- Dedicated non-development SaaS importers for product, design, QA, marketing,
+  support, and operations tools. The protocol can represent those work objects,
+  but the current adapters are still repository and transcript centered.
+
+Open-source launch work should keep the README, contribution guide,
+open-source readiness review, and marketing strategy aligned with that boundary:
+Geond is a local-first shared context substrate for heterogeneous agents, with a
+verified repository-agent implementation and a clear adapter roadmap.
 
 The first version should optimize for one unmistakable demo: context crosses from one agent/session into another without manual re-explanation.
 

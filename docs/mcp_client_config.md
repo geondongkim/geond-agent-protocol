@@ -71,7 +71,7 @@ same logical repository.
 Recommended shared workspace URI for this checkout on Windows:
 
 ```text
-file:///C:/Users/EL035/dataschool/RealMe_OPIc
+file:///C:/Users/EL035/dataschool/geond-agent-protocol
 ```
 
 ### VS Code Copilot Chat
@@ -94,8 +94,8 @@ canonical workspace URI so the dashboard shows Codex beside Copilot:
 ```bash
 uv run geond import-codex "C:/Users/<you>/.codex/sessions" \
   --limit 20 \
-  --workspace-uri "file:///C:/Users/EL035/dataschool/RealMe_OPIc" \
-  --workspace-name "RealMe_OPIc"
+  --workspace-uri "file:///C:/Users/EL035/dataschool/geond-agent-protocol" \
+  --workspace-name "geond-agent-protocol"
 ```
 
 After importing, Codex sessions appear in the workspace selector and in the
@@ -105,7 +105,7 @@ an alias when it is truly the same repository:
 
 ```bash
 uv run geond register-workspace-alias \
-  "file:///C:/Users/EL035/dataschool/RealMe_OPIc" \
+  "file:///C:/Users/EL035/dataschool/geond-agent-protocol" \
   "file:///C:/tmp/old-codex-root" \
   --reason same-repository-root
 ```

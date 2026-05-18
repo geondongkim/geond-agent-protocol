@@ -11,7 +11,7 @@ to verify an installation before running the demo, tests, or MCP server.
 | uv | Creates the virtual environment and runs project commands. | `uv --version` |
 | Docker + Compose | Runs local Postgres with pgvector. | `docker version` and `docker compose version` |
 | Git | Reads commits, diffs, and workspace fingerprints. | `git --version` |
-| ripgrep | Fast repository search for contributors and coding agents. | `rg --version` |
+| ripgrep | Fast repository search for contributors and agent clients. | `rg --version` |
 
 Optional but useful for shared-database validation and migration:
 

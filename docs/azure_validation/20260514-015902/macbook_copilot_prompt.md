@@ -33,8 +33,8 @@ Please do the following without committing secrets:
    `uv run geond conflicts 7b786436-73e2-4d23-a4a4-f724eaf96c3d`
    `uv run geond list-handoffs 7b786436-73e2-4d23-a4a4-f724eaf96c3d`
    `uv run geond search --workspace-uri file:///sample/geond --mode keyword app_context`
-   `uv run geond search --workspace-uri file:///C:/Users/EL035/dataschool/RealMe_OPIc --mode keyword dashboard`
-   `uv run geond mcp-smoke --format json --workspace-uri file:///C:/Users/EL035/dataschool/RealMe_OPIc --query dashboard --limit 3 --allow-empty-search`
+   `uv run geond search --workspace-uri file:///C:/Users/EL035/dataschool/geond-agent-protocol --mode keyword dashboard`
+   `uv run geond mcp-smoke --format json --workspace-uri file:///C:/Users/EL035/dataschool/geond-agent-protocol --query dashboard --limit 3 --allow-empty-search`
 4. Start the local dashboard on the MacBook:
    `uv run geond dashboard serve --host 127.0.0.1 --port 8879`
 5. Open or query these URLs and verify the tabs, horizontal agent lanes, sessions, recent messages, handoffs, and events load from Azure PostgreSQL:

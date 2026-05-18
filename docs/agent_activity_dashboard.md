@@ -20,8 +20,9 @@ boringly reliable.
 
 ## Design Inputs
 
-The dashboard direction comes from five recurring needs in multi-agent coding
-workflows:
+The dashboard direction comes from recurring needs in heterogeneous agent
+workflows across planning, design, QA, marketing, operations, engineering, and
+review:
 
 - a mission-control view that makes agent ownership, blockers, and next actions
   visible without reading raw JSON
@@ -34,11 +35,15 @@ workflows:
   capturing every keystroke
 - a handoff lifecycle model that lets PM/orchestrator agents reason about
   open, blocked, consumed, and released work
+- a safe database source indicator for local-first teams that intentionally run
+  local agents against a shared Azure or remote PostgreSQL database
 
 ## Non-Goals
 
 - Do not turn Geond into an agent runner in the first dashboard slice.
 - Do not require a cloud account or remote sync service.
+- Do not imply that shared cloud storage is mandatory. It is a validated team
+  embodiment for users who intentionally opt in.
 - Do not make MCP clients depend on the dashboard.
 - Do not capture every keystroke. Activity should come from explicit events,
   imports, hooks, reservations, handoffs, changesets, and benchmark records.

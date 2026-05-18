@@ -24,7 +24,7 @@ uv run geond summarize-changeset 54042b2
 uv run geond conflicts 7b786436-73e2-4d23-a4a4-f724eaf96c3d
 uv run geond list-handoffs 7b786436-73e2-4d23-a4a4-f724eaf96c3d
 uv run geond search --workspace-uri file:///sample/geond --mode keyword app_context
-uv run geond search --workspace-uri file:///C:/Users/EL035/dataschool/RealMe_OPIc --mode keyword dashboard
+uv run geond search --workspace-uri file:///C:/Users/EL035/dataschool/geond-agent-protocol --mode keyword dashboard
 uv run geond benchmark-search --workspace-uri file:///sample/geond --mode keyword --repeat 3 --limit 5 app_context
 uv run geond dashboard serve --host 127.0.0.1 --port 8879
 ~~~

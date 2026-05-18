@@ -1,18 +1,18 @@
 # Architecture
 
-`geond-agent-protocol` is a local-first shared memory layer for software-development AI agents. It stores development events, derives code-aware context, and exposes that context through MCP.
+`geond-agent-protocol` is a local-first shared context layer for heterogeneous AI agents. It stores agent events and work evidence, derives domain-aware context, and exposes that context through MCP, CLI, and a read-only dashboard. The current implementation is strongest for repository-centered development workflows; the data model is shaped so planning, product, design, QA, marketing, support, operations, engineering, review, security, documentation, deployment, and PM/orchestration agents can share the same evidence model as adapters are added.
 
 ## 1. System Goals
 
-- Let multiple coding, review, test, security, documentation, deployment, PM, and orchestration agents share durable context across tools and sessions.
-- Preserve why code changed, not only what changed.
-- Combine chat history, diffs, file snapshots, AST symbols, test results, and agent actions.
+- Let multiple planning, product, design, QA, marketing, support, operations, coding, review, test, security, documentation, deployment, PM, and orchestration agents share durable context across tools and sessions.
+- Preserve why a digital asset or work output changed, not only what changed.
+- Combine chat history, diffs, file snapshots, AST symbols, document or work-object metadata, test results, validation evidence, and agent actions.
 - Provide a standard MCP interface so clients can adopt it without custom integrations.
-- Keep local development data private by default.
+- Keep local data private by default while allowing intentional shared PostgreSQL profiles for team collaboration.
 
 ## 2. Non-Goals
 
-- Do not replace existing coding agents, review agents, or orchestration tools.
+- Do not replace existing planning, design, QA, coding, review, security, PM, or orchestration tools.
 - Do not fork Copilot, Codex, Continue, Cursor, or OpenHands for the MVP.
 - Do not depend on private VS Code storage formats as a stable public API.
 - Do not require fine-tuning or cloud services for the first version.
@@ -26,6 +26,7 @@ flowchart TB
         V[VS Code / Copilot Chat]
         X[Codex-like CLI]
         C[Continue / MCP Client]
+        P0[Product / Design / QA / Marketing Agents]
         O[Review / Test / Security / Deploy Agents]
     end
 
@@ -41,7 +42,7 @@ flowchart TB
         R[Redaction Layer]
         E[Event Store Writer]
         P[Projection Builder]
-        G[Code Graph Builder]
+      G[Domain Graph Builder]
         Q[Retrieval Engine]
     end
 
@@ -60,6 +61,7 @@ flowchart TB
     V --> A1
     X --> A3
     C --> MCP
+    P0 --> MCP
     O --> MCP
     A1 --> R
     A2 --> R

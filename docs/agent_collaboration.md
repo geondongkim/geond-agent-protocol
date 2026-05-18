@@ -1,13 +1,13 @@
-# Does geond actually help software-development agents collaborate?
+# Does Geond Actually Help Heterogeneous Agents Collaborate?
 
-This note answers three questions that come up every time we hand the
-protocol to a new pair of software-development agents. The current tier-1
-testbeds are coding-agent surfaces (GitHub Copilot Chat, Codex, and Claude
-Code), but the same coordination model is intended for review, test, security,
-documentation, deployment, PM, and orchestration agents that consume the same
-evidence.
+This note answers three questions that come up every time we hand the protocol
+to another group of agents. The current tier-1 testbeds are repository-centered
+agent surfaces (GitHub Copilot Chat, Codex, and Claude Code), but the
+coordination model is broader: planning, product, design, QA, marketing,
+support, operations, coding, review, test, security, documentation, deployment,
+PM, and orchestration agents can all consume and produce the same evidence.
 
-1. Does geond enable *real* collaboration between development agents, or is it
+1. Does Geond enable *real* collaboration between agents with different roles, or is it
    just a shared notebook?
 2. Is reading geond CLI/MCP output actually more efficient than reading
    the underlying git commits?
@@ -20,7 +20,7 @@ why, who claimed it, and what to look at next.
 
 ## 1. Agent-to-agent collaboration
 
-What geond gives two agents that git does not:
+What Geond gives two agents that git or a shared note does not:
 
 - **Reservations** (`reserve_files`, `reserve_symbols`, `get_active_reservations`,
   `get_symbol_conflicts`). Before an agent edits a file or a symbol it
@@ -70,10 +70,10 @@ What geond does *not* solve:
   edits files without calling `record_changeset` leaves the protocol
   blind, the same way a developer who never commits leaves git blind.
 
-**Verdict.** geond meaningfully reduces the cost of two or more agents working
-on the same codebase or adjacent development artifacts: claim, narrate, and look
-up each other's work without scraping each other's chat logs. It is necessary
-connective tissue, not a complete coordinator.
+**Verdict.** Geond meaningfully reduces the cost of two or more agents working
+on the same repository, document set, operational workflow, or adjacent digital
+artifacts: claim, narrate, and look up each other's work without scraping each
+other's chat logs. It is a coordination substrate, not a complete agent runner.
 
 ### Operational loop
 

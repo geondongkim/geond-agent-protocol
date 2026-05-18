@@ -1,9 +1,9 @@
 # Codex Test Bed
 
 Codex is the second ingestion test bed for Geond, after VS Code GitHub Copilot Chat.
-The goal is to validate the shared-memory protocol against another real coding-agent
+The goal is to validate the shared-memory protocol against another real repository-agent
 session format before expanding provider work to Azure OpenAI, local embeddings,
-OpenAI-compatible gateways, and model benchmarks.
+OpenAI-compatible gateways, model benchmarks, and non-development work adapters.
 
 ## Source Layout
 
@@ -61,8 +61,8 @@ Windows that is:
 ```bash
 uv run geond import-codex "C:/Users/<you>/.codex/sessions" \
   --limit 20 \
-  --workspace-uri "file:///C:/Users/EL035/dataschool/RealMe_OPIc" \
-  --workspace-name "RealMe_OPIc"
+  --workspace-uri "file:///C:/Users/EL035/dataschool/geond-agent-protocol" \
+  --workspace-name "geond-agent-protocol"
 ```
 
 If Codex is imported into a fixture or temporary workspace URI, it will still be
