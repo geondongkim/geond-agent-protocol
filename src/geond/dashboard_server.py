@@ -220,25 +220,28 @@ def mission_control_html() -> str:
   <style>
     :root {
       color-scheme: light;
-      --bg: #f6f7f9;
+      --bg: #f4f6f8;
       --surface: #ffffff;
-      --surface-2: #eef2f6;
-      --text: #18202a;
-      --muted: #5d6978;
+      --surface-2: #f8fafc;
+      --surface-3: #eef4f6;
+      --text: #16202b;
+      --muted: #637083;
       --line: #d7dde5;
+      --line-strong: #bdc9d5;
       --accent: #0b6b63;
       --accent-soft: #dcefeb;
       --accent-2: #6d4aff;
       --warn: #9a5b00;
       --danger: #a33a34;
       --ok: #167044;
+      --shadow: 0 16px 42px rgba(27, 39, 53, 0.08);
       font-family: Inter, ui-sans-serif, system-ui, -apple-system,
         BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      background: var(--bg);
+      background: linear-gradient(180deg, #eef3f6 0, var(--bg) 220px);
       color: var(--text);
       font-size: 14px;
       letter-spacing: 0;
@@ -246,21 +249,22 @@ def mission_control_html() -> str:
       overflow: hidden;
     }
     header {
-      height: 64px;
+      height: 72px;
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 18px;
-      padding: 0 24px;
+      padding: 0 26px;
       border-bottom: 1px solid var(--line);
-      background: var(--surface);
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(10px);
       position: sticky;
       top: 0;
       z-index: 5;
     }
     h1 {
       margin: 0;
-      font-size: 18px;
+      font-size: 19px;
       font-weight: 680;
     }
     .runtime {
@@ -278,8 +282,8 @@ def mission_control_html() -> str:
       margin-top: 0;
     }
     main {
-      height: calc(100vh - 64px);
-      padding: 12px 14px 14px;
+      height: calc(100vh - 72px);
+      padding: 14px 18px 18px;
       overflow: hidden;
     }
     .toolbar {
@@ -297,7 +301,7 @@ def mission_control_html() -> str:
       font-weight: 600;
     }
     input, select, button {
-      height: 36px;
+      height: 38px;
       border: 1px solid var(--line);
       border-radius: 6px;
       background: #fff;
@@ -321,11 +325,16 @@ def mission_control_html() -> str:
       border-color: var(--accent);
       font-weight: 650;
       cursor: pointer;
+      box-shadow: 0 7px 18px rgba(11, 107, 99, 0.14);
     }
     button.secondary {
       background: #fff;
       color: var(--text);
       border-color: var(--line);
+      box-shadow: none;
+    }
+    button:hover {
+      border-color: var(--line-strong);
     }
     .filter-strip {
       display: grid;
@@ -357,18 +366,23 @@ def mission_control_html() -> str:
       gap: 8px;
       margin-bottom: 10px;
       overflow-x: auto;
+      padding: 4px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.72);
     }
     .tab {
-      height: 32px;
-      background: var(--surface);
+      height: 34px;
+      background: transparent;
       color: var(--text);
-      border-color: var(--line);
+      border-color: transparent;
       white-space: nowrap;
+      box-shadow: none;
     }
     .tab.active {
-      background: var(--accent);
+      background: #152333;
       color: #fff;
-      border-color: var(--accent);
+      border-color: #152333;
     }
     .view {
       display: none;
@@ -381,7 +395,7 @@ def mission_control_html() -> str:
     .overview-shell {
       display: grid;
       grid-template-columns: 360px minmax(0, 1fr);
-      gap: 12px;
+      gap: 14px;
       height: 100%;
       min-height: 0;
     }
@@ -397,7 +411,7 @@ def mission_control_html() -> str:
       display: grid;
       grid-auto-flow: column;
       grid-auto-columns: minmax(360px, 1fr);
-      gap: 12px;
+      gap: 14px;
       height: 100%;
       min-width: 0;
       overflow-x: auto;
@@ -508,9 +522,10 @@ def mission_control_html() -> str:
       display: grid;
       grid-template-rows: auto minmax(0, 1fr);
       min-height: 0;
-      background: var(--surface);
+      background: rgba(255, 255, 255, 0.95);
       border: 1px solid var(--line);
       border-radius: 8px;
+      box-shadow: var(--shadow);
       overflow: hidden;
     }
     .lane-head {
@@ -520,7 +535,7 @@ def mission_control_html() -> str:
       align-items: start;
       padding: 12px;
       border-bottom: 1px solid var(--line);
-      background: #fff;
+      background: linear-gradient(180deg, #ffffff 0, #f8fafc 100%);
     }
     .lane-body {
       display: grid;
@@ -559,6 +574,7 @@ def mission_control_html() -> str:
       border-radius: 7px;
       background: #fff;
       padding: 9px 10px;
+      box-shadow: 0 8px 20px rgba(27, 39, 53, 0.04);
     }
     .session-card {
       display: grid;
@@ -571,6 +587,7 @@ def mission_control_html() -> str:
     }
     .message {
       background: var(--surface-2);
+      border-color: #e4eaf0;
     }
     .message .role {
       color: var(--accent);
@@ -648,17 +665,18 @@ def mission_control_html() -> str:
       align-items: start;
     }
     section {
-      background: var(--surface);
+      background: rgba(255, 255, 255, 0.95);
       border: 1px solid var(--line);
       border-radius: 8px;
       overflow: hidden;
+      box-shadow: var(--shadow);
     }
     section > header {
       position: static;
       height: 48px;
       padding: 0 14px;
       border-bottom: 1px solid var(--line);
-      background: var(--surface);
+      background: linear-gradient(180deg, #ffffff 0, #f8fafc 100%);
     }
     section h2 {
       margin: 0;
@@ -671,9 +689,10 @@ def mission_control_html() -> str:
       border-bottom: 1px solid var(--line);
     }
     .metric {
-      padding: 12px 14px;
+      padding: 13px 14px;
       border-right: 1px solid var(--line);
       min-height: 68px;
+      background: #fff;
     }
     .metric:last-child { border-right: 0; }
     .metric span {
@@ -683,7 +702,7 @@ def mission_control_html() -> str:
       margin-bottom: 6px;
     }
     .metric strong {
-      font-size: 22px;
+      font-size: 24px;
       line-height: 1;
     }
     .split {
@@ -711,6 +730,7 @@ def mission_control_html() -> str:
       border: 1px solid var(--line);
       border-radius: 6px;
       background: #fff;
+      box-shadow: 0 7px 18px rgba(27, 39, 53, 0.04);
     }
     .title {
       font-weight: 650;
@@ -733,9 +753,9 @@ def mission_control_html() -> str:
       font-size: 12px;
       white-space: nowrap;
     }
-    .badge.ok { color: var(--ok); background: #e5f3ec; border-color: #b9dec8; }
-    .badge.warn { color: var(--warn); background: #fff3db; border-color: #eed39c; }
-    .badge.danger { color: var(--danger); background: #fae8e6; border-color: #e5b8b3; }
+    .badge.ok { color: var(--ok); background: #e4f5ee; border-color: #b7ddcb; }
+    .badge.warn { color: var(--warn); background: #fff7df; border-color: #ead391; }
+    .badge.danger { color: var(--danger); background: #fff0ed; border-color: #efb8b0; }
     .timeline {
       display: grid;
       gap: 0;
@@ -791,9 +811,20 @@ def mission_control_html() -> str:
       grid-template-columns: minmax(0, 1fr) auto auto;
     }
     @media (max-width: 980px) {
-      header { height: auto; padding: 14px; align-items: stretch; flex-direction: column; }
-      .toolbar { grid-template-columns: 1fr; width: 100%; }
-      main { height: calc(100vh - 145px); padding: 10px; }
+      header {
+        height: auto;
+        padding: 12px 14px;
+        align-items: stretch;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .toolbar {
+        grid-template-columns: minmax(220px, 1fr) 88px 88px 44px;
+        width: 100%;
+      }
+      .toolbar button { padding: 0; }
+      .runtime { justify-content: flex-start; min-width: 0; }
+      main { height: calc(100vh - 180px); padding: 10px; }
       .overview-shell, .split, .lineage, .trace-grid { grid-template-columns: 1fr; }
       .filter-strip { grid-template-columns: 1fr; }
       .mode-strip { grid-template-columns: 1fr; }
@@ -801,6 +832,10 @@ def mission_control_html() -> str:
       .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .panel + .panel, .lineage div + div { border-left: 0; border-top: 1px solid var(--line); }
       .event { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 640px) {
+      .toolbar { grid-template-columns: 1fr; }
+      main { height: calc(100vh - 300px); }
     }
   </style>
 </head>
