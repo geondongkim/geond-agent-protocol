@@ -423,3 +423,154 @@ def test_cli_dry_run_writes_nothing(tmp_path) -> None:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM workspaces WHERE id = %s", (workspace_id,))
             conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# context packet (unit — no DB)
+# ---------------------------------------------------------------------------
+
+
+def test_context_packet_to_prompt_has_no_secrets() -> None:
+    from geond.cli import _context_packet_to_prompt
+
+    packet = {
+        "schema": "geond.context_packet.v1",
+        "workspace_uri": "file:///tmp/ws",
+        "query": "auth refactor",
+        "open_handoffs": [
+            {
+                "handoff_id": "hid-1",
+                "from_agent": "Codex",
+                "to_agent": "Manus",
+                "summary": "Refactor auth module",
+                "next_steps": ["run tests", "deploy"],
+                "blocked_on": [],
+            }
+        ],
+        "active_file_reservations": [
+            {
+                "file_path": "src/auth.py",
+                "agent": "Codex",
+                "purpose": "refactor",
+                "expires_at": None,
+            }
+        ],
+        "active_symbol_reservations": [],
+        "recent_activity": [],
+        "search_results": [
+            {
+                "source": "codex",
+                "session_title": "Auth sprint",
+                "role": "assistant",
+                "ordinal": 3,
+                "excerpt": "JWT middleware rewrite",
+                "evidence_ref": "geond:codex:sess-001:3",
+            }
+        ],
+        "assessment": None,
+        "recommendations": ["No blocking reservations"],
+    }
+
+    prompt = _context_packet_to_prompt(packet)
+
+    assert "## Geond Context Packet" in prompt
+    assert "auth refactor" in prompt
+    assert "Codex → Manus" in prompt
+    assert "src/auth.py" in prompt
+    assert "geond:codex:sess-001:3" in prompt
+    assert "JWT middleware rewrite" in prompt
+    assert "No blocking reservations" in prompt
+    # No secrets in prompt
+    assert "sk-" not in prompt
+    assert "MANUS_API_KEY" not in prompt
+
+
+def test_context_packet_to_prompt_empty_sections_omitted() -> None:
+    from geond.cli import _context_packet_to_prompt
+
+    packet = {
+        "workspace_uri": "file:///tmp/ws",
+        "query": "",
+        "open_handoffs": [],
+        "active_file_reservations": [],
+        "active_symbol_reservations": [],
+        "recent_activity": [],
+        "search_results": [],
+        "assessment": None,
+        "recommendations": [],
+    }
+    prompt = _context_packet_to_prompt(packet)
+    assert "Open Handoffs" not in prompt
+    assert "File Reservations" not in prompt
+    assert "Relevant Prior Sessions" not in prompt
+
+
+# ---------------------------------------------------------------------------
+# CLI manus-context-packet integration (skipped without Postgres)
+# ---------------------------------------------------------------------------
+
+
+def test_cli_manus_context_packet_outputs_json(tmp_path) -> None:
+    try:
+        import psycopg
+
+        from geond.config import get_settings
+        from geond.db import connect, run_schema_file
+    except ImportError:
+        pytest.skip("psycopg not available")
+
+    settings = get_settings()
+    schema = Path(__file__).parents[1] / "schemas" / "001_initial.sql"
+    workspace_uri = f"file:///tmp/geond-manus-ctxpkt-{uuid4()}"
+
+    try:
+        conn = connect(settings)
+    except Exception as exc:
+        pytest.skip(f"Postgres not available: {exc}")
+
+    from geond.storage.repository import upsert_workspace
+
+    with conn:
+        try:
+            run_schema_file(conn, schema)
+        except psycopg.Error as exc:
+            pytest.skip(f"Schema unavailable: {exc}")
+
+        upsert_workspace(conn, root_uri=workspace_uri, name="manus-ctxpkt-test")
+        try:
+            import sys
+            from io import StringIO
+            from unittest.mock import patch as _patch
+
+            from geond.cli import main
+
+            captured = StringIO()
+            with _patch.object(
+                sys,
+                "argv",
+                [
+                    "geond",
+                    "manus-context-packet",
+                    "--workspace-uri",
+                    workspace_uri,
+                    "--query",
+                    "auth refactor",
+                ],
+            ):
+                with _patch("sys.stdout", captured):
+                    main()
+
+            output = json.loads(captured.getvalue())
+            assert output["schema"] == "geond.context_packet.v1"
+            assert output["workspace_uri"] == workspace_uri
+            assert output["query"] == "auth refactor"
+            assert "open_handoffs" in output
+            assert "active_file_reservations" in output
+            assert "active_symbol_reservations" in output
+            assert "search_results" in output
+
+        finally:
+            with connect(settings) as cleanup_conn:
+                with cleanup_conn.cursor() as cur:
+                    cur.execute("DELETE FROM workspaces WHERE root_uri = %s", (workspace_uri,))
+                cleanup_conn.commit()

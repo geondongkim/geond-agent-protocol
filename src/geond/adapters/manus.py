@@ -214,14 +214,24 @@ class ManusApiClient:
         self._api_key = api_key or os.environ.get("MANUS_API_KEY") or ""
         self._base_url = base_url.rstrip("/")
 
-    def _request(self, path: str, params: dict[str, str] | None = None) -> dict[str, Any]:
+    def _request(
+        self,
+        path: str,
+        params: dict[str, str] | None = None,
+        body: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         query = ""
         if params:
             query = "?" + "&".join(f"{k}={v}" for k, v in params.items())
         url = f"{self._base_url}/{path.lstrip('/')}{query}"
-        req = urllib.request.Request(url)
+        data: bytes | None = None
+        if body is not None:
+            data = json.dumps(body).encode("utf-8")
+        req = urllib.request.Request(url, data=data, method="POST" if data else "GET")
         req.add_header("x-manus-api-key", self._api_key)
         req.add_header("Accept", "application/json")
+        if data:
+            req.add_header("Content-Type", "application/json")
 
         last_exc: Exception | None = None
         for attempt in range(_MAX_RETRIES):
@@ -281,3 +291,8 @@ class ManusApiClient:
         detail = self.get_task(task_id)
         messages = self.get_task_messages(task_id)
         return normalize_task(detail, messages)
+
+    def create_task(self, title: str, prompt: str) -> dict[str, Any]:
+        """Create a new Manus task. Returns the created task object."""
+        resp = self._request("v2/task.create", body={"title": title, "prompt": prompt})
+        return resp.get("task") or resp

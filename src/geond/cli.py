@@ -210,6 +210,147 @@ def fingerprint_from_arg(value: str) -> dict[str, object]:
     }
 
 
+def build_manus_context_packet(
+    conn: object,
+    workspace_uri: str,
+    query: str = "",
+    limit: int = 5,
+) -> dict:
+    """Assemble a Geond context packet suitable for pasting into a Manus task prompt."""
+    from psycopg import Connection as _Conn
+
+    assert isinstance(conn, _Conn)
+
+    ctx = review_workspace_context(
+        conn,
+        workspace_id_or_uri=workspace_uri,
+        intent=query,
+        limit=limit,
+    )
+    workspace_id = ctx.get("workspace_id")
+
+    recent_activity: list[dict] = []
+    if workspace_id:
+        activity = get_agent_activity_events(conn, workspace_uri, limit=limit * 2)
+        recent_activity = activity.get("events", [])[:limit]
+
+    search_results: list[dict] = []
+    if query and workspace_id:
+        hits = search_dev_memory(conn, query=query, workspace_uri=workspace_uri, limit=limit)
+        for hit in hits:
+            search_results.append(
+                {
+                    "source": hit.get("source"),
+                    "session_title": hit.get("title"),
+                    "role": hit.get("role"),
+                    "ordinal": hit.get("ordinal"),
+                    "excerpt": (hit.get("content") or "")[:400],
+                    "evidence_ref": (
+                        f"geond:{hit.get('source')}:{hit.get('external_id')}:{hit.get('ordinal')}"
+                    ),
+                }
+            )
+
+    open_handoffs = [
+        {
+            "handoff_id": h.get("handoff_id"),
+            "from_agent": h.get("from_agent_name"),
+            "to_agent": h.get("to_agent_name"),
+            "summary": h.get("summary"),
+            "next_steps": h.get("next_steps"),
+            "blocked_on": h.get("blocked_on"),
+        }
+        for h in ctx.get("loaded_context", {}).get("open_handoffs", [])
+    ]
+
+    file_reservations = [
+        {
+            "file_path": r.get("file_path"),
+            "agent": r.get("agent_name"),
+            "purpose": r.get("purpose"),
+            "expires_at": r.get("expires_at"),
+        }
+        for r in ctx.get("loaded_context", {}).get("file_reservations", [])
+    ]
+
+    symbol_reservations = [
+        {
+            "symbol": r.get("symbol"),
+            "agent": r.get("agent_name"),
+            "purpose": r.get("purpose"),
+        }
+        for r in ctx.get("loaded_context", {}).get("symbol_reservations", [])
+    ]
+
+    return {
+        "schema": "geond.context_packet.v1",
+        "workspace_uri": workspace_uri,
+        "workspace_id": workspace_id,
+        "query": query,
+        "open_handoffs": open_handoffs,
+        "active_file_reservations": file_reservations,
+        "active_symbol_reservations": symbol_reservations,
+        "recent_activity": recent_activity,
+        "search_results": search_results,
+        "assessment": ctx.get("assessment"),
+        "recommendations": ctx.get("recommendations", []),
+    }
+
+
+def _context_packet_to_prompt(packet: dict) -> str:
+    """Render a context packet as a Manus task prompt string."""
+    lines: list[str] = [
+        "## Geond Context Packet",
+        f"workspace: {packet.get('workspace_uri')}",
+        f"query: {packet.get('query') or '(none)'}",
+        "",
+    ]
+
+    handoffs = packet.get("open_handoffs") or []
+    if handoffs:
+        lines.append(f"### Open Handoffs ({len(handoffs)})")
+        for h in handoffs:
+            lines.append(f"- [{h.get('from_agent')} → {h.get('to_agent')}] {h.get('summary')}")
+            for step in h.get("next_steps") or []:
+                lines.append(f"  - {step}")
+        lines.append("")
+
+    reservations = packet.get("active_file_reservations") or []
+    if reservations:
+        lines.append(f"### Active File Reservations ({len(reservations)})")
+        for r in reservations:
+            lines.append(
+                f"- {r.get('file_path')} (agent: {r.get('agent')}, purpose: {r.get('purpose')})"
+            )
+        lines.append("")
+
+    sym_reservations = packet.get("active_symbol_reservations") or []
+    if sym_reservations:
+        lines.append(f"### Active Symbol Reservations ({len(sym_reservations)})")
+        for r in sym_reservations:
+            lines.append(f"- {r.get('symbol')} (agent: {r.get('agent')})")
+        lines.append("")
+
+    results = packet.get("search_results") or []
+    if results:
+        lines.append(f"### Relevant Prior Sessions ({len(results)})")
+        for r in results:
+            lines.append(
+                f"- [{r.get('evidence_ref')}] {r.get('session_title')} / "
+                f"{r.get('role')} #{r.get('ordinal')}: {r.get('excerpt')}"
+            )
+        lines.append("")
+
+    recs = packet.get("recommendations") or []
+    if recs:
+        lines.append("### Geond Recommendations")
+        for rec in recs:
+            lines.append(f"- {rec}")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
 def main() -> None:
     configure_cli_output()
     parser = argparse.ArgumentParser(prog="geond")
@@ -448,6 +589,24 @@ def main() -> None:
         "--dry-run",
         action="store_true",
         help="Print planned records without writing to the database",
+    )
+
+    manus_ctx = subparsers.add_parser(
+        "manus-context-packet",
+        help="Build a Geond context packet to send as a Manus task prompt",
+    )
+    manus_ctx.add_argument("--workspace-uri", required=True)
+    manus_ctx.add_argument("--query", default="", help="Intent / task description for search")
+    manus_ctx.add_argument("--limit", type=int, default=5, help="Items per section")
+    manus_ctx.add_argument(
+        "--create-task",
+        action="store_true",
+        help="Create a Manus task with this packet as the prompt (requires MANUS_API_KEY)",
+    )
+    manus_ctx.add_argument(
+        "--task-title",
+        default="",
+        help="Title for the Manus task (used with --create-task)",
     )
 
     embed_messages = subparsers.add_parser(
@@ -1406,6 +1565,33 @@ def main() -> None:
                 indent=2,
             )
         )
+        return
+
+    if args.command == "manus-context-packet":
+        with connect(get_settings()) as conn:
+            packet = build_manus_context_packet(
+                conn,
+                workspace_uri=args.workspace_uri,
+                query=args.query,
+                limit=args.limit,
+            )
+
+        if args.create_task:
+            try:
+                client = ManusApiClient()
+                prompt = _context_packet_to_prompt(packet)
+                title = args.task_title or (
+                    f"Geond context: {args.query[:60]}" if args.query else "Geond context review"
+                )
+                created = client.create_task(title=title, prompt=prompt)
+                packet["created_manus_task"] = created
+            except ManusApiError as exc:
+                packet["create_task_error"] = {
+                    "code": exc.status_code,
+                    "message": str(exc),
+                }
+
+        print(json.dumps(packet, ensure_ascii=False, indent=2, default=str))
         return
 
     if args.command == "embed-messages":
