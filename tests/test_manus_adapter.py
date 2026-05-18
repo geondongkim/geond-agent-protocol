@@ -574,3 +574,236 @@ def test_cli_manus_context_packet_outputs_json(tmp_path) -> None:
                 with cleanup_conn.cursor() as cur:
                     cur.execute("DELETE FROM workspaces WHERE root_uri = %s", (workspace_uri,))
                 cleanup_conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# contract helpers (unit — no DB)
+# ---------------------------------------------------------------------------
+
+
+def test_contract_to_prompt_has_intent_and_files() -> None:
+    from geond.cli import _build_task_contract, _contract_to_prompt
+
+    start_result = {
+        "workspace_id": "ws-001",
+        "agent_name": "Manus",
+        "dry_run": True,
+        "action_id": None,
+        "requested": {"files": ["src/auth.py"], "symbols": ["require_auth"]},
+        "conflicts": {"file_reservations": [], "symbol_reservations": []},
+        "reservations": {"files": {}, "symbols": {}},
+        "review": {
+            "workspace_uri": "file:///tmp/ws",
+            "recommendations": ["No blocking reservations found."],
+        },
+    }
+    contract = _build_task_contract(
+        start_result,
+        intent="Refactor auth middleware to use JWT",
+        expected_outputs=["updated src/auth.py", "passing tests"],
+        validation_commands=["pytest tests/test_auth.py"],
+    )
+    assert contract["schema"] == "geond.manus_task_contract.v1"
+    assert contract["intent"] == "Refactor auth middleware to use JWT"
+    assert "src/auth.py" in contract["files"]
+    assert "require_auth" in contract["symbols"]
+    assert "updated src/auth.py" in contract["expected_outputs"]
+    assert "pytest tests/test_auth.py" in contract["validation_commands"]
+    assert contract["dry_run"] is True
+
+    prompt = _contract_to_prompt(contract)
+    assert "## Geond Task Contract" in prompt
+    assert "Refactor auth middleware to use JWT" in prompt
+    assert "src/auth.py" in prompt
+    assert "require_auth" in prompt
+    assert "pytest tests/test_auth.py" in prompt
+    assert "No blocking reservations" in prompt
+    assert "sk-" not in prompt
+
+
+def test_contract_to_prompt_shows_conflicts() -> None:
+    from geond.cli import _build_task_contract, _contract_to_prompt
+
+    start_result = {
+        "workspace_id": "ws-002",
+        "agent_name": "Manus",
+        "dry_run": True,
+        "action_id": None,
+        "requested": {"files": ["src/auth.py"], "symbols": []},
+        "conflicts": {
+            "file_reservations": [
+                {
+                    "file_path": "src/auth.py",
+                    "agent_name": "Codex",
+                    "purpose": "ongoing refactor",
+                }
+            ],
+            "symbol_reservations": [],
+        },
+        "reservations": {"files": {}, "symbols": {}},
+        "review": {"workspace_uri": "file:///tmp/ws", "recommendations": []},
+    }
+    contract = _build_task_contract(
+        start_result,
+        intent="Add OAuth provider",
+        expected_outputs=[],
+        validation_commands=[],
+    )
+    prompt = _contract_to_prompt(contract)
+    assert "Active Conflicts" in prompt
+    assert "src/auth.py" in prompt
+    assert "Codex" in prompt
+
+
+# ---------------------------------------------------------------------------
+# manus-task-contract CLI integration (skipped without Postgres)
+# ---------------------------------------------------------------------------
+
+
+def test_cli_manus_task_contract_dry_run() -> None:
+    try:
+        import psycopg
+
+        from geond.config import get_settings
+        from geond.db import connect, run_schema_file
+    except ImportError:
+        pytest.skip("psycopg not available")
+
+    settings = get_settings()
+    schema = Path(__file__).parents[1] / "schemas" / "001_initial.sql"
+    workspace_uri = f"file:///tmp/geond-manus-contract-{uuid4()}"
+
+    try:
+        conn = connect(settings)
+    except Exception as exc:
+        pytest.skip(f"Postgres not available: {exc}")
+
+    from geond.storage.repository import upsert_workspace
+
+    with conn:
+        try:
+            run_schema_file(conn, schema)
+        except psycopg.Error as exc:
+            pytest.skip(f"Schema unavailable: {exc}")
+
+        upsert_workspace(conn, root_uri=workspace_uri, name="manus-contract-test")
+        try:
+            import sys
+            from io import StringIO
+            from unittest.mock import patch as _patch
+
+            from geond.cli import main
+
+            captured = StringIO()
+            with _patch.object(
+                sys,
+                "argv",
+                [
+                    "geond",
+                    "manus-task-contract",
+                    "--workspace-uri",
+                    workspace_uri,
+                    "--intent",
+                    "Refactor auth middleware",
+                    "--file",
+                    "src/auth.py",
+                    "--expected-output",
+                    "passing tests",
+                    "--dry-run",
+                ],
+            ):
+                with _patch("sys.stdout", captured):
+                    main()
+
+            output = json.loads(captured.getvalue())
+            assert output["schema"] == "geond.manus_task_contract.v1"
+            assert output["intent"] == "Refactor auth middleware"
+            assert "src/auth.py" in output["files"]
+            assert "passing tests" in output["expected_outputs"]
+            assert output["dry_run"] is True
+            assert output["action_id"] is None
+
+        finally:
+            with connect(settings) as cleanup_conn:
+                with cleanup_conn.cursor() as cur:
+                    cur.execute("DELETE FROM workspaces WHERE root_uri = %s", (workspace_uri,))
+                cleanup_conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# manus-task-complete CLI integration (skipped without Postgres)
+# ---------------------------------------------------------------------------
+
+
+def test_cli_manus_task_complete_with_fixture() -> None:
+    try:
+        import psycopg
+
+        from geond.config import get_settings
+        from geond.db import connect, run_schema_file
+    except ImportError:
+        pytest.skip("psycopg not available")
+
+    settings = get_settings()
+    schema = Path(__file__).parents[1] / "schemas" / "001_initial.sql"
+    workspace_uri = f"file:///tmp/geond-manus-complete-{uuid4()}"
+
+    try:
+        conn = connect(settings)
+    except Exception as exc:
+        pytest.skip(f"Postgres not available: {exc}")
+
+    from geond.storage.repository import upsert_workspace
+
+    with conn:
+        try:
+            run_schema_file(conn, schema)
+        except psycopg.Error as exc:
+            pytest.skip(f"Schema unavailable: {exc}")
+
+        upsert_workspace(conn, root_uri=workspace_uri, name="manus-complete-test")
+        try:
+            import sys
+            from io import StringIO
+            from unittest.mock import patch as _patch
+
+            from geond.cli import main
+
+            captured = StringIO()
+            with _patch.object(
+                sys,
+                "argv",
+                [
+                    "geond",
+                    "manus-task-complete",
+                    "--fixture",
+                    str(FIXTURES / "task_detail_completed.json"),
+                    "--fixture-messages",
+                    str(FIXTURES / "task_messages_completed.json"),
+                    "--workspace-uri",
+                    workspace_uri,
+                    "--handoff-summary",
+                    "JWT refactor complete",
+                    "--next-step",
+                    "deploy to staging",
+                    "--tested-command",
+                    "pytest tests/",
+                    "--reservation-mode",
+                    "release",
+                ],
+            ):
+                with _patch("sys.stdout", captured):
+                    main()
+
+            output = json.loads(captured.getvalue())
+            assert output["status"] == "ok"
+            assert output["task_id"] == "manus-task-abc123"
+            assert output["imported_messages"] == 5
+            assert output["finish"]["status"] == "ok"
+            assert output["finish"]["command"] == "finish-task"
+
+        finally:
+            with connect(settings) as cleanup_conn:
+                with cleanup_conn.cursor() as cur:
+                    cur.execute("DELETE FROM workspaces WHERE root_uri = %s", (workspace_uri,))
+                cleanup_conn.commit()

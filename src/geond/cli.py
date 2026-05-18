@@ -10,6 +10,7 @@ from geond.adapters.claude_code import parse_storage as parse_claude_code_storag
 from geond.adapters.claude_code import to_summary as claude_code_to_summary
 from geond.adapters.codex import parse_storage as parse_codex_storage
 from geond.adapters.codex import to_summary as codex_to_summary
+from geond.adapters.manus import AGENT_NAME as MANUS_AGENT_NAME
 from geond.adapters.manus import ManusApiClient, ManusApiError, load_fixture
 from geond.adapters.vscode_copilot import parse_storage, to_summary
 from geond.cli_tasks import (
@@ -351,6 +352,126 @@ def _context_packet_to_prompt(packet: dict) -> str:
     return "\n".join(lines)
 
 
+def _build_task_contract(
+    start_result: dict,
+    intent: str,
+    expected_outputs: list[str],
+    validation_commands: list[str],
+) -> dict:
+    """Build a structured pre-task contract from start_task output."""
+    reservations = start_result.get("reservations") or {}
+    file_res = reservations.get("files") or {}
+    sym_res = reservations.get("symbols") or {}
+
+    file_reservation_ids = [
+        r.get("reservation_id")
+        for r in (file_res.get("reservations") or [])
+        if r.get("reservation_id")
+    ]
+    symbol_reservation_ids = [
+        r.get("reservation_id")
+        for r in (sym_res.get("reservations") or [])
+        if r.get("reservation_id")
+    ]
+
+    conflicts = start_result.get("conflicts") or {}
+    return {
+        "schema": "geond.manus_task_contract.v1",
+        "workspace_uri": start_result.get("review", {}).get("workspace_uri"),
+        "workspace_id": start_result.get("workspace_id"),
+        "agent_name": start_result.get("agent_name"),
+        "intent": intent,
+        "files": (start_result.get("requested") or {}).get("files") or [],
+        "symbols": (start_result.get("requested") or {}).get("symbols") or [],
+        "active_conflicts": {
+            "file_reservations": conflicts.get("file_reservations") or [],
+            "symbol_reservations": conflicts.get("symbol_reservations") or [],
+        },
+        "reservation_ids": {
+            "files": file_reservation_ids,
+            "symbols": symbol_reservation_ids,
+        },
+        "expected_outputs": expected_outputs,
+        "validation_commands": validation_commands,
+        "action_id": start_result.get("action_id"),
+        "dry_run": start_result.get("dry_run", False),
+        "recommendations": (start_result.get("review") or {}).get("recommendations") or [],
+    }
+
+
+def _contract_to_prompt(contract: dict) -> str:
+    """Render a task contract as a Manus task prompt string."""
+    lines: list[str] = [
+        "## Geond Task Contract",
+        f"workspace: {contract.get('workspace_uri') or contract.get('workspace_id')}",
+        f"intent: {contract.get('intent')}",
+        "",
+    ]
+
+    files = contract.get("files") or []
+    if files:
+        lines.append("### Files in Scope")
+        for f in files:
+            lines.append(f"- {f}")
+        lines.append("")
+
+    symbols = contract.get("symbols") or []
+    if symbols:
+        lines.append("### Symbols in Scope")
+        for s in symbols:
+            lines.append(f"- {s}")
+        lines.append("")
+
+    conflicts = contract.get("active_conflicts") or {}
+    file_conflicts = conflicts.get("file_reservations") or []
+    sym_conflicts = conflicts.get("symbol_reservations") or []
+    if file_conflicts or sym_conflicts:
+        lines.append("### Active Conflicts (check before editing)")
+        for r in file_conflicts:
+            lines.append(
+                f"- FILE {r.get('file_path')} reserved by {r.get('agent_name')}: {r.get('purpose')}"
+            )
+        for r in sym_conflicts:
+            lines.append(
+                f"- SYMBOL {r.get('symbol')} reserved by {r.get('agent_name')}: {r.get('purpose')}"
+            )
+        lines.append("")
+
+    res_ids = contract.get("reservation_ids") or {}
+    file_ids = res_ids.get("files") or []
+    sym_ids = res_ids.get("symbols") or []
+    if file_ids or sym_ids:
+        lines.append("### Geond Reservation IDs (include in task output)")
+        for rid in file_ids:
+            lines.append(f"- file:{rid}")
+        for rid in sym_ids:
+            lines.append(f"- symbol:{rid}")
+        lines.append("")
+
+    expected = contract.get("expected_outputs") or []
+    if expected:
+        lines.append("### Expected Outputs")
+        for e in expected:
+            lines.append(f"- {e}")
+        lines.append("")
+
+    cmds = contract.get("validation_commands") or []
+    if cmds:
+        lines.append("### Validation Commands")
+        for cmd in cmds:
+            lines.append(f"- {cmd}")
+        lines.append("")
+
+    recs = contract.get("recommendations") or []
+    if recs:
+        lines.append("### Geond Recommendations")
+        for rec in recs:
+            lines.append(f"- {rec}")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
 def main() -> None:
     configure_cli_output()
     parser = argparse.ArgumentParser(prog="geond")
@@ -608,6 +729,82 @@ def main() -> None:
         default="",
         help="Title for the Manus task (used with --create-task)",
     )
+
+    manus_contract = subparsers.add_parser(
+        "manus-task-contract",
+        help="Create a pre-task contract for Manus with workspace context and reservations",
+    )
+    manus_contract.add_argument("--workspace-uri", required=True)
+    manus_contract.add_argument("--intent", required=True, help="What Manus should do")
+    manus_contract.add_argument("--file", dest="files", action="append", metavar="FILE")
+    manus_contract.add_argument("--symbol", dest="symbols", action="append", metavar="SYMBOL")
+    manus_contract.add_argument(
+        "--expected-output",
+        dest="expected_outputs",
+        action="append",
+        metavar="OUTPUT",
+    )
+    manus_contract.add_argument(
+        "--validation-command",
+        dest="validation_commands",
+        action="append",
+        metavar="CMD",
+    )
+    manus_contract.add_argument(
+        "--reserve",
+        action="store_true",
+        help="Claim file/symbol reservations for Manus",
+    )
+    manus_contract.add_argument("--ttl-minutes", type=int, default=120)
+    manus_contract.add_argument("--override-reason")
+    manus_contract.add_argument("--limit", type=int, default=5)
+    manus_contract.add_argument("--dry-run", action="store_true")
+    manus_contract.add_argument(
+        "--format", choices=["json", "prompt"], default="json", help="Output format"
+    )
+
+    manus_complete = subparsers.add_parser(
+        "manus-task-complete",
+        help="Import a completed Manus task and record handoff + release reservations",
+    )
+    manus_complete.add_argument(
+        "--task-id", help="Manus task ID to import (requires MANUS_API_KEY)"
+    )
+    manus_complete.add_argument("--fixture", metavar="DETAIL_JSON")
+    manus_complete.add_argument("--fixture-messages", metavar="MESSAGES_JSON")
+    manus_complete.add_argument("--workspace-uri", required=True)
+    manus_complete.add_argument("--workspace-name")
+    manus_complete.add_argument(
+        "--handoff-summary",
+        default="",
+        help="Summary of what Manus accomplished",
+    )
+    manus_complete.add_argument(
+        "--next-step",
+        dest="next_steps",
+        action="append",
+        metavar="STEP",
+    )
+    manus_complete.add_argument(
+        "--tested-command",
+        dest="tested_commands",
+        action="append",
+        metavar="CMD",
+    )
+    manus_complete.add_argument(
+        "--remaining-risk",
+        dest="remaining_risks",
+        action="append",
+        metavar="RISK",
+    )
+    manus_complete.add_argument("--next-action", default="")
+    manus_complete.add_argument("--to-agent", default="", help="Handoff target agent name")
+    manus_complete.add_argument(
+        "--reservation-mode",
+        choices=["release", "keep", "renew"],
+        default="release",
+    )
+    manus_complete.add_argument("--dry-run", action="store_true")
 
     embed_messages = subparsers.add_parser(
         "embed-messages", help="Create embeddings for imported message records"
@@ -1592,6 +1789,110 @@ def main() -> None:
                 }
 
         print(json.dumps(packet, ensure_ascii=False, indent=2, default=str))
+        return
+
+    if args.command == "manus-task-contract":
+        with connect(get_settings()) as conn:
+            result = start_task(
+                conn,
+                workspace_id_or_uri=args.workspace_uri,
+                agent_name=MANUS_AGENT_NAME,
+                intent=args.intent,
+                file_paths=args.files,
+                symbols=args.symbols,
+                reserve=args.reserve,
+                ttl_minutes=args.ttl_minutes,
+                override_reason=args.override_reason,
+                dry_run=args.dry_run,
+                limit=args.limit,
+            )
+            contract = _build_task_contract(
+                result,
+                intent=args.intent,
+                expected_outputs=args.expected_outputs or [],
+                validation_commands=args.validation_commands or [],
+            )
+        if args.format == "prompt":
+            print(_contract_to_prompt(contract))
+        else:
+            print(json.dumps(contract, ensure_ascii=False, indent=2, default=str))
+        return
+
+    if args.command == "manus-task-complete":
+        if not args.fixture and not args.task_id:
+            print(
+                json.dumps(
+                    {"status": "error", "message": "Provide --task-id or --fixture"},
+                    ensure_ascii=False,
+                ),
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        if args.fixture:
+            task = load_fixture(args.fixture, args.fixture_messages)
+        else:
+            try:
+                client = ManusApiClient()
+                task = client.fetch_task(args.task_id)
+            except ManusApiError as exc:
+                print(
+                    json.dumps(
+                        {
+                            "status": "error",
+                            "code": exc.status_code,
+                            "message": str(exc),
+                        },
+                        ensure_ascii=False,
+                    ),
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+
+        workspace_name = args.workspace_name or workspace_name_from_uri(args.workspace_uri)
+        handoff_summary = args.handoff_summary or f"Manus task {task.task_id}: {task.title}"
+        session_row_id = None
+
+        if not args.dry_run:
+            with connect(get_settings()) as conn:
+                workspace_id = upsert_workspace(
+                    conn,
+                    root_uri=args.workspace_uri,
+                    name=workspace_name,
+                    metadata={"source": "cli", "import_source": "manus"},
+                )
+                session_row_id = store_manus_task(conn, workspace_id, task)
+                finish_result = finish_task(
+                    conn,
+                    workspace_id_or_uri=args.workspace_uri,
+                    agent_name=MANUS_AGENT_NAME,
+                    summary=handoff_summary,
+                    next_steps=args.next_steps,
+                    tested_commands=args.tested_commands,
+                    remaining_risks=args.remaining_risks,
+                    next_action=args.next_action or None,
+                    to_agent_name=args.to_agent or None,
+                    reservation_mode=args.reservation_mode,
+                    dry_run=False,
+                    session_id=session_row_id,
+                )
+        else:
+            finish_result = {"status": "dry_run"}
+
+        print(
+            json.dumps(
+                {
+                    "status": "dry-run" if args.dry_run else "ok",
+                    "task_id": task.task_id,
+                    "session_id": session_row_id,
+                    "imported_messages": len(task.messages),
+                    "finish": finish_result,
+                },
+                ensure_ascii=False,
+                indent=2,
+                default=str,
+            )
+        )
         return
 
     if args.command == "embed-messages":
