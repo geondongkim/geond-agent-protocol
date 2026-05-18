@@ -1,10 +1,10 @@
 # Architecture
 
-`geond-agent-protocol` is a local-first shared memory layer for coding agents. It stores development events, derives code-aware context, and exposes that context through MCP.
+`geond-agent-protocol` is a local-first shared memory layer for software-development AI agents. It stores development events, derives code-aware context, and exposes that context through MCP.
 
 ## 1. System Goals
 
-- Let multiple coding agents share durable context across tools and sessions.
+- Let multiple coding, review, test, security, documentation, deployment, PM, and orchestration agents share durable context across tools and sessions.
 - Preserve why code changed, not only what changed.
 - Combine chat history, diffs, file snapshots, AST symbols, test results, and agent actions.
 - Provide a standard MCP interface so clients can adopt it without custom integrations.
@@ -12,7 +12,7 @@
 
 ## 2. Non-Goals
 
-- Do not replace existing coding agents.
+- Do not replace existing coding agents, review agents, or orchestration tools.
 - Do not fork Copilot, Codex, Continue, Cursor, or OpenHands for the MVP.
 - Do not depend on private VS Code storage formats as a stable public API.
 - Do not require fine-tuning or cloud services for the first version.
@@ -26,7 +26,7 @@ flowchart TB
         V[VS Code / Copilot Chat]
         X[Codex-like CLI]
         C[Continue / MCP Client]
-        O[OpenHands / Other Agent]
+        O[Review / Test / Security / Deploy Agents]
     end
 
     subgraph Ingestion

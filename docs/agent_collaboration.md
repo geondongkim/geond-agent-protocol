@@ -1,10 +1,13 @@
-# Does geond actually help coding agents collaborate?
+# Does geond actually help software-development agents collaborate?
 
 This note answers three questions that come up every time we hand the
-protocol to a new pair of coding agents (currently GitHub Copilot Chat
-and Codex, with Claude Code joining as a third tier-1 testbed):
+protocol to a new pair of software-development agents. The current tier-1
+testbeds are coding-agent surfaces (GitHub Copilot Chat, Codex, and Claude
+Code), but the same coordination model is intended for review, test, security,
+documentation, deployment, PM, and orchestration agents that consume the same
+evidence.
 
-1. Does geond enable *real* collaboration between coding agents, or is it
+1. Does geond enable *real* collaboration between development agents, or is it
    just a shared notebook?
 2. Is reading geond CLI/MCP output actually more efficient than reading
    the underlying git commits?
@@ -67,10 +70,10 @@ What geond does *not* solve:
   edits files without calling `record_changeset` leaves the protocol
   blind, the same way a developer who never commits leaves git blind.
 
-**Verdict.** geond meaningfully reduces the cost of two agents working
-on the same codebase: claim, narrate, and look up each other's work
-without scraping each other's chat logs. It is necessary connective
-tissue, not a complete coordinator.
+**Verdict.** geond meaningfully reduces the cost of two or more agents working
+on the same codebase or adjacent development artifacts: claim, narrate, and look
+up each other's work without scraping each other's chat logs. It is necessary
+connective tissue, not a complete coordinator.
 
 ### Operational loop
 

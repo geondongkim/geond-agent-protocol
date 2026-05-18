@@ -392,7 +392,7 @@ A PM agent can use the dashboard API as a project-state read model:
 - identify blockers from open handoffs
 - summarize the last 24 hours of changesets, tests, and handoffs
 - propose next tasks based on code-risk hotspots and open next actions
-- ask a coding agent to consume a specific handoff package
+- ask a code-changing or review agent to consume a specific handoff package
 - produce a human status report with evidence refs
 
 The PM agent should not need database credentials. It should read the same
@@ -414,8 +414,8 @@ adapters that record lifecycle events consistently.
 
 ## Pair-Coding Use
 
-For two coding agents working together, the dashboard becomes shared situational
-awareness:
+For two code-changing agents working together, the dashboard becomes shared
+situational awareness:
 
 - each agent sees the other's active claims and latest intent
 - pair agents can intentionally co-own a handoff instead of colliding silently

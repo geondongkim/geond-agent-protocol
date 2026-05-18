@@ -4,7 +4,7 @@
 
 ## 1. Product Thesis
 
-여러 코딩 에이전트가 같은 프로젝트에서 일할 때 가장 큰 병목은 모델 성능보다 “맥락의 단절”이다. Geond는 에이전트들이 공유할 수 있는 로컬-first 개발 기억 계층을 제공한다.
+여러 소프트웨어 개발 AI 에이전트(코딩, 리뷰, 테스트, 문서화, 보안, 배포, PM/오케스트레이션)가 같은 프로젝트에서 일할 때 가장 큰 병목은 모델 성능보다 “맥락의 단절”이다. Geond는 에이전트들이 공유할 수 있는 로컬-first 개발 기억 계층을 제공한다.
 
 첫 번째로 증명할 장면:
 
@@ -28,7 +28,7 @@
 ### 제외
 
 - 자체 채팅 UI
-- 자체 코딩 에이전트
+- 자체 코딩/리뷰/테스트/보안/문서화/배포/PM 에이전트
 - 실시간 파일 감시
 - fine-tuning
 - 원격 동기화 서버
@@ -396,9 +396,33 @@ follow-up agent verification.
 
 See [docs/improvement_backlog.md](improvement_backlog.md) for the deeper prioritized backlog.
 
+## 15. Patent Draft Alignment Notes
+
+The patent draft describes the broader invention as a heterogeneous
+software-development agent coordination layer. The current repository supports
+the main evidence path: multi-source session import, redaction, Postgres/pgvector
+storage, code graph indexing, LSP reference import, changeset-to-symbol links,
+file/symbol reservations, conflict policies, reservation audit events,
+structured handoffs, context review, workspace lineage, and the read-only
+dashboard.
+
+Items that should remain described as optional embodiments, planned slices, or
+partial implementations until completed:
+
+- Dependency-aware reservation expansion from caller/callee/import/export graph
+  edges into automatic reservation scopes. Today Geond stores the graph and
+  supports explicit file/symbol reservations; automatic expansion is still a
+  next implementation slice.
+- Hook adapters for Codex and Claude Code that automatically record lifecycle
+  events. The schema and operating loop are present, but hook examples remain
+  backlog work.
+- Focused dashboard review filters beyond the implemented timeline filters,
+  related detail panes, and review feeds.
+- Enterprise IAM, row-level security, and dedicated MCP call audit streams.
+
 The first version should optimize for one unmistakable demo: context crosses from one agent/session into another without manual re-explanation.
 
-## 15. MVP Verification Snapshot
+## 16. MVP Verification Snapshot
 
 Completed locally:
 

@@ -1,16 +1,19 @@
 # geond-agent-protocol
 
 Local-first development memory, evidence, code graphs, and coordination for
-coding agents.
+software-development AI agents and coding-agent workflows.
 
-> **About the name:** Geond is inspired by the Old English root of "beyond". We pronounce it modernly as `/dʒiːɒnd/` ("Jee-ond"). The project helps coding agents go geond their stateless prompt limits by connecting LLMs to local, inspectable development memory, code graphs, and handoff context.
+> **About the name:** Geond is inspired by the Old English root of "beyond". We pronounce it modernly as `/dʒiːɒnd/` ("Jee-ond"). The project helps software-development agents go geond their stateless prompt limits by connecting LLMs to local, inspectable development memory, code graphs, and handoff context.
 
-`geond-agent-protocol` is an alpha MCP/CLI package for making coding agents
-share durable development context: chat history, code changes, symbol graphs,
-decisions, reservations, benchmarks, and handoff notes. The goal is not to
-replace Copilot, Codex, Continue, Cursor, Claude Code, or CLI agents. The goal
-is to give them a common local memory layer they can read from and write to
-through MCP and lightweight adapters.
+`geond-agent-protocol` is an alpha MCP/CLI package for making heterogeneous
+software-development AI agents share durable context: chat history, code
+changes, symbol graphs, decisions, reservations, benchmarks, and handoff notes.
+The first adapters target coding-agent surfaces such as Copilot, Codex, Claude
+Code, Continue, Cursor, and CLI agents, while the same protocol is shaped for
+review, test, security, documentation, deployment, PM, and orchestration agents
+that need the same evidence. The goal is not to replace those tools; it is to
+give them a common local memory layer they can read from and write to through
+MCP and lightweight adapters.
 
 Geond is local-first, not local-only. The default workflow runs the MCP server,
 CLI, dashboard, and database-facing adapters on each developer machine. Teams
@@ -20,11 +23,13 @@ calls through an embedding gateway when they need cloud-backed collaboration.
 
 ## Why
 
-Coding agents are getting better, but their memory is fragmented.
+Software-development agents are getting better, but their memory is fragmented.
 
 - A VS Code chat may know why a function changed.
 - A CLI agent may only see the current files.
 - A test agent may not know the design intent behind a change.
+- A review, security, documentation, deployment, or PM agent may need the same
+    evidence without replaying every transcript.
 - A future session may lose the debugging path that solved the same problem last week.
 
 Geond gives those agents a durable, inspectable context layer without depending
@@ -40,6 +45,7 @@ flowchart LR
     B[CLI Agents / Codex-like Tools] --> I
     C[Claude Code] --> I
     D[Continue / Other MCP Clients] --> M[MCP Server]
+    E[Review / Test / Security / Deploy Agents] --> I
     I --> G[Geond Core]
     M --> G
     G --> P[(Postgres + pgvector)]

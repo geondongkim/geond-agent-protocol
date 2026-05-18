@@ -26,7 +26,8 @@ Read this file before:
 
 ## Recommended Start Sequence
 
-Every coding agent should start with this sequence when Geond is available.
+Every development agent that may change, review, or coordinate work should start
+with this sequence when Geond is available.
 
 ```text
 1. Import recent sessions for the relevant source.

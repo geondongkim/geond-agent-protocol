@@ -4,7 +4,13 @@ import json
 import sqlite3
 from pathlib import Path
 
-from geond.adapters.vscode_copilot import CHAT_INDEX_KEY, parse_storage, read_chat_index
+from geond.adapters.vscode_copilot import (
+    CHAT_INDEX_KEY,
+    parse_chat_session,
+    parse_storage,
+    parse_transcript,
+    read_chat_index,
+)
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "vscode_copilot"
 
@@ -72,3 +78,30 @@ def test_parse_vscode_storage_extracts_chat_transcript_and_editing_context(
     assert session.has_editing_context
     assert session.editing_session.content_count == 1
     assert session.editing_session.content_hashes == ["sha256-app-initial"]
+
+
+def test_parse_jsonl_records_with_unicode_line_separator(tmp_path: Path) -> None:
+    chat_file = tmp_path / "chat.jsonl"
+    chat_file.write_text(
+        json.dumps({"kind": 2, "v": "before\u2028after"}, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    transcript_dir = tmp_path / "GitHub.copilot-chat" / "transcripts"
+    transcript_dir.mkdir(parents=True)
+    transcript_file = transcript_dir / "session-1.jsonl"
+    transcript_file.write_text(
+        json.dumps(
+            {"type": "assistant.message", "data": {"text": "one\u2028two"}},
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    chat_lines = parse_chat_session(chat_file)
+    transcript_events = parse_transcript(tmp_path, "session-1")
+
+    assert len(chat_lines) == 1
+    assert chat_lines[0].content == "before\u2028after"
+    assert len(transcript_events) == 1
+    assert "one\u2028two" in transcript_events[0].content

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -106,9 +107,7 @@ def read_chat_index(storage_path: Path) -> dict[str, dict[str, Any]]:
 
 def parse_chat_session(chat_file: Path) -> list[ParsedChatLine]:
     lines: list[ParsedChatLine] = []
-    for ordinal, raw_line in enumerate(chat_file.read_text(encoding="utf-8").splitlines()):
-        if not raw_line.strip():
-            continue
+    for ordinal, raw_line in iter_jsonl_records(chat_file):
         raw = json.loads(raw_line)
         lines.append(
             ParsedChatLine(
@@ -127,9 +126,7 @@ def parse_transcript(storage_path: Path, session_id: str) -> list[ParsedTranscri
         return []
 
     events: list[ParsedTranscriptEvent] = []
-    for ordinal, raw_line in enumerate(transcript_file.read_text(encoding="utf-8").splitlines()):
-        if not raw_line.strip():
-            continue
+    for ordinal, raw_line in iter_jsonl_records(transcript_file):
         raw = json.loads(raw_line)
         event_type = str(raw.get("type") or "unknown")
         events.append(
@@ -141,6 +138,14 @@ def parse_transcript(storage_path: Path, session_id: str) -> list[ParsedTranscri
             )
         )
     return events
+
+
+def iter_jsonl_records(path: Path) -> Iterator[tuple[int, str]]:
+    with path.open("r", encoding="utf-8", newline="\n") as handle:
+        for ordinal, raw_line in enumerate(handle):
+            raw_line = raw_line.removesuffix("\n").removesuffix("\r")
+            if raw_line.strip():
+                yield ordinal, raw_line
 
 
 def parse_editing_session(storage_path: Path, session_id: str) -> ParsedEditingSession:
