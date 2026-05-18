@@ -807,3 +807,57 @@ def test_cli_manus_task_complete_with_fixture() -> None:
                 with cleanup_conn.cursor() as cur:
                     cur.execute("DELETE FROM workspaces WHERE root_uri = %s", (workspace_uri,))
                 cleanup_conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# Search: imported Manus task content is findable (integration)
+# ---------------------------------------------------------------------------
+
+
+def test_search_finds_imported_manus_task_content() -> None:
+    try:
+        import psycopg
+
+        from geond.config import get_settings
+        from geond.db import connect, run_schema_file
+    except ImportError:
+        pytest.skip("psycopg not available")
+
+    settings = get_settings()
+    schema = Path(__file__).parents[1] / "schemas" / "001_initial.sql"
+    workspace_uri = f"file:///tmp/geond-manus-search-{uuid4()}"
+
+    try:
+        conn = connect(settings)
+    except Exception as exc:
+        pytest.skip(f"Postgres not available: {exc}")
+
+    from geond.retrieval.simple import search_dev_memory
+    from geond.storage.repository import store_manus_task, upsert_workspace
+
+    with conn:
+        try:
+            run_schema_file(conn, schema)
+        except psycopg.Error as exc:
+            pytest.skip(f"Schema unavailable: {exc}")
+
+        workspace_id = upsert_workspace(conn, root_uri=workspace_uri, name="manus-search-test")
+        try:
+            task = load_fixture(
+                str(FIXTURES / "task_detail_completed.json"),
+                str(FIXTURES / "task_messages_completed.json"),
+            )
+            store_manus_task(conn, workspace_id, task)
+
+            results = search_dev_memory(conn, query="JWT middleware", workspace_uri=workspace_uri)
+            assert len(results) > 0, "Expected search results for 'JWT middleware'"
+            sources = {r.get("source") for r in results}
+            assert SOURCE in sources, f"Expected source={SOURCE!r} in results, got {sources}"
+            contents = " ".join(r.get("snippet") or "" for r in results)
+            assert "JWT" in contents or "jwt" in contents.lower()
+
+        finally:
+            with connect(settings) as cleanup_conn:
+                with cleanup_conn.cursor() as cur:
+                    cur.execute("DELETE FROM workspaces WHERE root_uri = %s", (workspace_uri,))
+                cleanup_conn.commit()
