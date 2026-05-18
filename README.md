@@ -79,7 +79,11 @@ PostgreSQL-compatible database. Azure Database for PostgreSQL Flexible Server
 has been validated as one shared-memory backend; it is an embodiment, not a
 hard dependency.
 
-![Azure-backed dashboard walkthrough](docs/assets/geond_dashboard_azure_collaboration.gif)
+![Operations dashboard](docs/assets/geond_dashboard_operations.gif)
+
+![Evidence and code risk](docs/assets/geond_dashboard_evidence.gif)
+
+![Timeline review](docs/assets/geond_dashboard_timeline_review.gif)
 
 ## Quick Start
 
