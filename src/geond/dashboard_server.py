@@ -220,7 +220,9 @@ def mission_control_html() -> str:
   <style>
     :root {
       color-scheme: light;
-      --bg: #f4f6f8;
+      --bg: #e8edf3;
+      --chrome: #0f172a;
+      --chrome-2: #172033;
       --surface: #ffffff;
       --surface-2: #f8fafc;
       --surface-3: #eef4f6;
@@ -230,10 +232,13 @@ def mission_control_html() -> str:
       --line-strong: #bdc9d5;
       --accent: #0b6b63;
       --accent-soft: #dcefeb;
+      --cyan: #00b7d6;
       --accent-2: #6d4aff;
       --warn: #9a5b00;
       --danger: #a33a34;
       --ok: #167044;
+      --agent-color: var(--accent);
+      --ease: cubic-bezier(0.4, 0, 0.2, 1);
       --shadow: 0 16px 42px rgba(27, 39, 53, 0.08);
       font-family: Inter, ui-sans-serif, system-ui, -apple-system,
         BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -241,31 +246,64 @@ def mission_control_html() -> str:
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      background: linear-gradient(180deg, #eef3f6 0, var(--bg) 220px);
+      background:
+        radial-gradient(circle at 12% -10%, rgba(0, 183, 214, 0.14), transparent 30%),
+        linear-gradient(180deg, #eef3f6 0, var(--bg) 280px);
       color: var(--text);
       font-size: 14px;
       letter-spacing: 0;
       height: 100vh;
       overflow: hidden;
     }
-    header {
-      height: 72px;
-      display: flex;
+    body > header {
+      height: 92px;
+      display: grid;
+      grid-template-columns: minmax(230px, .6fr) minmax(420px, 1.35fr) minmax(180px, .45fr);
       align-items: center;
-      justify-content: space-between;
       gap: 18px;
-      padding: 0 26px;
-      border-bottom: 1px solid var(--line);
-      background: rgba(255, 255, 255, 0.92);
+      padding: 0 24px;
+      border-bottom: 1px solid rgba(0, 217, 255, 0.28);
+      background:
+        linear-gradient(90deg, var(--chrome) 0%, var(--chrome-2) 72%, #111827 100%);
       backdrop-filter: blur(10px);
+      box-shadow: 0 18px 44px rgba(15, 23, 42, 0.2);
+      color: #f8fafc;
       position: sticky;
       top: 0;
       z-index: 5;
     }
+    .brand {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+    .brand-mark {
+      display: grid;
+      place-items: center;
+      width: 42px;
+      height: 42px;
+      border: 1px solid rgba(0, 217, 255, 0.38);
+      border-radius: 10px;
+      background: linear-gradient(135deg, rgba(0, 217, 255, .26), rgba(124, 58, 237, .38));
+      box-shadow: 0 0 24px rgba(0, 217, 255, 0.24);
+      font-weight: 820;
+    }
+    .brand-copy {
+      min-width: 0;
+    }
     h1 {
       margin: 0;
-      font-size: 19px;
-      font-weight: 680;
+      font-size: 20px;
+      font-weight: 760;
+      line-height: 1.05;
+    }
+    .subtitle {
+      margin-top: 5px;
+      color: #a7b4c8;
+      font-size: 12px;
+      font-weight: 600;
     }
     .runtime {
       display: flex;
@@ -276,13 +314,14 @@ def mission_control_html() -> str:
     }
     .runtime .meta {
       max-width: 320px;
+      color: #a7b4c8;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
       margin-top: 0;
     }
     main {
-      height: calc(100vh - 72px);
+      height: calc(100vh - 92px);
       padding: 14px 18px 18px;
       overflow: hidden;
     }
@@ -296,7 +335,7 @@ def mission_control_html() -> str:
     label {
       display: grid;
       gap: 4px;
-      color: var(--muted);
+      color: #a7b4c8;
       font-size: 12px;
       font-weight: 600;
     }
@@ -304,15 +343,20 @@ def mission_control_html() -> str:
       height: 38px;
       border: 1px solid var(--line);
       border-radius: 6px;
-      background: #fff;
+      background: rgba(255, 255, 255, 0.94);
       color: var(--text);
       font: inherit;
+      transition:
+        border-color 180ms var(--ease),
+        box-shadow 180ms var(--ease),
+        transform 180ms var(--ease),
+        background 180ms var(--ease);
     }
     input { padding: 0 10px; min-width: 0; }
     select { padding: 0 28px 0 10px; }
     .control-meta {
       min-height: 16px;
-      color: var(--muted);
+      color: #93a2b7;
       font-size: 11px;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -335,6 +379,14 @@ def mission_control_html() -> str:
     }
     button:hover {
       border-color: var(--line-strong);
+      transform: translateY(-1px);
+    }
+    button:focus-visible,
+    input:focus-visible,
+    select:focus-visible,
+    summary:focus-visible {
+      outline: 2px solid var(--cyan);
+      outline-offset: 2px;
     }
     .filter-strip {
       display: grid;
@@ -358,7 +410,7 @@ def mission_control_html() -> str:
     .status-line {
       min-height: 20px;
       margin: 0 0 10px;
-      color: var(--muted);
+      color: #526174;
       font-size: 13px;
     }
     .tabs {
@@ -367,22 +419,24 @@ def mission_control_html() -> str:
       margin-bottom: 10px;
       overflow-x: auto;
       padding: 4px;
-      border: 1px solid var(--line);
+      border: 1px solid #cfd8e3;
       border-radius: 8px;
-      background: rgba(255, 255, 255, 0.72);
+      background: rgba(15, 23, 42, 0.88);
+      box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
     }
     .tab {
       height: 34px;
       background: transparent;
-      color: var(--text);
+      color: #cbd5e1;
       border-color: transparent;
       white-space: nowrap;
       box-shadow: none;
     }
     .tab.active {
-      background: #152333;
-      color: #fff;
-      border-color: #152333;
+      background: #f8fafc;
+      color: #102033;
+      border-color: #f8fafc;
+      box-shadow: 0 0 0 1px rgba(0, 217, 255, 0.12);
     }
     .view {
       display: none;
@@ -391,6 +445,7 @@ def mission_control_html() -> str:
     }
     .view.active {
       display: block;
+      animation: viewIn 180ms var(--ease);
     }
     .overview-shell {
       display: grid;
@@ -436,6 +491,8 @@ def mission_control_html() -> str:
       border: 1px solid var(--line);
       border-radius: 8px;
       background: var(--surface);
+      box-shadow: 0 8px 22px rgba(15, 23, 42, 0.04);
+      position: relative;
     }
     .session-stat span {
       display: block;
@@ -467,6 +524,7 @@ def mission_control_html() -> str:
       border: 1px solid var(--line);
       border-radius: 8px;
       background: var(--surface);
+      box-shadow: 0 8px 22px rgba(15, 23, 42, 0.04);
     }
     .mode-card strong,
     .mode-card span {
@@ -501,6 +559,7 @@ def mission_control_html() -> str:
       background: var(--surface);
       color: var(--text);
       text-align: left;
+      box-shadow: 0 6px 16px rgba(15, 23, 42, 0.04);
     }
     .agent-chip strong,
     .agent-chip span {
@@ -517,6 +576,7 @@ def mission_control_html() -> str:
     .agent-chip.active {
       border-color: var(--accent);
       background: var(--accent-soft);
+      box-shadow: inset 3px 0 0 var(--agent-color);
     }
     .agent-lane, .session-lane {
       display: grid;
@@ -527,6 +587,16 @@ def mission_control_html() -> str:
       border-radius: 8px;
       box-shadow: var(--shadow);
       overflow: hidden;
+      transition:
+        border-color 200ms var(--ease),
+        box-shadow 200ms var(--ease),
+        transform 200ms var(--ease);
+    }
+    .agent-lane[data-active="true"] {
+      border-color: color-mix(in srgb, var(--agent-color), var(--line) 60%);
+      box-shadow:
+        inset 3px 0 0 var(--agent-color),
+        0 18px 42px rgba(27, 39, 53, 0.1);
     }
     .lane-head {
       display: grid;
@@ -535,7 +605,9 @@ def mission_control_html() -> str:
       align-items: start;
       padding: 12px;
       border-bottom: 1px solid var(--line);
-      background: linear-gradient(180deg, #ffffff 0, #f8fafc 100%);
+      background:
+        linear-gradient(90deg, color-mix(in srgb, var(--agent-color), #fff 88%), #fff 70%),
+        linear-gradient(180deg, #ffffff 0, #f8fafc 100%);
     }
     .lane-body {
       display: grid;
@@ -553,12 +625,14 @@ def mission_control_html() -> str:
       border-radius: 7px;
       background: #fff;
       overflow: hidden;
+      transition: border-color 180ms var(--ease);
     }
     details.collapsible > summary {
       cursor: pointer;
       padding: 9px 10px;
       font-weight: 680;
       list-style-position: inside;
+      color: #263445;
     }
     details.collapsible > .list,
     details.collapsible > .mini-list {
@@ -618,6 +692,7 @@ def mission_control_html() -> str:
       color: var(--accent);
       flex: 0 0 auto;
       font-size: 14px;
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--agent-color), transparent 82%);
     }
     .project-tree {
       display: grid;
@@ -673,10 +748,15 @@ def mission_control_html() -> str:
     }
     section > header {
       position: static;
+      display: flex;
       height: 48px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
       padding: 0 14px;
       border-bottom: 1px solid var(--line);
       background: linear-gradient(180deg, #ffffff 0, #f8fafc 100%);
+      color: var(--text);
     }
     section h2 {
       margin: 0;
@@ -693,6 +773,25 @@ def mission_control_html() -> str:
       border-right: 1px solid var(--line);
       min-height: 68px;
       background: #fff;
+      position: relative;
+    }
+    .metric:nth-child(1) { --agent-color: #00b7d6; }
+    .metric:nth-child(2) { --agent-color: #7c3aed; }
+    .metric:nth-child(3) { --agent-color: #0b6b63; }
+    .metric:nth-child(4) { --agent-color: #f59e0b; }
+    .metric:nth-child(5) { --agent-color: #2563eb; }
+    .metric:nth-child(6) { --agent-color: #10b981; }
+    .metric::before,
+    .session-stat::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 10px;
+      bottom: 10px;
+      width: 3px;
+      border-radius: 0 999px 999px 0;
+      background: var(--agent-color);
+      opacity: .7;
     }
     .metric:last-child { border-right: 0; }
     .metric span {
@@ -731,6 +830,14 @@ def mission_control_html() -> str:
       border-radius: 6px;
       background: #fff;
       box-shadow: 0 7px 18px rgba(27, 39, 53, 0.04);
+      transition:
+        border-color 180ms var(--ease),
+        box-shadow 180ms var(--ease),
+        transform 180ms var(--ease);
+    }
+    .row:hover {
+      border-color: var(--line-strong);
+      box-shadow: 0 12px 24px rgba(27, 39, 53, 0.07);
     }
     .title {
       font-weight: 650;
@@ -753,6 +860,19 @@ def mission_control_html() -> str:
       font-size: 12px;
       white-space: nowrap;
     }
+    .badge::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      margin-right: 6px;
+      border-radius: 999px;
+      background: currentColor;
+      opacity: .62;
+    }
+    .agent-lane[data-active="true"] .lane-head .badge::before {
+      animation: statusPulse 1.8s var(--ease) infinite;
+      opacity: 1;
+    }
     .badge.ok { color: var(--ok); background: #e4f5ee; border-color: #b7ddcb; }
     .badge.warn { color: var(--warn); background: #fff7df; border-color: #ead391; }
     .badge.danger { color: var(--danger); background: #fff0ed; border-color: #efb8b0; }
@@ -768,6 +888,28 @@ def mission_control_html() -> str:
       gap: 10px;
       padding: 11px 14px;
       border-bottom: 1px solid var(--line);
+      position: relative;
+      background: #fff;
+    }
+    .event::before {
+      content: "";
+      position: absolute;
+      left: 126px;
+      top: 0;
+      bottom: 0;
+      width: 1px;
+      background: #dce4ec;
+    }
+    .event::after {
+      content: "";
+      position: absolute;
+      left: 121px;
+      top: 18px;
+      width: 11px;
+      height: 11px;
+      border-radius: 999px;
+      background: var(--agent-color);
+      box-shadow: 0 0 0 4px #fff;
     }
     .event:last-child { border-bottom: 0; }
     .event time {
@@ -810,21 +952,36 @@ def mission_control_html() -> str:
     .agent-row {
       grid-template-columns: minmax(0, 1fr) auto auto;
     }
+    @keyframes viewIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes statusPulse {
+      0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 currentColor; }
+      50% { transform: scale(1.15); box-shadow: 0 0 0 5px transparent; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: .01ms !important;
+        scroll-behavior: auto !important;
+        transition-duration: .01ms !important;
+      }
+    }
     @media (max-width: 980px) {
-      header {
+      body > header {
         height: auto;
         padding: 12px 14px;
         align-items: stretch;
-        flex-direction: column;
+        grid-template-columns: 1fr;
         gap: 10px;
       }
       .toolbar {
-        grid-template-columns: minmax(220px, 1fr) 88px 88px 44px;
+        grid-template-columns: minmax(220px, 1fr) 88px 88px 82px;
         width: 100%;
       }
       .toolbar button { padding: 0; }
       .runtime { justify-content: flex-start; min-width: 0; }
-      main { height: calc(100vh - 180px); padding: 10px; }
+      main { height: calc(100vh - 220px); padding: 10px; }
       .overview-shell, .split, .lineage, .trace-grid { grid-template-columns: 1fr; }
       .filter-strip { grid-template-columns: 1fr; }
       .mode-strip { grid-template-columns: 1fr; }
@@ -841,7 +998,13 @@ def mission_control_html() -> str:
 </head>
 <body>
   <header>
-    <h1>Geond Agent Activity</h1>
+    <div class="brand" aria-label="Geond dashboard">
+      <div class="brand-mark" aria-hidden="true">G</div>
+      <div class="brand-copy">
+        <h1>Geond Dashboard</h1>
+        <div class="subtitle">Multi-agent coordination control plane</div>
+      </div>
+    </div>
     <form class="toolbar" id="controls">
       <label>
         Workspace
@@ -866,7 +1029,7 @@ def mission_control_html() -> str:
           <option value="30">30s</option>
         </select>
       </label>
-      <button type="submit" title="Refresh" aria-label="Refresh">↻</button>
+      <button type="submit" title="Refresh" aria-label="Refresh">Refresh</button>
     </form>
     <div class="runtime" aria-label="Database runtime">
       <span class="badge" id="database-badge">database</span>
@@ -1218,6 +1381,17 @@ def mission_control_html() -> str:
       if (key.includes("claude")) return "◆";
       if (key.includes("system")) return "◎";
       return "✦";
+    }
+
+    function agentColor(name) {
+      const key = String(name || "system").toLowerCase();
+      if (key.includes("copilot") || key.includes("vscode")) return "#7c3aed";
+      if (key.includes("claude")) return "#00b7d6";
+      if (key.includes("qa")) return "#10b981";
+      if (key.includes("pm") || key.includes("doc")) return "#f59e0b";
+      if (key.includes("codex")) return "#0b6b63";
+      if (key.includes("system")) return "#64748b";
+      return "#2563eb";
     }
 
     function workspaceSummary(workspace) {
@@ -1623,6 +1797,7 @@ def mission_control_html() -> str:
       for (const event of events) {
         const item = document.createElement("div");
         item.className = "event";
+        item.style.setProperty("--agent-color", agentColor(event.agent_name));
         const when = event.occurred_at ? new Date(event.occurred_at).toLocaleString() : "";
         item.innerHTML = `
           <time></time>
@@ -1875,6 +2050,7 @@ def mission_control_html() -> str:
       const lane = document.createElement("section");
       lane.className = "agent-lane";
       lane.dataset.agentKey = agentKey(name);
+      lane.style.setProperty("--agent-color", agentColor(name));
       lane.innerHTML = `
         <div class="lane-head">
           <div>
@@ -1908,6 +2084,7 @@ def mission_control_html() -> str:
         chip.className = "agent-chip";
         chip.type = "button";
         chip.dataset.agentKey = agentKey(name);
+        chip.style.setProperty("--agent-color", agentColor(name));
         chip.setAttribute("aria-label", `Show ${name} lane`);
         if (index === 0) chip.classList.add("active");
         const activeWork = laneData.reservations.length + laneData.handoffs.length;
@@ -1994,10 +2171,12 @@ def mission_control_html() -> str:
         return;
       }
       for (const [name, laneData] of ordered) {
+        const activeWork = laneData.reservations.length + laneData.handoffs.length;
         const lane = laneShell(
           name,
           `${laneData.sessions.length} sessions | ${laneData.events.length} events`
         );
+        lane.dataset.active = String(activeWork > 0);
         const body = lane.querySelector(".lane-body");
         appendDetails(
           body,
