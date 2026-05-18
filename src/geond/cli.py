@@ -10,6 +10,7 @@ from geond.adapters.claude_code import parse_storage as parse_claude_code_storag
 from geond.adapters.claude_code import to_summary as claude_code_to_summary
 from geond.adapters.codex import parse_storage as parse_codex_storage
 from geond.adapters.codex import to_summary as codex_to_summary
+from geond.adapters.manus import ManusApiClient, ManusApiError, load_fixture
 from geond.adapters.vscode_copilot import parse_storage, to_summary
 from geond.cli_tasks import (
     finish_task,
@@ -88,6 +89,7 @@ from geond.storage.repository import (
     set_workspace_coordination_policy,
     store_claude_code_session,
     store_codex_session,
+    store_manus_task,
     store_vscode_session,
     suggest_workspace_aliases,
     upsert_workspace,
@@ -425,6 +427,28 @@ def main() -> None:
     import_claude.add_argument("--limit", type=int)
     import_claude.add_argument("--workspace-uri")
     import_claude.add_argument("--workspace-name")
+
+    import_manus = subparsers.add_parser(
+        "import-manus-task", help="Import a Manus API v2 task into Geond"
+    )
+    import_manus.add_argument("--task-id", help="Manus task ID (requires MANUS_API_KEY)")
+    import_manus.add_argument(
+        "--fixture",
+        metavar="DETAIL_JSON",
+        help="Path to task_detail JSON fixture (skips API call)",
+    )
+    import_manus.add_argument(
+        "--fixture-messages",
+        metavar="MESSAGES_JSON",
+        help="Path to task_messages JSON fixture (optional, used with --fixture)",
+    )
+    import_manus.add_argument("--workspace-uri", required=True)
+    import_manus.add_argument("--workspace-name")
+    import_manus.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print planned records without writing to the database",
+    )
 
     embed_messages = subparsers.add_parser(
         "embed-messages", help="Create embeddings for imported message records"
@@ -1300,6 +1324,84 @@ def main() -> None:
         print(
             json.dumps(
                 {"status": "ok", "imported_sessions": imported},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
+
+    if args.command == "import-manus-task":
+        if not args.fixture and not args.task_id:
+            print(
+                json.dumps(
+                    {"status": "error", "message": "Provide --task-id or --fixture"},
+                    ensure_ascii=False,
+                ),
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        if args.fixture:
+            task = load_fixture(args.fixture, args.fixture_messages)
+        else:
+            try:
+                client = ManusApiClient()
+                task = client.fetch_task(args.task_id)
+            except ManusApiError as exc:
+                print(
+                    json.dumps(
+                        {
+                            "status": "error",
+                            "code": exc.status_code,
+                            "endpoint": exc.endpoint,
+                            "message": str(exc),
+                        },
+                        ensure_ascii=False,
+                    ),
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+
+        workspace_name = args.workspace_name or workspace_name_from_uri(args.workspace_uri)
+
+        planned = {
+            "task_id": task.task_id,
+            "title": task.title,
+            "status": task.status,
+            "message_count": len(task.messages),
+            "share_visibility": task.share_visibility,
+            "workspace_uri": args.workspace_uri,
+            "workspace_name": workspace_name,
+        }
+
+        if args.dry_run:
+            print(
+                json.dumps(
+                    {"status": "dry-run", "planned": planned},
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return
+
+        with connect(get_settings()) as conn:
+            workspace_id = upsert_workspace(
+                conn,
+                root_uri=args.workspace_uri,
+                name=workspace_name,
+                metadata={"source": "cli", "import_source": "manus"},
+            )
+            session_row_id = store_manus_task(conn, workspace_id, task)
+
+        print(
+            json.dumps(
+                {
+                    "status": "ok",
+                    "workspace_id": workspace_id,
+                    "session_id": session_row_id,
+                    "task_id": task.task_id,
+                    "imported_messages": len(task.messages),
+                },
                 ensure_ascii=False,
                 indent=2,
             )

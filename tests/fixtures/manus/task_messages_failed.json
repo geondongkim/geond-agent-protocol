@@ -1,0 +1,29 @@
+{
+  "task_id": "manus-task-def456",
+  "messages": [
+    {
+      "id": "msg-101",
+      "role": "user",
+      "content": "Run the pending database migrations on production.",
+      "created_at": "2026-05-19T11:00:00Z"
+    },
+    {
+      "id": "msg-102",
+      "role": "assistant",
+      "content": "Starting migration. Connecting to production database.",
+      "created_at": "2026-05-19T11:00:05Z"
+    },
+    {
+      "id": "msg-103",
+      "role": "tool",
+      "content": "run_migration() -> Error: connection timeout after 30s. Host: db.prod.internal:5432",
+      "created_at": "2026-05-19T11:03:20Z"
+    },
+    {
+      "id": "msg-104",
+      "role": "assistant",
+      "content": "Migration failed due to a connection timeout. The production database host was unreachable. No changes were applied. Please check network connectivity and retry.",
+      "created_at": "2026-05-19T11:03:22Z"
+    }
+  ]
+}

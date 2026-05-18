@@ -893,6 +893,8 @@ def dashboard_session_agent(source: str, metadata: dict[str, Any]) -> str:
         return "claude"
     if "copilot" in normalized_source or "vscode" in normalized_source:
         return "copilot"
+    if normalized_source == "manus":
+        return "Manus"
     if originator:
         return originator
     return normalized_source or "unknown"

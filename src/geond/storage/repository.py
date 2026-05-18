@@ -10,6 +10,9 @@ from geond.adapters.claude_code import SOURCE as CLAUDE_CODE_SOURCE
 from geond.adapters.claude_code import ParsedClaudeCodeSession
 from geond.adapters.codex import SOURCE as CODEX_SOURCE
 from geond.adapters.codex import ParsedCodexSession
+from geond.adapters.manus import AGENT_NAME as MANUS_AGENT_NAME
+from geond.adapters.manus import SOURCE as MANUS_SOURCE
+from geond.adapters.manus import ParsedManusTask
 from geond.adapters.vscode_copilot import SOURCE, ParsedCopilotSession
 from geond.redaction import RedactionFinding, redact_text, redact_value
 from geond.storage.changesets import link_changesets_to_code_entities_cursor
@@ -2153,3 +2156,157 @@ def cleanup_expired_reservations_for_workspace(
         result = cleanup_expired_reservations(cur, workspace_id)
     conn.commit()
     return result
+
+
+def store_manus_task(
+    conn: Connection,
+    workspace_id: str,
+    task: ParsedManusTask,
+) -> str:
+    """Upsert a Manus task as a Geond session with messages and an agent action.
+
+    Re-importing the same task_id is idempotent via ON CONFLICT upserts.
+    The agent action (task_observed) is inserted only once per session.
+    """
+    safe_task_url: str | None = None
+    if task.share_visibility == "public" and task.task_url:
+        safe_task_url = task.task_url
+
+    redacted_metadata, meta_findings = redact_value(
+        {
+            **task.metadata,
+            "status": task.status,
+            "task_url": safe_task_url,
+            "share_visibility": task.share_visibility,
+        }
+    )
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO sessions (workspace_id, source, external_id, title, metadata)
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (workspace_id, source, external_id)
+            DO UPDATE SET title = EXCLUDED.title,
+                          metadata = sessions.metadata || EXCLUDED.metadata,
+                          updated_at = now()
+            RETURNING id::text
+            """,
+            (
+                workspace_id,
+                MANUS_SOURCE,
+                task.task_id,
+                task.title,
+                Jsonb(redacted_metadata),
+            ),
+        )
+        session_row_id = cur.fetchone()[0]
+
+        insert_redaction_findings(
+            cur, workspace_id, MANUS_SOURCE, f"manus:{task.task_id}:metadata", meta_findings
+        )
+
+        for message in task.messages:
+            source_id = f"manus:{task.task_id}:{message.ordinal}"
+            redacted_content, content_findings = redact_text(message.content)
+            redacted_raw, raw_findings = redact_value(message.raw)
+
+            cur.execute(
+                """
+                INSERT INTO events (
+                    workspace_id,
+                    session_id,
+                    source,
+                    source_id,
+                    event_type,
+                    occurred_at,
+                    payload
+                )
+                VALUES (%s, %s, %s, %s, %s, %s::timestamptz, %s)
+                ON CONFLICT (source, source_id)
+                DO UPDATE SET event_type = EXCLUDED.event_type,
+                              occurred_at = EXCLUDED.occurred_at,
+                              payload = EXCLUDED.payload
+                RETURNING id::text
+                """,
+                (
+                    workspace_id,
+                    session_row_id,
+                    MANUS_SOURCE,
+                    source_id,
+                    f"manus_message_{message.role}",
+                    message.created_at,
+                    Jsonb(redacted_raw),
+                ),
+            )
+            insert_redaction_findings(cur, workspace_id, MANUS_SOURCE, source_id, raw_findings)
+
+            cur.execute(
+                """
+                INSERT INTO messages (session_id, role, ordinal, content, metadata)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (session_id, ordinal)
+                DO UPDATE SET content = EXCLUDED.content,
+                              metadata = EXCLUDED.metadata,
+                              role = EXCLUDED.role
+                """,
+                (
+                    session_row_id,
+                    message.role,
+                    message.ordinal,
+                    redacted_content,
+                    Jsonb({"message_id": message.message_id, "created_at": message.created_at}),
+                ),
+            )
+            insert_redaction_findings(
+                cur,
+                workspace_id,
+                MANUS_SOURCE,
+                f"{source_id}:message",
+                content_findings,
+            )
+
+        cur.execute(
+            """
+            SELECT 1 FROM agent_actions aa
+            JOIN agents a ON a.id = aa.agent_id
+            WHERE aa.workspace_id = %s
+              AND aa.session_id = %s::uuid
+              AND aa.action_type = 'task_observed'
+              AND a.name = %s
+            LIMIT 1
+            """,
+            (workspace_id, session_row_id, MANUS_AGENT_NAME),
+        )
+        if not cur.fetchone():
+            cur.execute(
+                """
+                INSERT INTO agents (name, kind)
+                VALUES (%s, %s)
+                ON CONFLICT (name, kind) DO UPDATE SET name = EXCLUDED.name
+                RETURNING id::text
+                """,
+                (MANUS_AGENT_NAME, "coding-agent"),
+            )
+            agent_id = cur.fetchone()[0]
+            cur.execute(
+                """
+                INSERT INTO agent_actions (
+                    workspace_id, agent_id, session_id,
+                    action_type, status, summary, metadata
+                )
+                VALUES (%s, %s, %s::uuid, %s, %s, %s, %s)
+                """,
+                (
+                    workspace_id,
+                    agent_id,
+                    session_row_id,
+                    "task_observed",
+                    "recorded",
+                    f"Manus task imported: {task.title} [{task.status}]",
+                    Jsonb({"task_id": task.task_id, "status": task.status}),
+                ),
+            )
+
+    conn.commit()
+    return session_row_id

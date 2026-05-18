@@ -1,0 +1,12 @@
+{
+  "task_id": "manus-task-abc123",
+  "task_title": "Refactor authentication middleware",
+  "status": "completed",
+  "share_visibility": "public",
+  "task_url": "https://manus.ai/tasks/manus-task-abc123",
+  "share_url": "https://manus.ai/share/manus-task-abc123-pub",
+  "created_at": "2026-05-19T10:00:00Z",
+  "updated_at": "2026-05-19T10:15:30Z",
+  "project_id": "proj-xyz789",
+  "connectors": []
+}
