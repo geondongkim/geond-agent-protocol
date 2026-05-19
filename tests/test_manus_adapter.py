@@ -1432,3 +1432,66 @@ def test_dashboard_session_agent_existing_lanes_not_regressed() -> None:
     assert dashboard_session_agent("codex", {}) == "codex"
     assert dashboard_session_agent("claude-code", {}) == "claude"
     assert dashboard_session_agent("vscode-copilot", {}) == "copilot"
+
+
+# ---------------------------------------------------------------------------
+# Storage + Search: search_dev_memory can find Manus task message content
+# ---------------------------------------------------------------------------
+
+
+def test_search_finds_manus_task_message() -> None:
+    try:
+        import psycopg
+
+        from geond.config import get_settings
+        from geond.db import connect, run_schema_file
+    except ImportError:
+        pytest.skip("psycopg not available")
+
+    settings = get_settings()
+    schema = Path(__file__).parents[1] / "schemas" / "001_initial.sql"
+    workspace_uri = f"file:///tmp/geond-manus-search-{uuid4()}"
+
+    try:
+        conn = connect(settings)
+    except Exception as exc:
+        pytest.skip(f"Postgres not available: {exc}")
+
+    from geond.retrieval.simple import search_dev_memory
+    from geond.storage.repository import store_manus_task, upsert_workspace
+
+    unique_token = f"XQ{uuid4().hex[:12]}"
+    task = normalize_task(
+        {"id": "task-search-test", "title": "Search test"},
+        task_messages={
+            "messages": [
+                {
+                    "id": "msg-s1",
+                    "type": "user_message",
+                    "timestamp": "1747651200000",
+                    "user_message": {"content": f"Please {unique_token} the auth middleware."},
+                }
+            ]
+        },
+    )
+
+    with conn:
+        try:
+            run_schema_file(conn, schema)
+        except psycopg.Error as exc:
+            pytest.skip(f"Schema unavailable: {exc}")
+
+        workspace_id = upsert_workspace(conn, root_uri=workspace_uri, name="search-test")
+        try:
+            store_manus_task(conn, workspace_id, task)
+
+            results = search_dev_memory(conn, unique_token, workspace_uri=workspace_uri)
+            assert len(results) >= 1
+            assert results[0]["source"] == "manus"
+            assert unique_token in results[0]["snippet"]
+
+        finally:
+            with connect(settings) as cleanup_conn:
+                with cleanup_conn.cursor() as cur:
+                    cur.execute("DELETE FROM workspaces WHERE root_uri = %s", (workspace_uri,))
+                cleanup_conn.commit()

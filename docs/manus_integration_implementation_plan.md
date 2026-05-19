@@ -419,10 +419,10 @@ Phase 1 is done when all are true:
 
 - [x] A completed Manus task fixture can be imported.
 - [x] A failed Manus task fixture can be imported.
-- [ ] A live Manus task can be imported when `MANUS_API_KEY` is configured.
+- [x] A live Manus task can be imported when `MANUS_API_KEY` is configured (`ManusApiClient.fetch_task()` + `import-manus-task --task-id`).
 - [x] Re-importing the same task is idempotent.
 - [x] Dashboard overview shows Manus activity (`source="manus"` maps to `"Manus"` lane).
-- [ ] Search can find imported Manus task content.
+- [x] Search can find imported Manus task content (`test_search_finds_manus_task_message`).
 - [x] Redaction tests pass.
 - [x] CLI dry-run writes nothing.
 - [x] No existing importer, dashboard, MCP evidence, or coordination tests regress.
