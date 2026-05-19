@@ -9,6 +9,7 @@ import pytest
 
 from geond.adapters.manus import (
     AGENT_NAME,
+    BLOCKED_STATUSES,
     SOURCE,
     ManusApiClient,
     ManusApiError,
@@ -1495,3 +1496,244 @@ def test_search_finds_manus_task_message() -> None:
                 with cleanup_conn.cursor() as cur:
                     cur.execute("DELETE FROM workspaces WHERE root_uri = %s", (workspace_uri,))
                 cleanup_conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# is_blocked field
+# ---------------------------------------------------------------------------
+
+
+def test_is_blocked_true_for_blocked_statuses() -> None:
+    for status in BLOCKED_STATUSES:
+        task = normalize_task({"id": "t1", "title": "T", "status": status})
+        assert task.is_blocked is True, f"Expected is_blocked=True for status={status!r}"
+
+
+def test_is_blocked_false_for_normal_statuses() -> None:
+    for status in ("completed", "running", "failed", "created", "unknown"):
+        task = normalize_task({"id": "t1", "title": "T", "status": status})
+        assert task.is_blocked is False, f"Expected is_blocked=False for status={status!r}"
+
+
+# ---------------------------------------------------------------------------
+# get_task_file_content — size limits
+# ---------------------------------------------------------------------------
+
+
+def test_get_task_file_content_content_length_exceeded() -> None:
+    from unittest.mock import MagicMock, patch
+
+    client = ManusApiClient(api_key="test-key")
+    limit = 100
+
+    mock_resp = MagicMock()
+    mock_resp.headers.get.return_value = str(limit + 1)
+    mock_resp.__enter__ = lambda s: s
+    mock_resp.__exit__ = MagicMock(return_value=False)
+
+    with patch("urllib.request.urlopen", return_value=mock_resp):
+        with pytest.raises(ManusApiError) as exc_info:
+            client.get_task_file_content("task1", "file1", max_bytes=limit)
+
+    assert exc_info.value.status_code == 413
+
+
+def test_get_task_file_content_body_size_exceeded() -> None:
+    from unittest.mock import MagicMock, patch
+
+    client = ManusApiClient(api_key="test-key")
+    limit = 5
+
+    mock_resp = MagicMock()
+    mock_resp.headers.get.return_value = None
+    mock_resp.read.return_value = b"x" * (limit + 2)
+    mock_resp.__enter__ = lambda s: s
+    mock_resp.__exit__ = MagicMock(return_value=False)
+
+    with patch("urllib.request.urlopen", return_value=mock_resp):
+        with pytest.raises(ManusApiError) as exc_info:
+            client.get_task_file_content("task1", "file1", max_bytes=limit)
+
+    assert exc_info.value.status_code == 413
+
+
+def test_get_task_file_content_success() -> None:
+    from unittest.mock import MagicMock, patch
+
+    client = ManusApiClient(api_key="test-key")
+    expected = b"hello world"
+
+    mock_resp = MagicMock()
+    mock_resp.headers.get.return_value = str(len(expected))
+    mock_resp.read.return_value = expected
+    mock_resp.__enter__ = lambda s: s
+    mock_resp.__exit__ = MagicMock(return_value=False)
+
+    with patch("urllib.request.urlopen", return_value=mock_resp):
+        result = client.get_task_file_content("task1", "file1", max_bytes=1024)
+
+    assert result == expected
+
+
+# ---------------------------------------------------------------------------
+# _mask_task_url helper (via CLI list-manus-tasks --format json)
+# ---------------------------------------------------------------------------
+
+
+def test_list_manus_tasks_private_url_masked(capsys) -> None:
+    import json as _json
+    import sys
+    from unittest.mock import MagicMock
+    from unittest.mock import patch as _patch
+
+    mock_tasks = {
+        "tasks": [
+            {
+                "id": "t-priv",
+                "title": "Private Task",
+                "status": "completed",
+                "share_visibility": "private",
+                "task_url": "https://manus.ai/tasks/t-priv",
+                "share_url": "https://manus.ai/share/t-priv",
+            }
+        ]
+    }
+    mock_client = MagicMock()
+    mock_client.list_tasks.return_value = mock_tasks
+
+    with _patch.object(sys, "argv", ["geond", "list-manus-tasks", "--format", "json"]):
+        with _patch("geond.cli.ManusApiClient", return_value=mock_client):
+            from geond.cli import main
+
+            main()
+
+    out = capsys.readouterr().out
+    parsed = _json.loads(out)
+    task = parsed["tasks"][0]
+    assert task["task_url"] == "[private]"
+    assert task["share_url"] == "[private]"
+
+
+def test_list_manus_tasks_private_url_shown_with_flag(capsys) -> None:
+    import json as _json
+    import sys
+    from unittest.mock import MagicMock
+    from unittest.mock import patch as _patch
+
+    real_url = "https://manus.ai/tasks/t-priv"
+    mock_tasks = {
+        "tasks": [
+            {
+                "id": "t-priv",
+                "title": "Private Task",
+                "status": "completed",
+                "share_visibility": "private",
+                "task_url": real_url,
+            }
+        ]
+    }
+    mock_client = MagicMock()
+    mock_client.list_tasks.return_value = mock_tasks
+
+    with _patch.object(
+        sys, "argv", ["geond", "list-manus-tasks", "--format", "json", "--show-private-url"]
+    ):
+        with _patch("geond.cli.ManusApiClient", return_value=mock_client):
+            from geond.cli import main
+
+            main()
+
+    out = capsys.readouterr().out
+    parsed = _json.loads(out)
+    assert parsed["tasks"][0]["task_url"] == real_url
+
+
+def test_list_manus_tasks_public_url_not_masked(capsys) -> None:
+    import json as _json
+    import sys
+    from unittest.mock import MagicMock
+    from unittest.mock import patch as _patch
+
+    real_url = "https://manus.ai/tasks/t-pub"
+    mock_tasks = {
+        "tasks": [
+            {
+                "id": "t-pub",
+                "title": "Public Task",
+                "status": "completed",
+                "share_visibility": "public",
+                "task_url": real_url,
+            }
+        ]
+    }
+    mock_client = MagicMock()
+    mock_client.list_tasks.return_value = mock_tasks
+
+    with _patch.object(sys, "argv", ["geond", "list-manus-tasks", "--format", "json"]):
+        with _patch("geond.cli.ManusApiClient", return_value=mock_client):
+            from geond.cli import main
+
+            main()
+
+    out = capsys.readouterr().out
+    parsed = _json.loads(out)
+    assert parsed["tasks"][0]["task_url"] == real_url
+
+
+# ---------------------------------------------------------------------------
+# connector_count in session metadata (DB integration)
+# ---------------------------------------------------------------------------
+
+
+def test_connector_count_in_session_metadata() -> None:
+    try:
+        import psycopg
+
+        from geond.config import get_settings
+        from geond.db import connect, run_schema_file
+    except ImportError:
+        pytest.skip("psycopg not available")
+
+    settings = get_settings()
+    workspace_uri = f"file:///tmp/geond-manus-conncount-{uuid4()}"
+
+    try:
+        conn = connect(settings)
+    except Exception as exc:
+        pytest.skip(f"Postgres not available: {exc}")
+
+    from geond.storage.repository import store_manus_task, upsert_workspace
+
+    schema = Path(__file__).parents[1] / "schemas" / "001_initial.sql"
+    task = normalize_task(
+        {
+            "id": "task-conn-test",
+            "title": "Connector count test",
+            "status": "completed",
+            "connectors": ["uuid-a", "uuid-b", "uuid-c"],
+        }
+    )
+
+    try:
+        with conn:
+            try:
+                run_schema_file(conn, schema)
+            except psycopg.Error as exc:
+                pytest.skip(f"Schema unavailable: {exc}")
+            workspace_id = upsert_workspace(conn, workspace_uri, "connector-count-test")
+            session_row_id = store_manus_task(conn, workspace_id, task)
+
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT metadata FROM sessions WHERE id = %s",
+                    (session_row_id,),
+                )
+                row = cur.fetchone()
+        assert row is not None
+        meta = row[0]
+        assert meta.get("connector_count") == 3
+    finally:
+        with connect(settings) as cleanup_conn:
+            with cleanup_conn.cursor() as cur:
+                cur.execute("DELETE FROM workspaces WHERE root_uri = %s", (workspace_uri,))
+            cleanup_conn.commit()

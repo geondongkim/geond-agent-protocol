@@ -2176,8 +2176,10 @@ def store_manus_task(
         {
             **task.metadata,
             "status": task.status,
+            "is_blocked": task.is_blocked,
             "task_url": safe_task_url,
             "share_visibility": task.share_visibility,
+            "connector_count": len(task.connector_ids),
         }
     )
 

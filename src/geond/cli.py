@@ -211,6 +211,18 @@ def fingerprint_from_arg(value: str) -> dict[str, object]:
     }
 
 
+def _mask_task_url(task_dict: dict, show_private: bool) -> dict:
+    """Replace task_url/share_url with '[private]' unless public or show_private."""
+    if show_private or task_dict.get("share_visibility") == "public":
+        return task_dict
+    masked = dict(task_dict)
+    if "task_url" in masked:
+        masked["task_url"] = "[private]"
+    if "share_url" in masked:
+        masked["share_url"] = "[private]"
+    return masked
+
+
 def build_manus_context_packet(
     conn: object,
     workspace_uri: str,
@@ -824,6 +836,12 @@ def main() -> None:
         choices=["json", "table"],
         default="table",
         help="Output format",
+    )
+    manus_list.add_argument(
+        "--show-private-url",
+        action="store_true",
+        default=False,
+        help="Include task_url even when share_visibility is not public",
     )
 
     manus_bulk = subparsers.add_parser(
@@ -1832,10 +1850,12 @@ def main() -> None:
             sys.exit(1)
 
         tasks = resp.get("tasks") or []
+        show_private = getattr(args, "show_private_url", False)
         if args.format == "json":
+            safe_tasks = [_mask_task_url(t, show_private) for t in tasks]
             print(
                 json.dumps(
-                    {"status": "ok", "count": len(tasks), "tasks": tasks},
+                    {"status": "ok", "count": len(safe_tasks), "tasks": safe_tasks},
                     ensure_ascii=False,
                     indent=2,
                     default=str,

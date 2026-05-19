@@ -20,6 +20,21 @@ _RETRY_BASE_SECONDS = 1.0
 # Message types included as readable content (status_update is internal noise)
 _CONTENT_MESSAGE_TYPES = {"user_message", "assistant_message"}
 
+# Statuses that mean the task is waiting for human or external input
+BLOCKED_STATUSES: frozenset[str] = frozenset(
+    {
+        "needs_input",
+        "waiting_for_input",
+        "waiting_for_user",
+        "blocked",
+        "paused",
+        "input_required",
+    }
+)
+
+# Hard cap for file content downloads (10 MB)
+MAX_FILE_DOWNLOAD_BYTES: int = 10 * 1024 * 1024
+
 
 @dataclass(frozen=True)
 class ParsedManusMessage:
@@ -46,6 +61,7 @@ class ParsedManusTask:
     task_id: str
     title: str
     status: str
+    is_blocked: bool
     created_at: str | None
     updated_at: str | None
     task_url: str | None
@@ -100,6 +116,7 @@ def normalize_task(
         task_id=task_id,
         title=title,
         status=str(task_detail.get("status") or "unknown"),
+        is_blocked=str(task_detail.get("status") or "").lower() in BLOCKED_STATUSES,
         created_at=_parse_timestamp(task_detail.get("created_at")),
         updated_at=_parse_timestamp(task_detail.get("updated_at")),
         task_url=task_detail.get("task_url"),
@@ -351,6 +368,53 @@ class ManusApiClient:
             if exc.status_code == 404:
                 return {"files": [], "task_id": task_id}
             raise
+
+    def get_task_file_content(
+        self,
+        task_id: str,
+        file_id: str,
+        max_bytes: int = MAX_FILE_DOWNLOAD_BYTES,
+    ) -> bytes:
+        """Download raw file content up to max_bytes.
+
+        Raises ManusApiError with status_code 413 if the file exceeds max_bytes.
+        Does not log the API key or file contents.
+        """
+        query = f"task_id={task_id}&file_id={file_id}"
+        url = f"{self._base_url}/v2/task.getFile?{query}"
+        req = urllib.request.Request(url, method="GET")
+        req.add_header("x-manus-api-key", self._api_key)
+        req.add_header("Accept", "*/*")
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                content_length_hdr = resp.headers.get("Content-Length")
+                if content_length_hdr:
+                    try:
+                        if int(content_length_hdr) > max_bytes:
+                            raise ManusApiError(
+                                413,
+                                url,
+                                f"File size {content_length_hdr} B exceeds limit {max_bytes} B",
+                            )
+                    except ValueError:
+                        pass
+                content = resp.read(max_bytes + 1)
+                if len(content) > max_bytes:
+                    raise ManusApiError(
+                        413,
+                        url,
+                        f"File content exceeds max_bytes limit ({max_bytes} B)",
+                    )
+                return content
+        except ManusApiError:
+            raise
+        except urllib.error.HTTPError as exc:
+            request_id = exc.headers.get("x-request-id") if exc.headers else None
+            try:
+                body_str = exc.read().decode("utf-8", errors="replace")[:200]
+            except Exception:
+                body_str = exc.reason or ""
+            raise ManusApiError(exc.code, url, body_str, request_id) from exc
 
     def fetch_task(self, task_id: str, include_files: bool = True) -> ParsedManusTask:
         detail = self.get_task(task_id)

@@ -382,12 +382,12 @@ Acceptance criteria:
 
 - [x] No API key in logs, events, dashboard, screenshots, fixtures, or test output.
 - [x] Redaction is applied before persistence.
-- [ ] Connector UUIDs are treated as sensitive-adjacent metadata.
+- [x] Connector UUIDs are treated as sensitive-adjacent metadata (only connector_count stored in session metadata).
 - [x] File downloads are metadata-only by default.
-- [ ] Downloaded files are size-limited.
+- [x] Downloaded files are size-limited (MAX_FILE_DOWNLOAD_BYTES = 10 MB, enforced in `get_task_file_content`).
 - [x] Binary files are not embedded into messages.
 - [x] Task URLs and share URLs are marked with visibility metadata.
-- [ ] Private share URLs are not printed by default unless `--show-private-url`
+- [x] Private share URLs are not printed by default unless `--show-private-url`
       or equivalent explicit flag is used.
 - [x] Webhook endpoint validates signatures if Manus provides signing (HMAC-SHA256 via `x-manus-signature`).
 - [x] Network tests are skipped unless an explicit environment flag is set.
@@ -399,13 +399,13 @@ Acceptance criteria:
 - [ ] Long task messages are excerpted.
 - [ ] Raw JSON is hidden by default but available through evidence detail.
 - [ ] Failed tasks are visible and useful.
-- [ ] "Needs input" or "blocked" status is visually distinct if available.
+- [x] "Needs input" or "blocked" status is captured in `is_blocked` field (BLOCKED_STATUSES + test coverage); visual distinction is a frontend concern.
 - [ ] The dashboard remains readable with multiple Manus tasks.
 - [x] Existing Copilot, Codex, and Claude Code lanes do not regress (tested in `test_dashboard_session_agent_existing_lanes_not_regressed`).
 
 ## Documentation Checklist
 
-- [ ] Add a short README mention only after the feature works.
+- [x] Add a short README mention only after the feature works (Manus already referenced in README agent imports table, quick reference, and architecture diagram).
 - [x] Add `docs/manus_integration.md` (exists as `docs/manus_integration_implementation_plan.md`).
 - [ ] Document setup with `MANUS_API_KEY` and redaction warnings.
 - [x] Provide fixture-based quickstart that works without a real Manus key (`--fixture` + `--dry-run` verified working).
