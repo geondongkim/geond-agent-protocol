@@ -806,6 +806,37 @@ def main() -> None:
     )
     manus_complete.add_argument("--dry-run", action="store_true")
 
+    manus_list = subparsers.add_parser(
+        "list-manus-tasks",
+        help="List Manus tasks from the API (requires MANUS_API_KEY)",
+    )
+    manus_list.add_argument("--limit", type=int, default=20, help="Max tasks to fetch")
+    manus_list.add_argument(
+        "--status",
+        help="Filter by status (e.g. completed, failed, running)",
+    )
+    manus_list.add_argument(
+        "--format",
+        choices=["json", "table"],
+        default="table",
+        help="Output format",
+    )
+
+    manus_bulk = subparsers.add_parser(
+        "import-manus-tasks",
+        help="Bulk import Manus tasks from the API into Geond (requires MANUS_API_KEY)",
+    )
+    manus_bulk.add_argument("--workspace-uri", required=True)
+    manus_bulk.add_argument("--workspace-name")
+    manus_bulk.add_argument("--limit", type=int, default=20, help="Max tasks to import")
+    manus_bulk.add_argument("--status", help="Filter by status (e.g. completed)")
+    manus_bulk.add_argument(
+        "--include-files",
+        action="store_true",
+        help="Fetch and store file artifact metadata for each task",
+    )
+    manus_bulk.add_argument("--dry-run", action="store_true")
+
     embed_messages = subparsers.add_parser(
         "embed-messages", help="Create embeddings for imported message records"
     )
@@ -1757,6 +1788,138 @@ def main() -> None:
                     "session_id": session_row_id,
                     "task_id": task.task_id,
                     "imported_messages": len(task.messages),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
+
+    if args.command == "list-manus-tasks":
+        try:
+            client = ManusApiClient()
+            resp = client.list_tasks(limit=args.limit, status=args.status)
+        except ManusApiError as exc:
+            print(
+                json.dumps(
+                    {
+                        "status": "error",
+                        "code": exc.status_code,
+                        "endpoint": exc.endpoint,
+                        "message": str(exc),
+                    },
+                    ensure_ascii=False,
+                ),
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        tasks = resp.get("tasks") or []
+        if args.format == "json":
+            print(
+                json.dumps(
+                    {"status": "ok", "count": len(tasks), "tasks": tasks},
+                    ensure_ascii=False,
+                    indent=2,
+                    default=str,
+                )
+            )
+        else:
+            if not tasks:
+                print("No tasks found.")
+            else:
+                header = f"{'TASK ID':<28}  {'STATUS':<12}  {'TITLE'}"
+                print(header)
+                print("-" * min(len(header) + 20, 100))
+                for t in tasks:
+                    tid = str(t.get("id") or t.get("task_id") or "")[:26]
+                    status = str(t.get("status") or "")[:10]
+                    title = str(t.get("title") or t.get("task_title") or "")[:60]
+                    print(f"{tid:<28}  {status:<12}  {title}")
+        return
+
+    if args.command == "import-manus-tasks":
+        try:
+            client = ManusApiClient()
+            resp = client.list_tasks(limit=args.limit, status=args.status)
+        except ManusApiError as exc:
+            print(
+                json.dumps(
+                    {
+                        "status": "error",
+                        "code": exc.status_code,
+                        "endpoint": exc.endpoint,
+                        "message": str(exc),
+                    },
+                    ensure_ascii=False,
+                ),
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        raw_tasks = resp.get("tasks") or []
+        workspace_name = args.workspace_name or workspace_name_from_uri(args.workspace_uri)
+
+        if args.dry_run:
+            planned = [
+                {
+                    "task_id": str(t.get("id") or t.get("task_id") or ""),
+                    "title": str(t.get("title") or t.get("task_title") or ""),
+                    "status": str(t.get("status") or ""),
+                }
+                for t in raw_tasks
+            ]
+            print(
+                json.dumps(
+                    {"status": "dry-run", "count": len(planned), "tasks": planned},
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return
+
+        results = []
+        errors = []
+        with connect(get_settings()) as conn:
+            workspace_id = upsert_workspace(
+                conn,
+                root_uri=args.workspace_uri,
+                name=workspace_name,
+                metadata={"source": "cli", "import_source": "manus"},
+            )
+            for raw in raw_tasks:
+                task_id = str(raw.get("id") or raw.get("task_id") or "")
+                if not task_id:
+                    continue
+                try:
+                    task = client.fetch_task(task_id, include_files=args.include_files)
+                    session_row_id = store_manus_task(conn, workspace_id, task)
+                    results.append(
+                        {
+                            "task_id": task_id,
+                            "session_id": session_row_id,
+                            "imported_messages": len(task.messages),
+                            "imported_files": len(task.files),
+                        }
+                    )
+                except ManusApiError as exc:
+                    errors.append(
+                        {
+                            "task_id": task_id,
+                            "code": exc.status_code,
+                            "message": str(exc),
+                        }
+                    )
+
+        print(
+            json.dumps(
+                {
+                    "status": "ok",
+                    "workspace_id": workspace_id,
+                    "imported": len(results),
+                    "errors": len(errors),
+                    "tasks": results,
+                    "error_details": errors,
                 },
                 ensure_ascii=False,
                 indent=2,

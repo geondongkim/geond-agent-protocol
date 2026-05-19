@@ -32,6 +32,16 @@ class ParsedManusMessage:
 
 
 @dataclass(frozen=True)
+class ParsedManusFile:
+    file_id: str
+    name: str
+    mime_type: str | None
+    size_bytes: int | None
+    created_at: str | None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class ParsedManusTask:
     task_id: str
     title: str
@@ -44,12 +54,14 @@ class ParsedManusTask:
     project_id: str | None
     connector_ids: list[str]
     messages: list[ParsedManusMessage]
+    files: list[ParsedManusFile] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
 def normalize_task(
     task_detail: dict[str, Any],
     task_messages: dict[str, Any] | None = None,
+    task_files: dict[str, Any] | None = None,
 ) -> ParsedManusTask:
     """Convert raw Manus API JSON into a ParsedManusTask.
 
@@ -62,6 +74,9 @@ def normalize_task(
 
     raw_messages = (task_messages or {}).get("messages") or []
     messages = _normalize_messages(task_id, raw_messages)
+
+    raw_files = (task_files or {}).get("files") or []
+    files = _normalize_files(raw_files)
 
     connector_ids = [str(c) for c in (task_detail.get("connectors") or []) if c]
 
@@ -93,6 +108,7 @@ def normalize_task(
         project_id=task_detail.get("project_id"),
         connector_ids=connector_ids,
         messages=messages,
+        files=files,
         metadata={
             "source_adapter": SOURCE_ADAPTER,
             "project_id": task_detail.get("project_id"),
@@ -179,14 +195,50 @@ def _normalize_role(raw_role: Any) -> str:
     return "assistant_or_tool"
 
 
-def load_fixture(detail_path: str, messages_path: str | None = None) -> ParsedManusTask:
+def _normalize_files(raw_files: list[dict[str, Any]]) -> list[ParsedManusFile]:
+    result: list[ParsedManusFile] = []
+    for raw in raw_files:
+        if not isinstance(raw, dict):
+            continue
+        file_id = str(raw.get("id") or raw.get("file_id") or "")
+        if not file_id:
+            continue
+        size_raw = raw.get("size") or raw.get("size_bytes")
+        try:
+            size_bytes: int | None = int(size_raw) if size_raw is not None else None
+        except (TypeError, ValueError):
+            size_bytes = None
+        _known = {"id", "file_id", "name", "mime_type", "size", "size_bytes", "created_at"}
+        extra = {k: v for k, v in raw.items() if k not in _known}
+        result.append(
+            ParsedManusFile(
+                file_id=file_id,
+                name=str(raw.get("name") or file_id),
+                mime_type=raw.get("mime_type") or raw.get("content_type"),
+                size_bytes=size_bytes,
+                created_at=_parse_timestamp(raw.get("created_at")),
+                metadata=extra,
+            )
+        )
+    return result
+
+
+def load_fixture(
+    detail_path: str,
+    messages_path: str | None = None,
+    files_path: str | None = None,
+) -> ParsedManusTask:
     with open(detail_path, encoding="utf-8") as f:
         detail = json.load(f)
     messages: dict[str, Any] | None = None
     if messages_path:
         with open(messages_path, encoding="utf-8") as f:
             messages = json.load(f)
-    return normalize_task(detail, messages)
+    files: dict[str, Any] | None = None
+    if files_path:
+        with open(files_path, encoding="utf-8") as f:
+            files = json.load(f)
+    return normalize_task(detail, messages, files)
 
 
 class ManusApiError(Exception):
@@ -284,13 +336,27 @@ class ManusApiClient:
             params = {**params, "cursor": cursor}
         return {"messages": all_messages, "task_id": task_id}
 
-    def list_tasks(self, limit: int = 20) -> dict[str, Any]:
-        return self._request("v2/task.list", {"limit": str(limit)})
+    def list_tasks(self, limit: int = 20, status: str | None = None) -> dict[str, Any]:
+        params: dict[str, str] = {"limit": str(limit)}
+        if status:
+            params["status"] = status
+        return self._request("v2/task.list", params)
 
-    def fetch_task(self, task_id: str) -> ParsedManusTask:
+    def list_task_files(self, task_id: str) -> dict[str, Any]:
+        """Fetch file metadata for a task. Returns metadata only — no content download."""
+        try:
+            resp = self._request("v2/task.listFiles", {"task_id": task_id})
+            return resp
+        except ManusApiError as exc:
+            if exc.status_code == 404:
+                return {"files": [], "task_id": task_id}
+            raise
+
+    def fetch_task(self, task_id: str, include_files: bool = True) -> ParsedManusTask:
         detail = self.get_task(task_id)
         messages = self.get_task_messages(task_id)
-        return normalize_task(detail, messages)
+        files = self.list_task_files(task_id) if include_files else None
+        return normalize_task(detail, messages, files)
 
     def create_task(self, title: str, prompt: str) -> dict[str, Any]:
         """Create a new Manus task. Returns the created task object."""

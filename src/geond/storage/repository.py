@@ -12,7 +12,7 @@ from geond.adapters.codex import SOURCE as CODEX_SOURCE
 from geond.adapters.codex import ParsedCodexSession
 from geond.adapters.manus import AGENT_NAME as MANUS_AGENT_NAME
 from geond.adapters.manus import SOURCE as MANUS_SOURCE
-from geond.adapters.manus import ParsedManusTask
+from geond.adapters.manus import ParsedManusFile, ParsedManusTask
 from geond.adapters.vscode_copilot import SOURCE, ParsedCopilotSession
 from geond.redaction import RedactionFinding, redact_text, redact_value
 from geond.storage.changesets import link_changesets_to_code_entities_cursor
@@ -2308,5 +2308,48 @@ def store_manus_task(
                 ),
             )
 
+        if task.files:
+            _store_manus_file_artifacts(cur, workspace_id, session_row_id, task.task_id, task.files)
+
     conn.commit()
     return session_row_id
+
+
+def _store_manus_file_artifacts(
+    cur: Cursor,
+    workspace_id: str,
+    session_row_id: str,
+    task_id: str,
+    files: list[ParsedManusFile],
+) -> None:
+    """Insert Manus file metadata as file_snapshots (metadata-only, no content)."""
+    for f in files:
+        file_uri = f"manus://{task_id}/files/{f.file_id}"
+        content_hash = f"manus:{task_id}:{f.file_id}"
+        meta = {
+            "source": "manus",
+            "file_id": f.file_id,
+            "name": f.name,
+            "mime_type": f.mime_type,
+            "size_bytes": f.size_bytes,
+            "created_at": f.created_at,
+            **f.metadata,
+        }
+        cur.execute(
+            """
+            INSERT INTO file_snapshots (
+                workspace_id, session_id, file_uri, file_path, content_hash, metadata
+            )
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (workspace_id, file_uri, content_hash)
+            DO UPDATE SET metadata = file_snapshots.metadata || EXCLUDED.metadata
+            """,
+            (
+                workspace_id,
+                session_row_id,
+                file_uri,
+                f.name,
+                content_hash,
+                Jsonb(meta),
+            ),
+        )

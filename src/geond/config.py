@@ -73,6 +73,7 @@ class Settings:
     rerank_url: str = os.getenv("GEOND_RERANK_URL", "")
     rerank_api_key: str = os.getenv("GEOND_RERANK_API_KEY", "")
     rerank_timeout_seconds: float = float(os.getenv("GEOND_RERANK_TIMEOUT_SECONDS", "10"))
+    manus_webhook_secret: str = os.getenv("MANUS_WEBHOOK_SECRET", "")
 
 
 def get_settings() -> Settings:

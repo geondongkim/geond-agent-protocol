@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
@@ -65,10 +67,106 @@ def dashboard_handler(settings: Settings) -> type[BaseHTTPRequestHandler]:
             except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
                 return
 
+        def do_POST(self) -> None:  # noqa: N802
+            parsed = urlparse(self.path)
+            if parsed.path != "/api/webhooks/manus":
+                body = json.dumps({"status": "not_found"}).encode("utf-8")
+                self.send_response(404)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+
+            status, payload = _handle_manus_webhook(settings, self.headers, self.rfile)
+            body = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            try:
+                self.wfile.write(body)
+            except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
+                return
+
         def log_message(self, format: str, *args: Any) -> None:
             return
 
     return DashboardHandler
+
+
+def _handle_manus_webhook(
+    settings: Settings,
+    headers: Any,
+    rfile: Any,
+) -> tuple[int, dict[str, Any]]:
+    """Process a Manus webhook POST to /api/webhooks/manus.
+
+    Validates HMAC-SHA256 signature when MANUS_WEBHOOK_SECRET is configured.
+    Stores the task via store_manus_task on task.completed or task.failed events.
+    """
+    from geond.adapters.manus import normalize_task
+    from geond.storage.repository import store_manus_task, upsert_workspace
+
+    try:
+        content_length = int(headers.get("Content-Length") or "0")
+        if content_length > 1_048_576:
+            return 413, {"status": "error", "message": "payload_too_large"}
+        raw_body = rfile.read(content_length)
+    except Exception:
+        return 400, {"status": "error", "message": "unreadable_body"}
+
+    if settings.manus_webhook_secret:
+        sig_header = headers.get("x-manus-signature") or headers.get("X-Manus-Signature") or ""
+        expected = hmac.new(
+            settings.manus_webhook_secret.encode("utf-8"),
+            raw_body,
+            hashlib.sha256,
+        ).hexdigest()
+        if not hmac.compare_digest(f"sha256={expected}", sig_header):
+            return 401, {"status": "error", "message": "invalid_signature"}
+
+    try:
+        event = json.loads(raw_body.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return 400, {"status": "error", "message": "invalid_json"}
+
+    event_type = str(event.get("event") or "")
+    if event_type not in {"task.completed", "task.failed", "task.updated"}:
+        return 200, {"status": "ignored", "event": event_type}
+
+    task_data = event.get("task") or {}
+    if not task_data:
+        return 400, {"status": "error", "message": "missing_task_field"}
+
+    workspace_uri = str(event.get("workspace_uri") or "")
+    if not workspace_uri:
+        return 400, {"status": "error", "message": "missing_workspace_uri"}
+
+    task_messages = event.get("messages") or None
+    try:
+        task = normalize_task(task_data, task_messages)
+    except Exception as exc:
+        return 422, {"status": "error", "message": f"normalize_failed: {exc}"}
+
+    try:
+        with connect(settings) as conn:
+            workspace_id = upsert_workspace(
+                conn,
+                root_uri=workspace_uri,
+                metadata={"source": "manus_webhook"},
+            )
+            session_id = store_manus_task(conn, workspace_id, task)
+    except Exception as exc:
+        return 500, {"status": "error", "message": f"storage_failed: {exc}"}
+
+    return 200, {
+        "status": "ok",
+        "event": event_type,
+        "task_id": task.task_id,
+        "session_id": session_id,
+        "imported_messages": len(task.messages),
+    }
 
 
 def dashboard_response(settings: Settings, path: str) -> tuple[int, str, bytes]:
