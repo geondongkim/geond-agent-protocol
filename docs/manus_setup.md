@@ -21,13 +21,8 @@ geond import-manus-task task-abc123 \
   --workspace-uri file:///path/to/project
 ```
 
-Add `--include-files` to also store file artifact metadata:
-
-```bash
-geond import-manus-task task-abc123 \
-  --workspace-uri file:///path/to/project \
-  --include-files
-```
+Message attachments are imported as metadata-only file artifacts when they are
+present in `task.listMessages`.
 
 Dry-run (no DB writes):
 
@@ -39,7 +34,7 @@ Using a local fixture (no API key required):
 
 ```bash
 geond import-manus-task --fixture tests/fixtures/manus/task_detail_completed.json \
-  --messages tests/fixtures/manus/task_messages_completed.json \
+  --fixture-messages tests/fixtures/manus/task_messages_completed.json \
   --workspace-uri file:///path/to/project \
   --dry-run
 ```
@@ -50,7 +45,7 @@ geond import-manus-task --fixture tests/fixtures/manus/task_detail_completed.jso
 geond import-manus-tasks \
   --workspace-uri file:///path/to/project \
   --limit 50 \
-  --status completed
+  --status stopped
 ```
 
 ## 4. List Tasks
@@ -72,7 +67,9 @@ geond manus-get-file \
   --output ./output.pdf
 ```
 
-Without `--output`, raw bytes are written to stdout.
+Without `--output`, raw bytes are written to stdout. This command is best-effort:
+current Manus public docs expose message attachment URLs and file upload/detail
+endpoints, but not a general task file download endpoint for every attachment.
 
 ## 6. View Stored Task Dashboard
 
@@ -118,7 +115,7 @@ LIMIT 50;
 
 - **API drift**: The Manus API v2 shape is reverse-engineered from live responses. Field names may change without notice. The adapter normalises both `id`/`task_id` and `title`/`task_title` formats to handle fixture/legacy shapes.
 - **Connector permissions**: Connector UUIDs are intentionally not stored. Only the count (`connector_count`) is kept in session metadata, as connector IDs may identify third-party integrations.
-- **File content**: Files are metadata-only by default. Content download via `manus-get-file` is capped at 10 MB (`MAX_FILE_DOWNLOAD_BYTES`). Binary files are not embedded in messages.
+- **File content**: Files are metadata-only by default. Message attachment URLs are stored after redaction. Content download via `manus-get-file` is capped at 10 MB (`MAX_FILE_DOWNLOAD_BYTES`) when the backing Manus endpoint is available. Binary files are not embedded in messages.
 - **Rate limits**: The API client retries up to 3 times with exponential backoff on `429` responses.
 - **No streaming**: Message pagination is handled automatically, but real-time task streaming is not supported.
-- **Blocked tasks**: Tasks with status `needs_input`, `waiting_for_input`, `blocked`, `paused`, `input_required`, or `waiting_for_user` have `is_blocked=True` in session metadata. They are fully imported but no special action is taken automatically.
+- **Blocked tasks**: Tasks with current API status `waiting`, or legacy/imported statuses `needs_input`, `waiting_for_input`, `blocked`, `paused`, `input_required`, or `waiting_for_user`, have `is_blocked=True` in session metadata. They are fully imported but no special action is taken automatically.

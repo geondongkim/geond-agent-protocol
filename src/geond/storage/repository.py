@@ -2328,15 +2328,18 @@ def _store_manus_file_artifacts(
     for f in files:
         file_uri = f"manus://{task_id}/files/{f.file_id}"
         content_hash = f"manus:{task_id}:{f.file_id}"
+        redacted_name, name_findings = redact_text(f.name)
         meta = {
             "source": "manus",
             "file_id": f.file_id,
-            "name": f.name,
+            "name": redacted_name,
             "mime_type": f.mime_type,
             "size_bytes": f.size_bytes,
             "created_at": f.created_at,
             **f.metadata,
         }
+        redacted_meta, meta_findings = redact_value(meta)
+        source_id = f"manus:{task_id}:file:{f.file_id}"
         cur.execute(
             """
             INSERT INTO file_snapshots (
@@ -2350,8 +2353,10 @@ def _store_manus_file_artifacts(
                 workspace_id,
                 session_row_id,
                 file_uri,
-                f.name,
+                redacted_name,
                 content_hash,
-                Jsonb(meta),
+                Jsonb(redacted_meta),
             ),
         )
+        insert_redaction_findings(cur, workspace_id, "manus", f"{source_id}:name", name_findings)
+        insert_redaction_findings(cur, workspace_id, "manus", source_id, meta_findings)

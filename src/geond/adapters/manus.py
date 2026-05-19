@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -25,6 +27,7 @@ _CONTENT_MESSAGE_TYPES = {"user_message", "assistant_message"}
 # Statuses that mean the task is waiting for human or external input
 BLOCKED_STATUSES: frozenset[str] = frozenset(
     {
+        "waiting",
         "needs_input",
         "waiting_for_input",
         "waiting_for_user",
@@ -91,10 +94,10 @@ def normalize_task(
     title = str(task_detail.get("title") or task_detail.get("task_title") or task_id)
 
     raw_messages = (task_messages or {}).get("messages") or []
-    messages = _normalize_messages(task_id, raw_messages)
+    messages, message_files = _normalize_messages(task_id, raw_messages)
 
     raw_files = (task_files or {}).get("files") or []
-    files = _normalize_files(raw_files)
+    files = [*_normalize_files(raw_files), *message_files]
 
     connector_ids = [str(c) for c in (task_detail.get("connectors") or []) if c]
 
@@ -157,8 +160,9 @@ def _parse_timestamp(value: Any) -> str | None:
 def _normalize_messages(
     task_id: str,
     raw_messages: list[dict[str, Any]],
-) -> list[ParsedManusMessage]:
+) -> tuple[list[ParsedManusMessage], list[ParsedManusFile]]:
     result: list[ParsedManusMessage] = []
+    files: list[ParsedManusFile] = []
     ordinal = 0
     for raw in raw_messages:
         if not isinstance(raw, dict):
@@ -178,7 +182,47 @@ def _normalize_messages(
             # filtered from readable excerpts.
             role = "assistant_or_tool"
             su = raw.get("status_update") or {}
-            content = su.get("brief") or su.get("description") or ""
+            status_detail = su.get("status_detail") or {}
+            content = (
+                su.get("brief")
+                or su.get("description")
+                or status_detail.get("waiting_description")
+                or ""
+            )
+        elif msg_type == "error_message":
+            role = "assistant_or_tool"
+            payload = raw.get("error_message") or {}
+            content = str(payload.get("content") or payload.get("error_type") or "")
+        elif msg_type == "tool_used":
+            role = "assistant_or_tool"
+            payload = raw.get("tool_used") or {}
+            message = payload.get("message") or {}
+            content = str(
+                payload.get("brief")
+                or payload.get("description")
+                or message.get("action")
+                or message.get("param")
+                or ""
+            )
+        elif msg_type == "plan_update":
+            role = "assistant_or_tool"
+            payload = raw.get("plan_update") or {}
+            steps = payload.get("steps") or []
+            content = "\n".join(
+                str(step.get("title") or "") for step in steps if isinstance(step, dict)
+            )
+        elif msg_type == "new_plan_step":
+            role = "assistant_or_tool"
+            payload = raw.get("new_plan_step") or {}
+            content = str(payload.get("title") or payload.get("step_id") or "")
+        elif msg_type == "explanation":
+            role = "assistant_or_tool"
+            payload = raw.get("explanation") or {}
+            content = str(payload.get("content") or "")
+        elif msg_type == "structured_output_result":
+            role = "assistant_or_tool"
+            payload = raw.get("structured_output_result") or {}
+            content = json.dumps(payload, ensure_ascii=False, default=str)
         elif "role" in raw:
             # Fixture / legacy flat format
             role = _normalize_role(raw.get("role"))
@@ -190,6 +234,7 @@ def _normalize_messages(
         ordinal += 1
         message_id = str(raw.get("id") or f"{task_id}:{ordinal}")
         created_at = _parse_timestamp(raw.get("timestamp") or raw.get("created_at"))
+        files.extend(_extract_message_attachments(task_id, message_id, raw, created_at))
 
         safe_raw = {k: v for k, v in raw.items() if k not in {"id", "timestamp"}}
         result.append(
@@ -202,7 +247,74 @@ def _normalize_messages(
                 raw=safe_raw,
             )
         )
-    return result
+    return result, files
+
+
+def _extract_message_attachments(
+    task_id: str,
+    message_id: str,
+    raw: dict[str, Any],
+    created_at: str | None,
+) -> list[ParsedManusFile]:
+    attachments: list[dict[str, Any]] = []
+    for payload_key in ("user_message", "assistant_message"):
+        payload = raw.get(payload_key) or {}
+        for attachment in payload.get("attachments") or []:
+            if isinstance(attachment, dict):
+                attachments.append(attachment)
+
+    files: list[ParsedManusFile] = []
+    for index, attachment in enumerate(attachments, start=1):
+        filename = str(
+            attachment.get("filename") or attachment.get("name") or f"attachment-{index}"
+        )
+        url = str(attachment.get("url") or "")
+        raw_id = attachment.get("id") or attachment.get("file_id")
+        file_id = str(raw_id or _stable_attachment_id(task_id, message_id, index, filename, url))
+        size_raw = attachment.get("size") or attachment.get("size_bytes")
+        try:
+            size_bytes: int | None = int(size_raw) if size_raw is not None else None
+        except (TypeError, ValueError):
+            size_bytes = None
+        known = {
+            "id",
+            "file_id",
+            "filename",
+            "name",
+            "url",
+            "content_type",
+            "mime_type",
+            "size",
+            "size_bytes",
+        }
+        metadata = {k: v for k, v in attachment.items() if k not in known}
+        if url:
+            metadata["url"] = url
+        metadata["source_message_id"] = message_id
+        files.append(
+            ParsedManusFile(
+                file_id=file_id,
+                name=filename,
+                mime_type=attachment.get("content_type") or attachment.get("mime_type"),
+                size_bytes=size_bytes,
+                created_at=created_at,
+                metadata=metadata,
+            )
+        )
+    return files
+
+
+def _stable_attachment_id(
+    task_id: str,
+    message_id: str,
+    index: int,
+    filename: str,
+    url: str,
+) -> str:
+    digest = hashlib.sha256(
+        f"{task_id}\0{message_id}\0{index}\0{filename}\0{url}".encode()
+    ).hexdigest()[:16]
+    return f"attachment-{digest}"
 
 
 def _normalize_role(raw_role: Any) -> str:
@@ -298,9 +410,11 @@ class ManusApiClient:
         params: dict[str, str] | None = None,
         body: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        if not self._api_key:
+            raise ManusApiError(401, path, "missing MANUS_API_KEY")
         query = ""
         if params:
-            query = "?" + "&".join(f"{k}={v}" for k, v in params.items())
+            query = "?" + urllib.parse.urlencode(params)
         url = f"{self._base_url}/{path.lstrip('/')}{query}"
         data: bytes | None = None
         if body is not None:
@@ -364,9 +478,11 @@ class ManusApiClient:
 
     def list_tasks(self, limit: int = 20, status: str | None = None) -> dict[str, Any]:
         params: dict[str, str] = {"limit": str(limit)}
+        resp = self._request("v2/task.list", params)
+        tasks = resp.get("tasks") or resp.get("data") or []
         if status:
-            params["status"] = status
-        return self._request("v2/task.list", params)
+            tasks = [t for t in tasks if str(t.get("status") or "") == status]
+        return {**resp, "tasks": tasks}
 
     def list_task_files(self, task_id: str) -> dict[str, Any]:
         """Fetch file metadata for a task. Returns metadata only — no content download."""
@@ -389,7 +505,9 @@ class ManusApiClient:
         Raises ManusApiError with status_code 413 if the file exceeds max_bytes.
         Does not log the API key or file contents.
         """
-        query = f"task_id={task_id}&file_id={file_id}"
+        if not self._api_key:
+            raise ManusApiError(401, "v2/task.getFile", "missing MANUS_API_KEY")
+        query = urllib.parse.urlencode({"task_id": task_id, "file_id": file_id})
         url = f"{self._base_url}/v2/task.getFile?{query}"
         req = urllib.request.Request(url, method="GET")
         req.add_header("x-manus-api-key", self._api_key)
@@ -433,5 +551,12 @@ class ManusApiClient:
 
     def create_task(self, title: str, prompt: str) -> dict[str, Any]:
         """Create a new Manus task. Returns the created task object."""
-        resp = self._request("v2/task.create", body={"title": title, "prompt": prompt})
+        # Keep the prompt as a current API text content part; title remains optional metadata.
+        resp = self._request(
+            "v2/task.create",
+            body={
+                "message": {"content": [{"type": "text", "text": prompt}]},
+                "title": title,
+            },
+        )
         return resp.get("task") or resp

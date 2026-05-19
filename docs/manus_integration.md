@@ -128,17 +128,20 @@ session card with its title, status, and last activity timestamp.
 - **API stability**: The integration targets Manus API v2. If endpoint shapes
   change, check the [official docs](https://open.manus.ai/docs/v2/introduction)
   and update the adapter in `src/geond/adapters/manus.py`.
-- **Connector credentials**: Connector UUIDs are stored as redacted metadata.
-  Actual connector credentials are never fetched or stored.
-- **File downloads**: File metadata is imported by default. File content
-  download is not implemented; use Manus directly to access file content.
-- **Private share URLs**: `share_url` with `share_visibility=private` is
-  stored in evidence metadata but not displayed in dashboard output by default.
-- **Webhooks**: Real-time webhook ingestion is not yet implemented. Import is
-  pull-based (CLI command or fixture).
-- **Task creation**: `create_task` uses the `v2/task.create` endpoint. If
-  Manus restricts task creation via API key, the error is surfaced clearly
-  with the endpoint and HTTP status code.
+- **Connector credentials**: Connector UUIDs are not stored in session metadata;
+  only `connector_count` is retained. Actual connector credentials are never
+  fetched or stored.
+- **File downloads**: Message attachment metadata is imported by default. File
+  content download is best-effort because current public Manus docs expose file
+  upload/detail and message attachment URLs, not a universal task attachment
+  download endpoint.
+- **Private share URLs**: private task/share URLs are not retained in session
+  metadata. Public task URLs can be retained for evidence navigation.
+- **Webhooks**: `/api/webhooks/manus` accepts Manus task events and validates
+  HMAC-SHA256 signatures when `MANUS_WEBHOOK_SECRET` is configured.
+- **Task creation**: `create_task` uses the current `v2/task.create` message
+  body shape. If Manus restricts task creation via API key, the error is
+  surfaced clearly with the endpoint and HTTP status code.
 - **Rate limits**: The client retries rate-limited requests up to three times
   with exponential backoff. `permission_denied`, `not_found`, and
   `invalid_argument` errors abort immediately with a descriptive message.

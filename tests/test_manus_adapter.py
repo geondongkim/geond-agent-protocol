@@ -178,6 +178,53 @@ def test_connector_ids_treated_as_metadata_only() -> None:
     assert task.connector_ids == ["conn-secret-abc", "conn-secret-def"]
 
 
+def test_normalize_current_api_waiting_status_is_blocked() -> None:
+    task = normalize_task({"id": "task-wait", "title": "Waiting", "status": "waiting"})
+
+    assert task.is_blocked is True
+
+
+def test_normalize_error_message_and_attachments_from_current_api_shape() -> None:
+    task = normalize_task(
+        {"id": "task-current", "title": "Current API", "status": "error"},
+        {
+            "messages": [
+                {
+                    "id": "msg-err",
+                    "type": "error_message",
+                    "timestamp": 1_715_000_000,
+                    "error_message": {
+                        "error_type": "tool_failed",
+                        "content": "Browser automation timed out",
+                    },
+                },
+                {
+                    "id": "msg-assistant",
+                    "type": "assistant_message",
+                    "timestamp": 1_715_000_010,
+                    "assistant_message": {
+                        "content": "I attached the report.",
+                        "attachments": [
+                            {
+                                "filename": "report.pdf",
+                                "url": "https://manus.example/private/report.pdf",
+                                "content_type": "application/pdf",
+                            }
+                        ],
+                    },
+                },
+            ]
+        },
+    )
+
+    assert task.messages[0].role == "assistant_or_tool"
+    assert "timed out" in task.messages[0].content
+    assert len(task.files) == 1
+    assert task.files[0].name == "report.pdf"
+    assert task.files[0].mime_type == "application/pdf"
+    assert task.files[0].metadata["source_message_id"] == "msg-assistant"
+
+
 # ---------------------------------------------------------------------------
 # ManusApiClient error mapping (no real network)
 # ---------------------------------------------------------------------------
@@ -219,6 +266,58 @@ def test_api_client_raises_manus_api_error_on_403() -> None:
             client.get_task("x")
     assert exc_info.value.status_code == 403
     assert "permission_denied" in str(exc_info.value)
+
+
+def test_api_client_list_tasks_accepts_current_data_response() -> None:
+    from unittest.mock import MagicMock
+
+    client = ManusApiClient(api_key="fake-key")
+    response = MagicMock()
+    response.read.return_value = json.dumps(
+        {
+            "ok": True,
+            "data": [
+                {"id": "task-a", "title": "A", "status": "stopped"},
+                {"id": "task-b", "title": "B", "status": "waiting"},
+            ],
+        }
+    ).encode("utf-8")
+    response.__enter__ = lambda s: s
+    response.__exit__ = MagicMock(return_value=False)
+
+    with patch("urllib.request.urlopen", return_value=response):
+        result = client.list_tasks(status="waiting")
+
+    assert result["tasks"] == [{"id": "task-b", "title": "B", "status": "waiting"}]
+
+
+def test_api_client_create_task_uses_current_message_body() -> None:
+    from unittest.mock import MagicMock
+
+    client = ManusApiClient(api_key="fake-key")
+    response = MagicMock()
+    response.read.return_value = json.dumps(
+        {"ok": True, "task_id": "task-new", "task_title": "Generated title"}
+    ).encode("utf-8")
+    response.__enter__ = lambda s: s
+    response.__exit__ = MagicMock(return_value=False)
+
+    captured = {}
+
+    def fake_urlopen(req, timeout):
+        captured["request"] = req
+        captured["timeout"] = timeout
+        return response
+
+    with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        result = client.create_task("Local title", "Use Geond context")
+
+    body = json.loads(captured["request"].data.decode("utf-8"))
+    assert body == {
+        "message": {"content": [{"type": "text", "text": "Use Geond context"}]},
+        "title": "Local title",
+    }
+    assert result["task_id"] == "task-new"
 
 
 # ---------------------------------------------------------------------------
@@ -425,6 +524,33 @@ def test_cli_dry_run_writes_nothing(tmp_path) -> None:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM workspaces WHERE id = %s", (workspace_id,))
             conn.commit()
+
+
+def test_cli_import_manus_task_accepts_positional_task_id(capsys) -> None:
+    import sys
+    from unittest.mock import MagicMock
+    from unittest.mock import patch as _patch
+
+    mock_task = normalize_task(
+        {"id": "task-positional", "title": "Positional", "status": "stopped"}
+    )
+    mock_client = MagicMock()
+    mock_client.fetch_task.return_value = mock_task
+
+    with _patch.object(
+        sys,
+        "argv",
+        ["geond", "import-manus-task", "task-positional", "--dry-run"],
+    ):
+        with _patch("geond.cli.ManusApiClient", return_value=mock_client):
+            from geond.cli import main
+
+            main()
+
+    parsed = json.loads(capsys.readouterr().out)
+    assert parsed["status"] == "dry-run"
+    assert parsed["planned"]["task_id"] == "task-positional"
+    mock_client.fetch_task.assert_called_once_with("task-positional")
 
 
 # ---------------------------------------------------------------------------

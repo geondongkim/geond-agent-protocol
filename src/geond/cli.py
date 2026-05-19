@@ -734,6 +734,7 @@ def main() -> None:
     import_manus = subparsers.add_parser(
         "import-manus-task", help="Import a Manus API v2 task into Geond"
     )
+    import_manus.add_argument("task_id_arg", nargs="?", help="Manus task ID")
     import_manus.add_argument("--task-id", help="Manus task ID (requires MANUS_API_KEY)")
     import_manus.add_argument(
         "--fixture",
@@ -812,6 +813,7 @@ def main() -> None:
         "manus-task-complete",
         help="Import a completed Manus task and record handoff + release reservations",
     )
+    manus_complete.add_argument("task_id_arg", nargs="?", help="Manus task ID")
     manus_complete.add_argument(
         "--task-id", help="Manus task ID to import (requires MANUS_API_KEY)"
     )
@@ -1794,7 +1796,8 @@ def main() -> None:
         return
 
     if args.command == "import-manus-task":
-        if not args.fixture and not args.task_id:
+        task_id = args.task_id or args.task_id_arg
+        if not args.fixture and not task_id:
             print(
                 json.dumps(
                     {"status": "error", "message": "Provide --task-id or --fixture"},
@@ -1822,7 +1825,7 @@ def main() -> None:
         else:
             try:
                 client = ManusApiClient()
-                task = client.fetch_task(args.task_id)
+                task = client.fetch_task(task_id)
             except ManusApiError as exc:
                 print(
                     json.dumps(
@@ -2141,7 +2144,8 @@ def main() -> None:
         return
 
     if args.command == "manus-task-complete":
-        if not args.fixture and not args.task_id:
+        task_id = args.task_id or args.task_id_arg
+        if not args.fixture and not task_id:
             print(
                 json.dumps(
                     {"status": "error", "message": "Provide --task-id or --fixture"},
@@ -2156,7 +2160,7 @@ def main() -> None:
         else:
             try:
                 client = ManusApiClient()
-                task = client.fetch_task(args.task_id)
+                task = client.fetch_task(task_id)
             except ManusApiError as exc:
                 print(
                     json.dumps(
