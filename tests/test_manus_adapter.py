@@ -1411,3 +1411,24 @@ def test_webhook_no_secret_skips_signature_check() -> None:
 
     assert status == 200
     assert resp["status"] == "ok"
+
+
+# ---------------------------------------------------------------------------
+# Dashboard: dashboard_session_agent maps source="manus" to "Manus" lane
+# ---------------------------------------------------------------------------
+
+
+def test_dashboard_session_agent_manus_lane() -> None:
+    from geond.storage.dashboard import dashboard_session_agent
+
+    assert dashboard_session_agent("manus", {}) == "Manus"
+    assert dashboard_session_agent("Manus", {}) == "Manus"
+    assert dashboard_session_agent("MANUS", {}) == "Manus"
+
+
+def test_dashboard_session_agent_existing_lanes_not_regressed() -> None:
+    from geond.storage.dashboard import dashboard_session_agent
+
+    assert dashboard_session_agent("codex", {}) == "codex"
+    assert dashboard_session_agent("claude-code", {}) == "claude"
+    assert dashboard_session_agent("vscode-copilot", {}) == "copilot"

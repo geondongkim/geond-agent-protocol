@@ -380,35 +380,35 @@ Acceptance criteria:
 
 ## Security Checklist
 
-- [ ] No API key in logs, events, dashboard, screenshots, fixtures, or test output.
-- [ ] Redaction is applied before persistence.
+- [x] No API key in logs, events, dashboard, screenshots, fixtures, or test output.
+- [x] Redaction is applied before persistence.
 - [ ] Connector UUIDs are treated as sensitive-adjacent metadata.
-- [ ] File downloads are metadata-only by default.
+- [x] File downloads are metadata-only by default.
 - [ ] Downloaded files are size-limited.
-- [ ] Binary files are not embedded into messages.
-- [ ] Task URLs and share URLs are marked with visibility metadata.
+- [x] Binary files are not embedded into messages.
+- [x] Task URLs and share URLs are marked with visibility metadata.
 - [ ] Private share URLs are not printed by default unless `--show-private-url`
       or equivalent explicit flag is used.
-- [ ] Webhook endpoint validates signatures if Manus provides signing.
-- [ ] Network tests are skipped unless an explicit environment flag is set.
+- [x] Webhook endpoint validates signatures if Manus provides signing (HMAC-SHA256 via `x-manus-signature`).
+- [x] Network tests are skipped unless an explicit environment flag is set.
 
 ## UX Checklist
 
-- [ ] Manus appears as an agent, not as a separate product silo.
+- [x] Manus appears as an agent, not as a separate product silo (`dashboard_session_agent` maps `source="manus"` → `"Manus"` lane).
 - [ ] Manus task cards show status, title, latest activity, and evidence link.
 - [ ] Long task messages are excerpted.
 - [ ] Raw JSON is hidden by default but available through evidence detail.
 - [ ] Failed tasks are visible and useful.
 - [ ] "Needs input" or "blocked" status is visually distinct if available.
 - [ ] The dashboard remains readable with multiple Manus tasks.
-- [ ] Existing Copilot, Codex, and Claude Code lanes do not regress.
+- [x] Existing Copilot, Codex, and Claude Code lanes do not regress (tested in `test_dashboard_session_agent_existing_lanes_not_regressed`).
 
 ## Documentation Checklist
 
 - [ ] Add a short README mention only after the feature works.
-- [ ] Add `docs/manus_integration.md` or update this file after implementation.
+- [x] Add `docs/manus_integration.md` (exists as `docs/manus_integration_implementation_plan.md`).
 - [ ] Document setup with `MANUS_API_KEY` and redaction warnings.
-- [ ] Provide fixture-based quickstart that works without a real Manus key.
+- [x] Provide fixture-based quickstart that works without a real Manus key (`--fixture` + `--dry-run` verified working).
 - [ ] Provide live API quickstart behind an explicit "requires Manus API key" note.
 - [ ] Document limitations: API drift, connector permissions, private share URLs,
       file download limits, and webhook verification status.
@@ -417,15 +417,15 @@ Acceptance criteria:
 
 Phase 1 is done when all are true:
 
-- A completed Manus task fixture can be imported.
-- A failed Manus task fixture can be imported.
-- A live Manus task can be imported when `MANUS_API_KEY` is configured.
-- Re-importing the same task is idempotent.
-- Dashboard overview shows Manus activity.
-- Search can find imported Manus task content.
-- Redaction tests pass.
-- CLI dry-run writes nothing.
-- No existing importer, dashboard, MCP evidence, or coordination tests regress.
+- [x] A completed Manus task fixture can be imported.
+- [x] A failed Manus task fixture can be imported.
+- [ ] A live Manus task can be imported when `MANUS_API_KEY` is configured.
+- [x] Re-importing the same task is idempotent.
+- [x] Dashboard overview shows Manus activity (`source="manus"` maps to `"Manus"` lane).
+- [ ] Search can find imported Manus task content.
+- [x] Redaction tests pass.
+- [x] CLI dry-run writes nothing.
+- [x] No existing importer, dashboard, MCP evidence, or coordination tests regress.
 
 ## Risks And Mitigations
 

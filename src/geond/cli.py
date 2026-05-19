@@ -704,7 +704,11 @@ def main() -> None:
         metavar="MESSAGES_JSON",
         help="Path to task_messages JSON fixture (optional, used with --fixture)",
     )
-    import_manus.add_argument("--workspace-uri", required=True)
+    import_manus.add_argument(
+        "--workspace-uri",
+        default="",
+        help="Workspace URI (required unless --dry-run)",
+    )
     import_manus.add_argument("--workspace-name")
     import_manus.add_argument(
         "--dry-run",
@@ -1722,6 +1726,19 @@ def main() -> None:
             print(
                 json.dumps(
                     {"status": "error", "message": "Provide --task-id or --fixture"},
+                    ensure_ascii=False,
+                ),
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        if not args.dry_run and not args.workspace_uri:
+            print(
+                json.dumps(
+                    {
+                        "status": "error",
+                        "message": "Provide --workspace-uri (required unless --dry-run)",
+                    },
                     ensure_ascii=False,
                 ),
                 file=sys.stderr,
