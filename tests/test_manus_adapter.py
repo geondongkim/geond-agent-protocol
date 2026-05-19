@@ -1737,3 +1737,237 @@ def test_connector_count_in_session_metadata() -> None:
             with cleanup_conn.cursor() as cur:
                 cur.execute("DELETE FROM workspaces WHERE root_uri = %s", (workspace_uri,))
             cleanup_conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# excerpt_message utility
+# ---------------------------------------------------------------------------
+
+
+def test_excerpt_message_short_content_unchanged() -> None:
+    from geond.adapters.manus import excerpt_message
+
+    assert excerpt_message("hello") == "hello"
+    assert excerpt_message("") == ""
+    assert excerpt_message("x" * 400) == "x" * 400
+
+
+def test_excerpt_message_long_content_truncated() -> None:
+    from geond.adapters.manus import excerpt_message
+
+    long = "a" * 500
+    result = excerpt_message(long, max_chars=400)
+    assert len(result) == 401  # 400 chars + ellipsis
+    assert result.endswith("…")
+    assert result[:400] == "a" * 400
+
+
+def test_excerpt_message_custom_max_chars() -> None:
+    from geond.adapters.manus import excerpt_message
+
+    result = excerpt_message("hello world", max_chars=5)
+    assert result == "hello…"
+
+
+# ---------------------------------------------------------------------------
+# manus-get-file CLI (mock API)
+# ---------------------------------------------------------------------------
+
+
+def test_cli_manus_get_file_writes_to_output(tmp_path) -> None:
+    import sys
+    from unittest.mock import MagicMock
+    from unittest.mock import patch as _patch
+
+    output_path = tmp_path / "file.bin"
+    expected_bytes = b"file content data"
+
+    mock_client = MagicMock()
+    mock_client.get_task_file_content.return_value = expected_bytes
+
+    with _patch.object(
+        sys,
+        "argv",
+        [
+            "geond",
+            "manus-get-file",
+            "--task-id",
+            "task1",
+            "--file-id",
+            "file1",
+            "--output",
+            str(output_path),
+        ],
+    ):
+        with _patch("geond.cli.ManusApiClient", return_value=mock_client):
+            from geond.cli import main
+
+            main()
+
+    assert output_path.read_bytes() == expected_bytes
+    mock_client.get_task_file_content.assert_called_once_with(
+        task_id="task1",
+        file_id="file1",
+        max_bytes=10 * 1024 * 1024,
+    )
+
+
+def test_cli_manus_get_file_error_exits(capsys) -> None:
+    import sys
+    from unittest.mock import MagicMock
+    from unittest.mock import patch as _patch
+
+    mock_client = MagicMock()
+    mock_client.get_task_file_content.side_effect = ManusApiError(
+        404, "/v2/task.getFile", "not_found"
+    )
+
+    with _patch.object(
+        sys,
+        "argv",
+        ["geond", "manus-get-file", "--task-id", "bad", "--file-id", "f1", "--output", "/tmp/x"],
+    ):
+        with _patch("geond.cli.ManusApiClient", return_value=mock_client):
+            with pytest.raises(SystemExit) as exc_info:
+                from geond.cli import main
+
+                main()
+
+    assert exc_info.value.code == 1
+    err = capsys.readouterr().err
+    assert "not_found" in err or "404" in err
+
+
+# ---------------------------------------------------------------------------
+# manus-dashboard CLI (mock DB)
+# ---------------------------------------------------------------------------
+
+
+def test_cli_manus_dashboard_json_format(capsys) -> None:
+    import json as _json
+    import sys
+    from unittest.mock import patch as _patch
+
+    mock_result = {
+        "workspace_id": "ws-1",
+        "workspace_uri": "file:///test",
+        "workspace_name": "test",
+        "status": "ok",
+        "task_count": 1,
+        "tasks": [
+            {
+                "session_id": "sess-1",
+                "task_id": "task-abc",
+                "title": "Test task",
+                "status": "completed",
+                "is_blocked": False,
+                "task_url": None,
+                "share_visibility": "private",
+                "connector_count": 0,
+                "message_count": 3,
+                "latest_message_at": None,
+                "created_at": None,
+                "updated_at": None,
+                "excerpt": "Some work was done",
+            }
+        ],
+    }
+
+    with _patch.object(
+        sys,
+        "argv",
+        ["geond", "manus-dashboard", "--workspace-uri", "file:///test", "--format", "json"],
+    ):
+        with _patch(
+            "geond.storage.dashboard.get_dashboard_manus_sessions", return_value=mock_result
+        ):
+            with _patch("geond.cli.connect"):
+                with _patch("geond.cli.get_settings"):
+                    from geond.cli import main
+
+                    main()
+
+    out = capsys.readouterr().out
+    parsed = _json.loads(out)
+    assert parsed["task_count"] == 1
+    assert parsed["tasks"][0]["task_id"] == "task-abc"
+
+
+# ---------------------------------------------------------------------------
+# get_dashboard_manus_sessions (DB integration)
+# ---------------------------------------------------------------------------
+
+
+def test_get_dashboard_manus_sessions_returns_task_cards() -> None:
+    try:
+        import psycopg
+
+        from geond.config import get_settings
+        from geond.db import connect, run_schema_file
+    except ImportError:
+        pytest.skip("psycopg not available")
+
+    settings = get_settings()
+    workspace_uri = f"file:///tmp/geond-manus-dash-{uuid4()}"
+
+    try:
+        conn = connect(settings)
+    except Exception as exc:
+        pytest.skip(f"Postgres not available: {exc}")
+
+    from geond.storage.dashboard import get_dashboard_manus_sessions
+    from geond.storage.repository import store_manus_task, upsert_workspace
+
+    schema = Path(__file__).parents[1] / "schemas" / "001_initial.sql"
+    task = normalize_task(
+        {
+            "id": "task-dash-test",
+            "title": "Dashboard test task",
+            "status": "completed",
+            "share_visibility": "private",
+            "connectors": ["c1"],
+        },
+        task_messages={
+            "messages": [
+                {
+                    "id": "m1",
+                    "type": "user_message",
+                    "timestamp": None,
+                    "user_message": {"content": "Do the thing"},
+                },
+                {
+                    "id": "m2",
+                    "type": "assistant_message",
+                    "timestamp": None,
+                    "assistant_message": {"content": "Done!"},
+                },
+            ]
+        },
+    )
+
+    try:
+        with conn:
+            try:
+                run_schema_file(conn, schema)
+            except psycopg.Error as exc:
+                pytest.skip(f"Schema unavailable: {exc}")
+            workspace_id = upsert_workspace(conn, workspace_uri, "manus-dashboard-test")
+            store_manus_task(conn, workspace_id, task)
+
+        with connect(settings) as fresh_conn:
+            result = get_dashboard_manus_sessions(fresh_conn, workspace_uri)
+        assert result["status"] == "ok"
+        assert result["task_count"] == 1
+        card = result["tasks"][0]
+        assert card["task_id"] == "task-dash-test"
+        assert card["title"] == "Dashboard test task"
+        assert card["status"] == "completed"
+        assert card["is_blocked"] is False
+        assert card["connector_count"] == 1
+        assert card["message_count"] == 2
+        assert card["excerpt"] != ""
+    finally:
+        with connect(settings) as cleanup_conn:
+            with cleanup_conn.cursor() as cur:
+                cur.execute("DELETE FROM workspaces WHERE root_uri = %s", (workspace_uri,))
+            cleanup_conn.commit()

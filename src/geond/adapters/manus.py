@@ -13,6 +13,8 @@ SOURCE = "manus"
 SOURCE_ADAPTER = "manus_api_v2"
 AGENT_NAME = "Manus"
 
+MESSAGE_EXCERPT_CHARS: int = 400
+
 _MANUS_API_BASE = "https://api.manus.ai"
 _MAX_RETRIES = 3
 _RETRY_BASE_SECONDS = 1.0
@@ -238,6 +240,13 @@ def _normalize_files(raw_files: list[dict[str, Any]]) -> list[ParsedManusFile]:
             )
         )
     return result
+
+
+def excerpt_message(content: str, max_chars: int = MESSAGE_EXCERPT_CHARS) -> str:
+    """Return a truncated excerpt of message content, appending '…' if cut."""
+    if not content or len(content) <= max_chars:
+        return content
+    return content[:max_chars] + "…"
 
 
 def load_fixture(

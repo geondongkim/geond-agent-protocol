@@ -900,6 +900,101 @@ def dashboard_session_agent(source: str, metadata: dict[str, Any]) -> str:
     return normalized_source or "unknown"
 
 
+def get_dashboard_manus_sessions(
+    conn: Connection,
+    workspace_id_or_uri: str,
+    limit: int = 30,
+    excerpt_chars: int = 400,
+) -> dict[str, Any]:
+    """Return Manus task cards enriched with task-specific metadata.
+
+    Each card includes: task_id, title, status, is_blocked, task_url,
+    share_visibility, connector_count, message_count, latest_message_at,
+    and a readable excerpt of the most recent user/assistant message.
+    """
+    workspace = resolve_dashboard_workspace(conn, workspace_id_or_uri)
+    if workspace is None:
+        return {
+            "workspace_id": workspace_id_or_uri,
+            "status": "not_found",
+            "tasks": [],
+        }
+    workspace_id, workspace_uri, workspace_name = workspace
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                s.id::text,
+                s.external_id,
+                s.title,
+                s.metadata,
+                s.created_at,
+                s.updated_at,
+                count(m.id) AS message_count,
+                max(m.created_at) AS latest_message_at
+            FROM sessions s
+            LEFT JOIN messages m ON m.session_id = s.id
+            WHERE s.workspace_id = %s
+              AND s.source = 'manus'
+            GROUP BY s.id
+            ORDER BY coalesce(max(m.created_at), s.updated_at, s.created_at) DESC
+            LIMIT %s
+            """,
+            (workspace_id, limit),
+        )
+        session_rows = cur.fetchall()
+
+        session_ids = [row[0] for row in session_rows]
+        excerpt_by_session: dict[str, str] = {}
+        if session_ids:
+            cur.execute(
+                """
+                SELECT DISTINCT ON (session_id)
+                    session_id::text,
+                    left(content, %s) AS excerpt
+                FROM messages
+                WHERE session_id = ANY(%s::uuid[])
+                  AND role NOT IN ('metadata', 'assistant_or_tool')
+                  AND content IS NOT NULL
+                  AND content <> ''
+                ORDER BY session_id, ordinal DESC
+                """,
+                (excerpt_chars, session_ids),
+            )
+            for row in cur.fetchall():
+                excerpt_by_session[row[0]] = row[1] or ""
+
+    tasks = []
+    for row in session_rows:
+        meta = row[3] or {}
+        tasks.append(
+            {
+                "session_id": row[0],
+                "task_id": row[1],
+                "title": row[2],
+                "status": meta.get("status", "unknown"),
+                "is_blocked": bool(meta.get("is_blocked", False)),
+                "task_url": meta.get("task_url"),
+                "share_visibility": meta.get("share_visibility", "private"),
+                "connector_count": meta.get("connector_count", 0),
+                "message_count": int(row[6] or 0),
+                "latest_message_at": row[7].isoformat() if row[7] else None,
+                "created_at": row[4].isoformat() if row[4] else None,
+                "updated_at": row[5].isoformat() if row[5] else None,
+                "excerpt": excerpt_by_session.get(row[0], ""),
+            }
+        )
+    return {
+        "workspace_id": workspace_id,
+        "workspace_uri": workspace_uri,
+        "workspace_name": workspace_name,
+        "status": "ok",
+        "task_count": len(tasks),
+        "tasks": tasks,
+    }
+
+
 def resolve_dashboard_workspace(
     conn: Connection,
     workspace_id_or_uri: str,

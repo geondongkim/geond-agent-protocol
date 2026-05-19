@@ -11,7 +11,7 @@ from geond.adapters.claude_code import to_summary as claude_code_to_summary
 from geond.adapters.codex import parse_storage as parse_codex_storage
 from geond.adapters.codex import to_summary as codex_to_summary
 from geond.adapters.manus import AGENT_NAME as MANUS_AGENT_NAME
-from geond.adapters.manus import ManusApiClient, ManusApiError, load_fixture
+from geond.adapters.manus import ManusApiClient, ManusApiError, excerpt_message, load_fixture
 from geond.adapters.vscode_copilot import parse_storage, to_summary
 from geond.cli_tasks import (
     finish_task,
@@ -257,7 +257,7 @@ def build_manus_context_packet(
                     "session_title": hit.get("title"),
                     "role": hit.get("role"),
                     "ordinal": hit.get("ordinal"),
-                    "excerpt": (hit.get("content") or "")[:400],
+                    "excerpt": excerpt_message(hit.get("content") or ""),
                     "evidence_ref": (
                         f"geond:{hit.get('source')}:{hit.get('external_id')}:{hit.get('ordinal')}"
                     ),
@@ -858,6 +858,31 @@ def main() -> None:
         help="Fetch and store file artifact metadata for each task",
     )
     manus_bulk.add_argument("--dry-run", action="store_true")
+
+    manus_get_file = subparsers.add_parser(
+        "manus-get-file",
+        help="Download a file artifact from a Manus task (requires MANUS_API_KEY)",
+    )
+    manus_get_file.add_argument("--task-id", required=True, help="Manus task ID")
+    manus_get_file.add_argument("--file-id", required=True, help="Manus file ID")
+    manus_get_file.add_argument(
+        "--output",
+        help="Write file content to this path (default: stdout as binary)",
+    )
+    manus_get_file.add_argument(
+        "--max-bytes",
+        type=int,
+        default=10 * 1024 * 1024,
+        help="Max bytes to download (default: 10 MB)",
+    )
+
+    manus_dashboard = subparsers.add_parser(
+        "manus-dashboard",
+        help="Show Manus task cards stored in Geond for a workspace",
+    )
+    manus_dashboard.add_argument("--workspace-uri", required=True)
+    manus_dashboard.add_argument("--limit", type=int, default=30)
+    manus_dashboard.add_argument("--format", choices=["json", "table"], default="table")
 
     embed_messages = subparsers.add_parser(
         "embed-messages", help="Create embeddings for imported message records"
@@ -1962,6 +1987,76 @@ def main() -> None:
                 indent=2,
             )
         )
+        return
+
+    if args.command == "manus-get-file":
+        try:
+            client = ManusApiClient()
+            content = client.get_task_file_content(
+                task_id=args.task_id,
+                file_id=args.file_id,
+                max_bytes=args.max_bytes,
+            )
+        except ManusApiError as exc:
+            print(
+                json.dumps(
+                    {
+                        "status": "error",
+                        "code": exc.status_code,
+                        "endpoint": exc.endpoint,
+                        "message": str(exc),
+                    },
+                    ensure_ascii=False,
+                ),
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        if args.output:
+            with open(args.output, "wb") as fh:
+                fh.write(content)
+            print(
+                json.dumps(
+                    {
+                        "status": "ok",
+                        "task_id": args.task_id,
+                        "file_id": args.file_id,
+                        "bytes_written": len(content),
+                        "output": args.output,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+        else:
+            sys.stdout.buffer.write(content)
+        return
+
+    if args.command == "manus-dashboard":
+        from geond.storage.dashboard import get_dashboard_manus_sessions
+
+        with connect(get_settings()) as conn:
+            result = get_dashboard_manus_sessions(
+                conn,
+                workspace_id_or_uri=args.workspace_uri,
+                limit=args.limit,
+            )
+        if args.format == "json":
+            print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        else:
+            tasks = result.get("tasks") or []
+            if not tasks:
+                print("No Manus tasks found.")
+            else:
+                header = f"{'TASK ID':<28}  {'STATUS':<12}  {'BLOCKED':<7}  {'MSGS':>4}  {'TITLE'}"
+                print(header)
+                print("-" * min(len(header) + 20, 110))
+                for t in tasks:
+                    tid = str(t.get("task_id") or "")[:26]
+                    status = str(t.get("status") or "")[:10]
+                    blocked = "yes" if t.get("is_blocked") else "no"
+                    msgs = str(t.get("message_count") or 0)
+                    title = str(t.get("title") or "")[:60]
+                    print(f"{tid:<28}  {status:<12}  {blocked:<7}  {msgs:>4}  {title}")
         return
 
     if args.command == "manus-context-packet":

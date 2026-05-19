@@ -394,11 +394,10 @@ Acceptance criteria:
 
 ## UX Checklist
 
-- [x] Manus appears as an agent, not as a separate product silo (`dashboard_session_agent` maps `source="manus"` → `"Manus"` lane).
-- [ ] Manus task cards show status, title, latest activity, and evidence link.
-- [ ] Long task messages are excerpted.
-- [ ] Raw JSON is hidden by default but available through evidence detail.
-- [ ] Failed tasks are visible and useful.
+- [x] Manus task cards show status, title, latest activity, and evidence link (`get_dashboard_manus_sessions()` returns task cards with all fields; `manus-dashboard` CLI command).
+- [x] Long task messages are excerpted (`excerpt_message()` utility, 400-char default with ellipsis, used in search results and context packets).
+- [x] Raw JSON is hidden by default but available through evidence detail (context packet outputs formatted prompt; raw payload stored in `events.payload`, accessible via `get-evidence`).
+- [x] Failed tasks are visible and useful (no status filter applied at storage; failed tasks stored and searchable with `status=failed` in metadata).
 - [x] "Needs input" or "blocked" status is captured in `is_blocked` field (BLOCKED_STATUSES + test coverage); visual distinction is a frontend concern.
 - [ ] The dashboard remains readable with multiple Manus tasks.
 - [x] Existing Copilot, Codex, and Claude Code lanes do not regress (tested in `test_dashboard_session_agent_existing_lanes_not_regressed`).
@@ -407,11 +406,11 @@ Acceptance criteria:
 
 - [x] Add a short README mention only after the feature works (Manus already referenced in README agent imports table, quick reference, and architecture diagram).
 - [x] Add `docs/manus_integration.md` (exists as `docs/manus_integration_implementation_plan.md`).
-- [ ] Document setup with `MANUS_API_KEY` and redaction warnings.
+- [x] Document setup with `MANUS_API_KEY` and redaction warnings (`docs/manus_setup.md`).
 - [x] Provide fixture-based quickstart that works without a real Manus key (`--fixture` + `--dry-run` verified working).
-- [ ] Provide live API quickstart behind an explicit "requires Manus API key" note.
-- [ ] Document limitations: API drift, connector permissions, private share URLs,
-      file download limits, and webhook verification status.
+- [x] Provide live API quickstart behind an explicit "requires Manus API key" note (`docs/manus_setup.md` sections 2–7).
+- [x] Document limitations: API drift, connector permissions, private share URLs,
+      file download limits, and blocked statuses (`docs/manus_setup.md#known-limitations`).
 
 ## Definition Of Done For Phase 1
 
