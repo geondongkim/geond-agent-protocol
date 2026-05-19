@@ -1878,9 +1878,7 @@ def test_cli_manus_dashboard_json_format(capsys) -> None:
         "argv",
         ["geond", "manus-dashboard", "--workspace-uri", "file:///test", "--format", "json"],
     ):
-        with _patch(
-            "geond.storage.dashboard.get_dashboard_manus_sessions", return_value=mock_result
-        ):
+        with _patch("geond.cli.get_dashboard_manus_sessions", return_value=mock_result):
             with _patch("geond.cli.connect"):
                 with _patch("geond.cli.get_settings"):
                     from geond.cli import main
@@ -1971,3 +1969,269 @@ def test_get_dashboard_manus_sessions_returns_task_cards() -> None:
             with cleanup_conn.cursor() as cur:
                 cur.execute("DELETE FROM workspaces WHERE root_uri = %s", (workspace_uri,))
             cleanup_conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# Multi-task dashboard integration test
+# ---------------------------------------------------------------------------
+
+
+def test_get_dashboard_manus_sessions_multiple_tasks() -> None:
+    """Completed, failed, and blocked tasks all appear as separate cards."""
+    try:
+        import psycopg
+
+        from geond.config import get_settings
+        from geond.db import connect, run_schema_file
+    except ImportError:
+        pytest.skip("psycopg not available")
+
+    settings = get_settings()
+    workspace_uri = f"file:///tmp/geond-manus-multi-{uuid4()}"
+
+    try:
+        conn = connect(settings)
+    except Exception as exc:
+        pytest.skip(f"Postgres not available: {exc}")
+
+    from geond.storage.dashboard import get_dashboard_manus_sessions
+    from geond.storage.repository import store_manus_task, upsert_workspace
+
+    schema = Path(__file__).parents[1] / "schemas" / "001_initial.sql"
+
+    task_completed = normalize_task(
+        {"id": "task-multi-completed", "title": "Completed Task", "status": "completed"},
+        task_messages={
+            "messages": [
+                {
+                    "id": "mc1",
+                    "type": "assistant_message",
+                    "timestamp": None,
+                    "assistant_message": {"content": "All done."},
+                }
+            ]
+        },
+    )
+    task_failed = normalize_task(
+        {"id": "task-multi-failed", "title": "Failed Task", "status": "failed"},
+        task_messages={
+            "messages": [
+                {
+                    "id": "mf1",
+                    "type": "assistant_message",
+                    "timestamp": None,
+                    "assistant_message": {"content": "Error occurred."},
+                }
+            ]
+        },
+    )
+    task_blocked = normalize_task(
+        {
+            "id": "task-multi-blocked",
+            "title": "Blocked Task",
+            "status": "needs_input",
+        },
+        task_messages={
+            "messages": [
+                {
+                    "id": "mb1",
+                    "type": "assistant_message",
+                    "timestamp": None,
+                    "assistant_message": {"content": "Waiting for you."},
+                }
+            ]
+        },
+    )
+
+    try:
+        with conn:
+            try:
+                run_schema_file(conn, schema)
+            except psycopg.Error as exc:
+                pytest.skip(f"Schema unavailable: {exc}")
+            workspace_id = upsert_workspace(conn, workspace_uri, "manus-multi-test")
+            store_manus_task(conn, workspace_id, task_completed)
+            store_manus_task(conn, workspace_id, task_failed)
+            store_manus_task(conn, workspace_id, task_blocked)
+
+        with connect(settings) as fresh_conn:
+            result = get_dashboard_manus_sessions(fresh_conn, workspace_uri)
+
+        assert result["status"] == "ok"
+        assert result["task_count"] == 3
+
+        by_task_id = {c["task_id"]: c for c in result["tasks"]}
+        assert set(by_task_id.keys()) == {
+            "task-multi-completed",
+            "task-multi-failed",
+            "task-multi-blocked",
+        }
+
+        assert by_task_id["task-multi-completed"]["status"] == "completed"
+        assert by_task_id["task-multi-completed"]["is_blocked"] is False
+
+        assert by_task_id["task-multi-failed"]["status"] == "failed"
+        assert by_task_id["task-multi-failed"]["is_blocked"] is False
+
+        assert by_task_id["task-multi-blocked"]["status"] == "needs_input"
+        assert by_task_id["task-multi-blocked"]["is_blocked"] is True
+
+        for card in result["tasks"]:
+            assert card["message_count"] == 1
+            assert card["excerpt"] != ""
+    finally:
+        with connect(settings) as cleanup_conn2:
+            with cleanup_conn2.cursor() as cur:
+                cur.execute("DELETE FROM workspaces WHERE root_uri = %s", (workspace_uri,))
+            cleanup_conn2.commit()
+
+
+# ---------------------------------------------------------------------------
+# build_manus_context_packet includes blocked_manus_tasks
+# ---------------------------------------------------------------------------
+
+
+def test_build_manus_context_packet_includes_blocked_tasks() -> None:
+    """blocked_manus_tasks section in context packet contains only blocked tasks."""
+    try:
+        import psycopg
+
+        from geond.config import get_settings
+        from geond.db import connect, run_schema_file
+    except ImportError:
+        pytest.skip("psycopg not available")
+
+    settings = get_settings()
+    workspace_uri = f"file:///tmp/geond-manus-ctx-{uuid4()}"
+
+    try:
+        conn = connect(settings)
+    except Exception as exc:
+        pytest.skip(f"Postgres not available: {exc}")
+
+    from geond.cli import build_manus_context_packet
+    from geond.storage.repository import store_manus_task, upsert_workspace
+
+    schema = Path(__file__).parents[1] / "schemas" / "001_initial.sql"
+
+    task_blocked = normalize_task(
+        {
+            "id": "task-ctx-blocked",
+            "title": "Blocked for context test",
+            "status": "needs_input",
+        }
+    )
+    task_done = normalize_task({"id": "task-ctx-done", "title": "Done task", "status": "completed"})
+
+    try:
+        with conn:
+            try:
+                run_schema_file(conn, schema)
+            except psycopg.Error as exc:
+                pytest.skip(f"Schema unavailable: {exc}")
+            workspace_id = upsert_workspace(conn, workspace_uri, "manus-ctx-test")
+            store_manus_task(conn, workspace_id, task_blocked)
+            store_manus_task(conn, workspace_id, task_done)
+
+        with connect(settings) as fresh_conn:
+            packet = build_manus_context_packet(fresh_conn, workspace_uri, query="")
+
+        blocked_tasks = packet.get("blocked_manus_tasks") or []
+        task_ids = [t["task_id"] for t in blocked_tasks]
+        assert "task-ctx-blocked" in task_ids
+        assert "task-ctx-done" not in task_ids
+        for bt in blocked_tasks:
+            assert "task_id" in bt
+            assert "title" in bt
+            assert "status" in bt
+    finally:
+        with connect(settings) as cleanup_conn3:
+            with cleanup_conn3.cursor() as cur:
+                cur.execute("DELETE FROM workspaces WHERE root_uri = %s", (workspace_uri,))
+            cleanup_conn3.commit()
+
+
+# ---------------------------------------------------------------------------
+# CLI error actionable hint tests
+# ---------------------------------------------------------------------------
+
+
+def test_manus_api_error_permission_denied_has_hint() -> None:
+    """403 error message includes actionable API key hint."""
+    import urllib.error
+
+    client = ManusApiClient(api_key="fake-key")
+    http_err = urllib.error.HTTPError(
+        url="https://api.manus.ai/v2/task.detail",
+        code=403,
+        msg="Forbidden",
+        hdrs=None,
+        fp=None,
+    )
+    with patch("urllib.request.urlopen", side_effect=http_err):
+        with pytest.raises(ManusApiError) as exc_info:
+            client.get_task("task-xyz")
+    assert exc_info.value.status_code == 403
+    assert "permission_denied" in str(exc_info.value).lower()
+    assert "api key" in str(exc_info.value).lower()
+
+
+def test_manus_api_error_not_found_has_hint() -> None:
+    """404 error message mentions task_id so the user knows what to check."""
+    import urllib.error
+
+    client = ManusApiClient(api_key="fake-key")
+    http_err = urllib.error.HTTPError(
+        url="https://api.manus.ai/v2/task.detail",
+        code=404,
+        msg="Not Found",
+        hdrs=None,
+        fp=None,
+    )
+    with patch("urllib.request.urlopen", side_effect=http_err):
+        with pytest.raises(ManusApiError) as exc_info:
+            client.get_task("task-xyz")
+    assert exc_info.value.status_code == 404
+    assert "not_found" in str(exc_info.value).lower()
+    assert "task_id" in str(exc_info.value).lower()
+
+
+def test_manus_api_error_invalid_argument_includes_body() -> None:
+    """400 error message includes response body excerpt."""
+    import io
+    import urllib.error
+
+    client = ManusApiClient(api_key="fake-key")
+    body_bytes = b'{"error": "missing required field: prompt"}'
+    http_err = urllib.error.HTTPError(
+        url="https://api.manus.ai/v2/task.create",
+        code=400,
+        msg="Bad Request",
+        hdrs=None,
+        fp=io.BytesIO(body_bytes),
+    )
+    with patch("urllib.request.urlopen", side_effect=http_err):
+        with pytest.raises(ManusApiError) as exc_info:
+            client.create_task("title", "prompt")
+    assert exc_info.value.status_code == 400
+    assert "invalid_argument" in str(exc_info.value).lower()
+
+
+def test_manus_api_error_does_not_leak_api_key() -> None:
+    """API key never appears in error messages or endpoint strings."""
+    import urllib.error
+
+    secret = "sk-super-secret-key-12345"
+    client = ManusApiClient(api_key=secret)
+    http_err = urllib.error.HTTPError(
+        url="https://api.manus.ai/v2/task.detail",
+        code=403,
+        msg="Forbidden",
+        hdrs=None,
+        fp=None,
+    )
+    with patch("urllib.request.urlopen", side_effect=http_err):
+        with pytest.raises(ManusApiError) as exc_info:
+            client.get_task("task-secret")
+    assert secret not in str(exc_info.value)
+    assert secret not in exc_info.value.endpoint

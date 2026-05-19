@@ -61,6 +61,7 @@ from geond.storage.dashboard import (
     get_agent_activity_events,
     get_dashboard_changesets,
     get_dashboard_code_risk,
+    get_dashboard_manus_sessions,
     get_dashboard_overview,
     get_dashboard_usage,
 )
@@ -295,6 +296,21 @@ def build_manus_context_packet(
         for r in ctx.get("loaded_context", {}).get("symbol_reservations", [])
     ]
 
+    blocked_manus_tasks: list[dict] = []
+    if workspace_id:
+        manus_result = get_dashboard_manus_sessions(conn, workspace_uri, limit=limit * 2)
+        for t in manus_result.get("tasks") or []:
+            if t.get("is_blocked"):
+                blocked_manus_tasks.append(
+                    {
+                        "task_id": t.get("task_id"),
+                        "title": t.get("title"),
+                        "status": t.get("status"),
+                        "task_url": t.get("task_url"),
+                        "excerpt": t.get("excerpt"),
+                    }
+                )
+
     return {
         "schema": "geond.context_packet.v1",
         "workspace_uri": workspace_uri,
@@ -305,6 +321,7 @@ def build_manus_context_packet(
         "active_symbol_reservations": symbol_reservations,
         "recent_activity": recent_activity,
         "search_results": search_results,
+        "blocked_manus_tasks": blocked_manus_tasks,
         "assessment": ctx.get("assessment"),
         "recommendations": ctx.get("recommendations", []),
     }
@@ -359,6 +376,18 @@ def _context_packet_to_prompt(packet: dict) -> str:
         lines.append("### Geond Recommendations")
         for rec in recs:
             lines.append(f"- {rec}")
+        lines.append("")
+
+    blocked = packet.get("blocked_manus_tasks") or []
+    if blocked:
+        lines.append(f"### Blocked Manus Tasks ({len(blocked)})")
+        for t in blocked:
+            url_part = f" [{t.get('task_url')}]" if t.get("task_url") else ""
+            lines.append(
+                f"- [{t.get('task_id')}]{url_part} {t.get('title')} (status: {t.get('status')})"
+            )
+            if t.get("excerpt"):
+                lines.append(f"  last: {t.get('excerpt')[:200]}")
         lines.append("")
 
     return "\n".join(lines)
@@ -2032,8 +2061,6 @@ def main() -> None:
         return
 
     if args.command == "manus-dashboard":
-        from geond.storage.dashboard import get_dashboard_manus_sessions
-
         with connect(get_settings()) as conn:
             result = get_dashboard_manus_sessions(
                 conn,
