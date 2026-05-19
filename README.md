@@ -43,7 +43,7 @@ graph links, usage evidence, validation, and lineage.
 | Shared memory | Stores sessions, messages, raw events, snapshots, changesets, actions, reservations, handoffs, aliases, redaction findings, usage events, and benchmark runs in PostgreSQL. |
 | MCP server | Exposes search, evidence, symbol context, changesets, reservations, handoffs, dashboard read models, context review, and lineage through `uv run geond-mcp`. |
 | CLI | Provides import, search, indexing, coordination, dashboard, usage, benchmark, install, and smoke-test commands through `uv run geond`. |
-| Agent imports | Parses VS Code Copilot Chat workspace storage, Codex JSONL sessions, and Claude Code JSONL sessions with redaction before persistence. |
+| Agent imports | Parses VS Code Copilot Chat workspace storage, Codex JSONL sessions, Claude Code JSONL sessions, and Manus API v2 task history with redaction before persistence. |
 | Retrieval | Supports keyword, vector, hybrid, evidence refs, deterministic narratives, optional local/API reranking, and PostgreSQL full-text/trigram search. |
 | Code graph | Indexes Python, TypeScript, and JavaScript with AST, tree-sitter, fallback scanners, import/call edges, LSP references, and diff hunk-to-symbol links. |
 | Coordination | Supports file and symbol reservations, TTL renewal/release/expiry, audit events, advisory/strict/override policies, context review, and structured handoffs. |
@@ -59,7 +59,7 @@ reservations are active roadmap areas rather than completed product promises.
 ```mermaid
 flowchart LR
     A[Product / Planning / Design / QA / Marketing Agents] --> N[Adapters + Normalizer]
-    B[Copilot / Codex / Claude Code / CLI Agents] --> N
+    B[Copilot / Codex / Claude Code / Manus / CLI Agents] --> N
     C[MCP Clients] --> M[MCP Server]
     N --> R[Redaction]
     R --> P[(PostgreSQL + pgvector)]
@@ -127,6 +127,7 @@ uv run geond install --write
 | Import Copilot Chat | `uv run geond import-vscode <workspaceStorage-or-session-path>` |
 | Import Codex | `uv run geond import-codex <codex-sessions-dir> --workspace-uri <uri>` |
 | Import Claude Code | `uv run geond import-claude-code <claude-projects-dir> --workspace-uri <uri>` |
+| Import Manus task | `uv run geond import-manus-task <task-id> --workspace-uri <uri>` |
 | Search memory | `uv run geond search "why did this change" --mode hybrid` |
 | Index code | `uv run geond index-tree-sitter <path>` |
 | Record a changeset | `uv run geond record-changeset <workspace-id-or-uri> ...` |
@@ -161,6 +162,7 @@ and summarized in [docs/azure_validation/README.md](docs/azure_validation/README
 - [docs/agent_activity_dashboard.md](docs/agent_activity_dashboard.md) describes the dashboard read model and PM/orchestration views.
 - [docs/agent_operating_loop.md](docs/agent_operating_loop.md) defines the read, reserve, record, and handoff loop for agents.
 - [docs/agent_testbeds.md](docs/agent_testbeds.md) tracks Copilot Chat, Codex, and Claude Code test beds.
+- [docs/manus_integration.md](docs/manus_integration.md) documents Manus API v2 import, context packets, task contracts, and limitations.
 - [docs/mcp_client_config.md](docs/mcp_client_config.md) shows VS Code, Claude Desktop, Continue, and other MCP client setup.
 - [docs/ai_usage_observability.md](docs/ai_usage_observability.md) covers token, cost, pricing snapshot, and usage-versus-evidence design.
 - [docs/benchmarking.md](docs/benchmarking.md) explains retrieval and evidence benchmark commands.
