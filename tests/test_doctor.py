@@ -4,6 +4,8 @@ import subprocess
 from collections.abc import Sequence
 from pathlib import Path
 
+import pytest
+
 from geond.doctor import collect_doctor_report, format_doctor_report, summarize_checks
 
 
@@ -43,6 +45,7 @@ def test_collect_doctor_report_for_native_macos_tooling(
         tmp_path,
         check_database=False,
         check_mcp=False,
+        check_antigravity=False,
         runner=fake_runner,
         which=paths.get,
     )
@@ -78,6 +81,7 @@ def test_collect_doctor_report_accepts_profile_database_url(
         tmp_path,
         check_database=False,
         check_mcp=False,
+        check_antigravity=False,
         runner=fake_runner,
         which=lambda command: f"/usr/bin/{command}",
     )
@@ -100,6 +104,7 @@ def test_collect_doctor_report_warns_on_amd64_emulation(
         tmp_path,
         check_database=False,
         check_mcp=False,
+        check_antigravity=False,
         runner=fake_runner,
         which=lambda command: None,
     )
@@ -138,6 +143,7 @@ def test_doctor_counts_fastmcp_resource_templates(
         tmp_path,
         check_database=False,
         check_mcp=True,
+        check_antigravity=False,
         runner=fake_runner,
         which=lambda command: f"/usr/bin/{command}",
     )
@@ -161,3 +167,40 @@ def test_summarize_checks() -> None:
 
     assert summary["status"] == "error"
     assert summary["counts"] == {"ok": 1, "warning": 1, "error": 1}
+
+
+def test_collect_doctor_report_checks_antigravity_config_and_cli(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    home = tmp_path / "home"
+    config = home / ".gemini" / "config" / "mcp_config.json"
+    config.parent.mkdir(parents=True)
+    config.write_text('{"mcpServers":{"geond":{"command":"uv"}}}', encoding="utf-8")
+    link = home / ".gemini" / "antigravity" / "mcp_config.json"
+    link.parent.mkdir(parents=True)
+    try:
+        link.symlink_to(config)
+    except OSError as exc:
+        pytest.skip(f"Symlink creation is not available: {exc}")
+    local_appdata = tmp_path / "local"
+    agy = local_appdata / "agy" / "bin" / "agy.exe"
+    agy.parent.mkdir(parents=True)
+    agy.write_text("", encoding="utf-8")
+
+    monkeypatch.setattr("geond.doctor.Path.home", lambda: home)
+    monkeypatch.setenv("LOCALAPPDATA", str(local_appdata))
+
+    report = collect_doctor_report(
+        tmp_path,
+        check_database=False,
+        check_mcp=False,
+        check_antigravity=True,
+        runner=fake_runner,
+        which=lambda command: None,
+    )
+
+    checks = {check["name"]: check for check in report["checks"]}
+    assert checks["antigravity_config"]["status"] == "ok"
+    assert checks["antigravity_config_link"]["status"] == "ok"
+    assert checks["antigravity_cli"]["status"] == "ok"

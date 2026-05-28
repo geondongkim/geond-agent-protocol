@@ -10,7 +10,9 @@ from geond.config import get_settings
 from geond.db import connect, run_schema_file
 from geond.storage.benchmark import (
     benchmark_search,
+    compare_agent_run_benchmark_runs,
     compare_benchmark_runs,
+    save_agent_run_benchmark,
     save_benchmark_run,
 )
 from geond.storage.maintenance import seed_sample_workspace
@@ -70,7 +72,62 @@ def test_benchmark_runs_can_be_saved_and_compared() -> None:
             assert run_id
             assert report["runs"][0]["label"] == "pytest"
             assert report["runs"][0]["query_count"] == 1
+            with conn.cursor() as cur:
+                cur.execute("SELECT kind FROM benchmark_runs WHERE id = %s::uuid", (run_id,))
+                assert cur.fetchone()[0] == "search"
         finally:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM workspaces WHERE root_uri = %s", (workspace_uri,))
+            conn.commit()
+
+
+def test_agent_run_benchmark_can_be_saved_and_reported() -> None:
+    settings = get_settings()
+    workspace_uri = f"file:///tmp/geond-agent-run-test-{uuid4()}"
+
+    try:
+        conn = connect(settings)
+    except psycopg.OperationalError as exc:
+        pytest.skip(f"Postgres integration database is not available: {exc}")
+
+    with conn:
+        try:
+            run_schema_file(conn, SCHEMA)
+        except psycopg.Error as exc:
+            pytest.skip(f"Postgres integration schema is not available: {exc}")
+
+        workspace_id = seed_sample_workspace(conn)["workspace_id"]
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE workspaces SET root_uri = %s WHERE id = %s",
+                (workspace_uri, workspace_id),
+            )
+        conn.commit()
+        try:
+            run_id = save_agent_run_benchmark(
+                conn,
+                workspace_uri=workspace_uri,
+                agent="codex",
+                command="codex exec smoke",
+                label="agent-smoke",
+                prompt_text="hello",
+                prompt_label="smoke.txt",
+                wall_time_ms=123.4,
+                provider="openai",
+                model="gpt-test",
+                final_output="SECRET_TOKEN=abc123456789abcdef",
+                stdout_bytes=0,
+                transcript_paths=["codex.final.txt"],
+                token_usage={"total_tokens": 42},
+            )
+            report = compare_agent_run_benchmark_runs(conn, workspace_uri=workspace_uri)
+
+            assert run_id
+            assert report["runs"][0]["agent"] == "codex"
+            assert report["runs"][0]["wall_time_ms"] == 123.4
+            assert report["runs"][0]["stdout_bytes"] == 0
+            assert report["runs"][0]["transcript_path"] == "codex.final.txt"
+        finally:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM workspaces WHERE id = %s", (workspace_id,))
             conn.commit()

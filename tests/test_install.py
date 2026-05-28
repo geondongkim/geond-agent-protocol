@@ -123,4 +123,42 @@ def test_install_all_expands_clients_in_stable_order(tmp_path: Path) -> None:
         "claude-desktop",
         "continue",
         "vscode-lsp-task",
+        "antigravity",
     ]
+
+
+def test_install_antigravity_preview_uses_mcp_servers(tmp_path: Path) -> None:
+    config_path = tmp_path / "mcp_config.json"
+    result = install_clients(
+        ["antigravity"],
+        repo_root=tmp_path / "repo",
+        workspace_root=tmp_path,
+        config_path=config_path,
+    )
+
+    target = result["targets"][0]
+    assert target["client"] == "antigravity"
+    assert target["action"] == "preview"
+    server = target["content"]["mcpServers"]["geond"]
+    assert server["command"] == "uv"
+    assert server["args"][-1] == "geond-mcp"
+    assert "type" not in server
+
+
+def test_install_antigravity_repairs_malformed_json_with_backup(tmp_path: Path) -> None:
+    config_path = tmp_path / "mcp_config.json"
+    config_path.write_text("{not-json", encoding="utf-8")
+
+    result = install_clients(
+        ["antigravity"],
+        repo_root=tmp_path / "repo",
+        workspace_root=tmp_path,
+        config_path=config_path,
+        write=True,
+    )
+
+    saved = json.loads(config_path.read_text(encoding="utf-8"))
+    backups = list(tmp_path.glob("mcp_config.json.*.bak"))
+    assert saved["mcpServers"]["geond"]["args"][-1] == "geond-mcp"
+    assert backups
+    assert "Malformed JSON was backed up" in result["targets"][0]["message"]

@@ -17,6 +17,7 @@ from geond.storage.code_graph import store_lsp_references as store_lsp_reference
 from geond.storage.context_review import review_workspace_context as review_workspace_context_row
 from geond.storage.dashboard import get_agent_activity_events as get_agent_activity_events_row
 from geond.storage.dashboard import get_dashboard_overview as get_dashboard_overview_row
+from geond.storage.mcp_audit import audit_mcp_call
 from geond.storage.repository import close_handoff_summary as close_handoff_summary_row
 from geond.storage.repository import (
     get_workspace_coordination_policy as get_workspace_coordination_policy_row,
@@ -77,44 +78,61 @@ def search_dev_memory(
     """Search shared development memory; set rerank to local or api to rerank candidates."""
     settings = get_settings()
     with connect(settings) as conn:
-        if mode == "keyword":
-            return search_dev_memory_query(
-                conn,
-                query,
-                limit,
-                workspace_uri=workspace_uri,
-                source=source,
-                rerank=rerank,
-                candidate_limit=candidate_limit,
-            )
 
-        provider = get_embedding_provider(settings)
-        query_vector = provider.embed([query])[0]
-        if mode == "vector":
-            return vector_search_dev_memory_query(
-                conn,
-                query_vector=query_vector,
-                model=provider.model,
-                limit=limit,
-                workspace_uri=workspace_uri,
-                source=source,
-                query=query,
-                rerank=rerank,
-                candidate_limit=candidate_limit,
-            )
-        if mode == "hybrid":
-            return hybrid_search_dev_memory_query(
-                conn,
-                query=query,
-                query_vector=query_vector,
-                model=provider.model,
-                limit=limit,
-                workspace_uri=workspace_uri,
-                source=source,
-                rerank=rerank,
-                candidate_limit=candidate_limit,
-            )
-        raise ValueError("mode must be one of: keyword, vector, hybrid")
+        def run_search() -> list[dict[str, Any]]:
+            if mode == "keyword":
+                return search_dev_memory_query(
+                    conn,
+                    query,
+                    limit,
+                    workspace_uri=workspace_uri,
+                    source=source,
+                    rerank=rerank,
+                    candidate_limit=candidate_limit,
+                )
+
+            provider = get_embedding_provider(settings)
+            query_vector = provider.embed([query])[0]
+            if mode == "vector":
+                return vector_search_dev_memory_query(
+                    conn,
+                    query_vector=query_vector,
+                    model=provider.model,
+                    limit=limit,
+                    workspace_uri=workspace_uri,
+                    source=source,
+                    query=query,
+                    rerank=rerank,
+                    candidate_limit=candidate_limit,
+                )
+            if mode == "hybrid":
+                return hybrid_search_dev_memory_query(
+                    conn,
+                    query=query,
+                    query_vector=query_vector,
+                    model=provider.model,
+                    limit=limit,
+                    workspace_uri=workspace_uri,
+                    source=source,
+                    rerank=rerank,
+                    candidate_limit=candidate_limit,
+                )
+            raise ValueError("mode must be one of: keyword, vector, hybrid")
+
+        return audit_mcp_call(
+            conn,
+            item_name="search_dev_memory",
+            input_payload={
+                "query": query,
+                "limit": limit,
+                "mode": mode,
+                "workspace_uri": workspace_uri,
+                "source": source,
+                "rerank": rerank,
+                "candidate_limit": candidate_limit,
+            },
+            callback=run_search,
+        )
 
 
 @mcp.tool()
@@ -472,14 +490,26 @@ def review_workspace_context(
 ) -> dict[str, Any]:
     """Compare requested work with Geond reservations, handoffs, and lineage."""
     with connect(get_settings()) as conn:
-        return review_workspace_context_row(
+        return audit_mcp_call(
             conn,
-            workspace_id_or_uri=workspace_id_or_uri,
-            intent=intent,
-            file_paths=file_paths,
-            symbols=symbols,
-            agent_name=agent_name,
-            limit=limit,
+            item_name="review_workspace_context",
+            input_payload={
+                "workspace_id_or_uri": workspace_id_or_uri,
+                "intent": intent,
+                "file_paths": file_paths,
+                "symbols": symbols,
+                "agent_name": agent_name,
+                "limit": limit,
+            },
+            callback=lambda: review_workspace_context_row(
+                conn,
+                workspace_id_or_uri=workspace_id_or_uri,
+                intent=intent,
+                file_paths=file_paths,
+                symbols=symbols,
+                agent_name=agent_name,
+                limit=limit,
+            ),
         )
 
 
@@ -564,7 +594,13 @@ def sessions_resource() -> list[dict[str, Any]]:
 def session_resource(session_external_id: str) -> dict[str, Any]:
     """Read one imported session by row id or external id."""
     with connect(get_settings()) as conn:
-        return get_session_resource(conn, session_external_id)
+        return audit_mcp_call(
+            conn,
+            item_kind="resource",
+            item_name="geond://sessions/{session_external_id}",
+            input_payload={"session_external_id": session_external_id},
+            callback=lambda: get_session_resource(conn, session_external_id),
+        )
 
 
 @mcp.resource("geond://symbols/{symbol}", mime_type="application/json")

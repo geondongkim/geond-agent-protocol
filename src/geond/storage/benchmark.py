@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -10,12 +11,15 @@ from psycopg import Connection
 from psycopg.types.json import Jsonb
 
 from geond.embeddings import EmbeddingProvider
+from geond.redaction import redact_text
 from geond.retrieval.simple import (
     hybrid_search_dev_memory,
     search_dev_memory,
     vector_search_dev_memory,
 )
 from geond.storage.repository import resolve_workspace_id
+
+AGENT_RUN_SCHEMA = "geond.agent_run_benchmark.v1"
 
 
 def benchmark_search(
@@ -112,6 +116,7 @@ def save_benchmark_run(
     provider: str | None = None,
     model: str | None = None,
     metadata: dict[str, Any] | None = None,
+    kind: str = "search",
 ) -> str:
     workspace_id = resolve_workspace_id(conn, workspace_uri) if workspace_uri else None
     with conn.cursor() as cur:
@@ -119,6 +124,7 @@ def save_benchmark_run(
             """
             INSERT INTO benchmark_runs (
                 workspace_id,
+                kind,
                 label,
                 mode,
                 provider,
@@ -127,11 +133,12 @@ def save_benchmark_run(
                 result,
                 metadata
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id::text
             """,
             (
                 workspace_id,
+                kind,
                 label,
                 result["mode"],
                 provider,
@@ -146,10 +153,79 @@ def save_benchmark_run(
     return run_id
 
 
+def save_agent_run_benchmark(
+    conn: Connection,
+    *,
+    agent: str,
+    command: str | list[str],
+    workspace_uri: str | None = None,
+    label: str = "",
+    prompt_text: str | None = None,
+    prompt_hash: str | None = None,
+    prompt_label: str | None = None,
+    wall_time_ms: float | None = None,
+    provider: str | None = None,
+    model: str | None = None,
+    sandbox: str | None = None,
+    approval: str | None = None,
+    final_output: str | None = None,
+    final_output_hash: str | None = None,
+    stdout_path: str | None = None,
+    stderr_path: str | None = None,
+    transcript_paths: list[str] | None = None,
+    log_paths: list[str] | None = None,
+    stdout_bytes: int | None = None,
+    stderr_bytes: int | None = None,
+    token_usage: dict[str, Any] | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> str:
+    normalized_command = command if isinstance(command, str) else " ".join(command)
+    resolved_prompt_hash = prompt_hash or sha256_text(prompt_text)
+    resolved_final_hash = final_output_hash or sha256_text(final_output)
+    final_excerpt = None
+    if final_output:
+        redacted_output, _ = redact_text(final_output)
+        final_excerpt = redacted_output[:240]
+    resolved_stdout_bytes = stdout_bytes if stdout_bytes is not None else path_size(stdout_path)
+    resolved_stderr_bytes = stderr_bytes if stderr_bytes is not None else path_size(stderr_path)
+    result = {
+        "schema": AGENT_RUN_SCHEMA,
+        "mode": agent,
+        "agent": agent,
+        "command": normalized_command,
+        "prompt_hash": resolved_prompt_hash,
+        "prompt_label": prompt_label,
+        "wall_time_ms": wall_time_ms,
+        "provider": provider,
+        "model": model,
+        "sandbox": sandbox,
+        "approval": approval,
+        "final_output_hash": resolved_final_hash,
+        "final_output_excerpt": final_excerpt,
+        "stdout": {"path": stdout_path, "bytes": resolved_stdout_bytes},
+        "stderr": {"path": stderr_path, "bytes": resolved_stderr_bytes},
+        "transcript_paths": transcript_paths or [],
+        "log_paths": log_paths or [],
+        "token_usage": token_usage or {},
+        "repeat": 1,
+    }
+    return save_benchmark_run(
+        conn,
+        result,
+        label=label,
+        workspace_uri=workspace_uri,
+        provider=provider,
+        model=model,
+        metadata=metadata or {},
+        kind="agent-run",
+    )
+
+
 def list_benchmark_runs(
     conn: Connection,
     workspace_uri: str | None = None,
     mode: str | None = None,
+    kind: str | None = "search",
     limit: int = 20,
 ) -> list[dict[str, Any]]:
     filters: list[str] = []
@@ -163,6 +239,9 @@ def list_benchmark_runs(
     if mode:
         filters.append("br.mode = %s")
         params.append(mode)
+    if kind and kind != "all":
+        filters.append("br.kind = %s")
+        params.append(kind)
     where_clause = "WHERE " + " AND ".join(filters) if filters else ""
     params.append(limit)
     with conn.cursor() as cur:
@@ -171,6 +250,7 @@ def list_benchmark_runs(
             SELECT
                 br.id::text,
                 w.root_uri,
+                br.kind,
                 br.label,
                 br.mode,
                 br.provider,
@@ -191,13 +271,14 @@ def list_benchmark_runs(
         {
             "benchmark_run_id": row[0],
             "workspace_uri": row[1],
-            "label": row[2],
-            "mode": row[3],
-            "provider": row[4],
-            "model": row[5],
-            "repeat": row[6],
-            "result": row[7],
-            "created_at": row[8].isoformat() if row[8] else None,
+            "kind": row[2],
+            "label": row[3],
+            "mode": row[4],
+            "provider": row[5],
+            "model": row[6],
+            "repeat": row[7],
+            "result": row[8],
+            "created_at": row[9].isoformat() if row[9] else None,
         }
         for row in rows
     ]
@@ -207,9 +288,16 @@ def compare_benchmark_runs(
     conn: Connection,
     workspace_uri: str | None = None,
     mode: str | None = None,
+    kind: str | None = "search",
     limit: int = 20,
 ) -> dict[str, Any]:
-    runs = list_benchmark_runs(conn, workspace_uri=workspace_uri, mode=mode, limit=limit)
+    runs = list_benchmark_runs(
+        conn,
+        workspace_uri=workspace_uri,
+        mode=mode,
+        kind=kind,
+        limit=limit,
+    )
     rows: list[dict[str, Any]] = []
     for run in runs:
         query_rows = run["result"].get("queries", [])
@@ -245,6 +333,47 @@ def compare_benchmark_runs(
                 "mean_rerank_score": rounded_mean(rerank_score_values),
                 "mean_abs_rank_delta": rounded_mean(rank_delta_values),
                 "created_at": run["created_at"],
+            }
+        )
+    return {"runs": rows}
+
+
+def compare_agent_run_benchmark_runs(
+    conn: Connection,
+    workspace_uri: str | None = None,
+    agent: str | None = None,
+    limit: int = 20,
+) -> dict[str, Any]:
+    runs = list_benchmark_runs(
+        conn,
+        workspace_uri=workspace_uri,
+        mode=agent,
+        kind="agent-run",
+        limit=limit,
+    )
+    rows = []
+    for run in runs:
+        result = run.get("result") or {}
+        stdout = result.get("stdout") if isinstance(result.get("stdout"), dict) else {}
+        stderr = result.get("stderr") if isinstance(result.get("stderr"), dict) else {}
+        token_usage = (
+            result.get("token_usage") if isinstance(result.get("token_usage"), dict) else {}
+        )
+        rows.append(
+            {
+                "benchmark_run_id": run.get("benchmark_run_id"),
+                "label": run.get("label"),
+                "workspace_uri": run.get("workspace_uri"),
+                "agent": result.get("agent") or run.get("mode"),
+                "provider": run.get("provider"),
+                "model": run.get("model"),
+                "wall_time_ms": result.get("wall_time_ms"),
+                "stdout_bytes": stdout.get("bytes"),
+                "stderr_bytes": stderr.get("bytes"),
+                "transcript_path": first_path(result.get("transcript_paths")),
+                "prompt_label": result.get("prompt_label"),
+                "total_tokens": token_usage.get("total_tokens"),
+                "created_at": run.get("created_at"),
             }
         )
     return {"runs": rows}
@@ -489,8 +618,59 @@ def format_benchmark_report_markdown(report: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def format_agent_run_report_markdown(report: dict[str, Any]) -> str:
+    rows = report.get("runs", [])
+    lines = [
+        "# Agent Run Benchmark Report",
+        "",
+        "| Label | Agent | Provider | Model | Wall ms | Stdout bytes | "
+        "Transcript | Prompt | Tokens | Created |",
+        "| --- | --- | --- | --- | ---: | ---: | --- | --- | ---: | --- |",
+    ]
+    for row in rows:
+        lines.append(
+            "| {label} | {agent} | {provider} | {model} | {wall_time_ms} | "
+            "{stdout_bytes} | {transcript_path} | {prompt_label} | {total_tokens} | "
+            "{created_at} |".format(
+                label=row.get("label") or "",
+                agent=row.get("agent") or "",
+                provider=row.get("provider") or "",
+                model=row.get("model") or "",
+                wall_time_ms=markdown_value(row.get("wall_time_ms")),
+                stdout_bytes=markdown_value(row.get("stdout_bytes")),
+                transcript_path=row.get("transcript_path") or "",
+                prompt_label=row.get("prompt_label") or "",
+                total_tokens=markdown_value(row.get("total_tokens")),
+                created_at=row.get("created_at") or "",
+            )
+        )
+    return "\n".join(lines)
+
+
 def markdown_value(value: Any) -> str:
     return "" if value is None else str(value)
+
+
+def sha256_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def path_size(path: str | None) -> int | None:
+    if not path:
+        return None
+    candidate = Path(path)
+    if not candidate.exists() or not candidate.is_file():
+        return None
+    return candidate.stat().st_size
+
+
+def first_path(paths: Any) -> str | None:
+    if isinstance(paths, list) and paths:
+        first = paths[0]
+        return first if isinstance(first, str) else str(first)
+    return None
 
 
 def run_search_once(

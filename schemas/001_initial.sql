@@ -255,6 +255,7 @@ CREATE TABLE IF NOT EXISTS handoff_summaries (
 CREATE TABLE IF NOT EXISTS benchmark_runs (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     workspace_id uuid REFERENCES workspaces(id) ON DELETE CASCADE,
+    kind text NOT NULL DEFAULT 'search',
     label text NOT NULL DEFAULT '',
     mode text NOT NULL,
     provider text,
@@ -264,6 +265,13 @@ CREATE TABLE IF NOT EXISTS benchmark_runs (
     metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
     created_at timestamptz NOT NULL DEFAULT now()
 );
+
+ALTER TABLE benchmark_runs
+    ADD COLUMN IF NOT EXISTS kind text NOT NULL DEFAULT 'search';
+
+UPDATE benchmark_runs
+SET kind = 'search'
+WHERE kind IS NULL OR kind = '';
 
 CREATE TABLE IF NOT EXISTS redaction_findings (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -299,5 +307,6 @@ CREATE INDEX IF NOT EXISTS idx_symbol_reservations_active ON symbol_reservations
 CREATE INDEX IF NOT EXISTS idx_reservation_events_workspace ON reservation_events(workspace_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_handoff_summaries_workspace ON handoff_summaries(workspace_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_benchmark_runs_workspace ON benchmark_runs(workspace_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_benchmark_runs_workspace_kind ON benchmark_runs(workspace_id, kind, created_at DESC);
 
 INSERT INTO schema_migrations (id) VALUES ('001_initial') ON CONFLICT DO NOTHING;

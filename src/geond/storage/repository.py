@@ -6,6 +6,8 @@ from psycopg import Connection
 from psycopg.cursor import Cursor
 from psycopg.types.json import Jsonb
 
+from geond.adapters.antigravity import SOURCE as ANTIGRAVITY_SOURCE
+from geond.adapters.antigravity import ParsedAntigravitySession
 from geond.adapters.claude_code import SOURCE as CLAUDE_CODE_SOURCE
 from geond.adapters.claude_code import ParsedClaudeCodeSession
 from geond.adapters.codex import SOURCE as CODEX_SOURCE
@@ -819,6 +821,165 @@ def store_claude_code_session(
 
     conn.commit()
     return session_row_id
+
+
+def store_antigravity_session(
+    conn: Connection,
+    workspace_id: str,
+    session: ParsedAntigravitySession,
+) -> str:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO sessions (workspace_id, source, external_id, title, metadata)
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (workspace_id, source, external_id)
+            DO UPDATE SET title = EXCLUDED.title,
+                          metadata = sessions.metadata || EXCLUDED.metadata,
+                          updated_at = now()
+            RETURNING id::text
+            """,
+            (
+                workspace_id,
+                ANTIGRAVITY_SOURCE,
+                session.session_id,
+                session.title,
+                Jsonb(session.metadata),
+            ),
+        )
+        session_row_id = cur.fetchone()[0]
+
+        for event in session.events:
+            source_id = f"{ANTIGRAVITY_SOURCE}:{session.session_id}:{event.ordinal}"
+            redacted_raw, findings = redact_value(event.raw)
+            cur.execute(
+                """
+                INSERT INTO events (
+                    workspace_id,
+                    session_id,
+                    source,
+                    source_id,
+                    event_type,
+                    occurred_at,
+                    payload
+                )
+                VALUES (%s, %s, %s, %s, %s, %s::timestamptz, %s)
+                ON CONFLICT (source, source_id)
+                DO UPDATE SET event_type = EXCLUDED.event_type,
+                              occurred_at = EXCLUDED.occurred_at,
+                              payload = EXCLUDED.payload
+                """,
+                (
+                    workspace_id,
+                    session_row_id,
+                    ANTIGRAVITY_SOURCE,
+                    source_id,
+                    event.record_type,
+                    event.timestamp,
+                    Jsonb(redacted_raw),
+                ),
+            )
+            insert_redaction_findings(cur, workspace_id, ANTIGRAVITY_SOURCE, source_id, findings)
+
+        for message in session.messages:
+            source_id = f"{ANTIGRAVITY_SOURCE}:{session.session_id}:{message.ordinal}"
+            redacted_content, content_findings = redact_text(message.content)
+            redacted_metadata, metadata_findings = redact_value(message.metadata)
+            cur.execute(
+                """
+                SELECT id::text FROM events
+                WHERE source = %s AND source_id = %s
+                """,
+                (ANTIGRAVITY_SOURCE, source_id),
+            )
+            row = cur.fetchone()
+            raw_event_id = row[0] if row else None
+            cur.execute(
+                """
+                INSERT INTO messages (session_id, raw_event_id, role, ordinal, content, metadata)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (session_id, ordinal)
+                DO UPDATE SET content = EXCLUDED.content,
+                              metadata = EXCLUDED.metadata,
+                              raw_event_id = EXCLUDED.raw_event_id,
+                              role = EXCLUDED.role
+                """,
+                (
+                    session_row_id,
+                    raw_event_id,
+                    message.role,
+                    message.ordinal,
+                    redacted_content,
+                    Jsonb(redacted_metadata),
+                ),
+            )
+            insert_redaction_findings(
+                cur,
+                workspace_id,
+                ANTIGRAVITY_SOURCE,
+                f"{source_id}:message",
+                content_findings + metadata_findings,
+            )
+
+        delete_stale_message_rows(
+            cur,
+            session_row_id=session_row_id,
+            current_ordinals=[message.ordinal for message in session.messages],
+        )
+        record_antigravity_session_action(cur, workspace_id, session_row_id, session)
+
+    conn.commit()
+    return session_row_id
+
+
+def record_antigravity_session_action(
+    cur: Cursor,
+    workspace_id: str,
+    session_row_id: str,
+    session: ParsedAntigravitySession,
+) -> None:
+    agent_id = upsert_agent(cur.connection, "antigravity")
+    cur.execute(
+        """
+        SELECT 1
+        FROM agent_actions
+        WHERE workspace_id = %s
+          AND session_id = %s::uuid
+          AND agent_id = %s::uuid
+          AND action_type = 'session_observed'
+        LIMIT 1
+        """,
+        (workspace_id, session_row_id, agent_id),
+    )
+    if cur.fetchone():
+        return
+    cur.execute(
+        """
+        INSERT INTO agent_actions (
+            workspace_id, agent_id, session_id,
+            action_type, status, summary, metadata
+        )
+        VALUES (%s, %s, %s::uuid, %s, %s, %s, %s)
+        """,
+        (
+            workspace_id,
+            agent_id,
+            session_row_id,
+            "session_observed",
+            "recorded",
+            f"Antigravity transcript imported: {session.title}",
+            Jsonb(
+                {
+                    "source": ANTIGRAVITY_SOURCE,
+                    "session_id": session.session_id,
+                    "event_count": len(session.events),
+                    "message_count": len(session.messages),
+                    "tool_call_count": session.metadata.get("tool_call_count", 0),
+                    "model": session.metadata.get("model"),
+                }
+            ),
+        ),
+    )
 
 
 def title_from_claude_metadata(session: ParsedClaudeCodeSession) -> str:

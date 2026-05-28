@@ -139,6 +139,48 @@ uv run geond benchmark-report --workspace-uri file:///sample/geond --format mark
 `--workspace-uri` accepts the canonical root URI or any registered workspace
 alias, so benchmark history remains queryable after a folder move.
 
+## Agent Run Benchmarks
+
+Geond can also store externally measured agent runs in the same benchmark
+history using `kind=agent-run`. This is meant for Codex, Antigravity, MCP smoke
+runs, and other agent CLIs where the shell or transcript log is the best source
+of timing evidence.
+
+```bash
+uv run geond record-agent-run \
+    --agent codex \
+    --command "codex exec smoke" \
+    --prompt-file prompts/smoke.txt \
+    --prompt-label smoke \
+    --wall-time-ms 12075 \
+    --model gpt-5.5 \
+    --final-output-file codex.final.txt \
+    --stdout-path codex.stdout.txt \
+    --transcript-path codex.final.txt \
+    --workspace-uri file:///sample/geond
+```
+
+Report agent runs:
+
+```bash
+uv run geond benchmark-report --kind agent-run --format markdown
+```
+
+For simple local smoke comparisons:
+
+```bash
+uv run geond compare-agents \
+    --prompt-file prompts/smoke.txt \
+    --agent codex \
+    --agent antigravity \
+    --agent geond-mcp \
+    --workspace-uri file:///sample/geond
+```
+
+Antigravity `agy --print` may produce a correct transcript while stdout stays
+empty in some Windows environments. In that case, store the transcript/log path
+and final-output hash as the authoritative capture.
+
 ## Cleanup
 
 ```bash

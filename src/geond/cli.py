@@ -2,10 +2,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import shutil
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
+from time import perf_counter
 
+from geond.adapters.antigravity import parse_storage as parse_antigravity_storage
+from geond.adapters.antigravity import to_summary as antigravity_to_summary
 from geond.adapters.claude_code import parse_storage as parse_claude_code_storage
 from geond.adapters.claude_code import to_summary as claude_code_to_summary
 from geond.adapters.codex import parse_storage as parse_codex_storage
@@ -49,10 +56,13 @@ from geond.retrieval.simple import (
 )
 from geond.storage.benchmark import (
     benchmark_search,
+    compare_agent_run_benchmark_runs,
     compare_benchmark_runs,
+    format_agent_run_report_markdown,
     format_benchmark_report_markdown,
     list_benchmark_runs,
     load_judgments,
+    save_agent_run_benchmark,
     save_benchmark_run,
 )
 from geond.storage.code_graph import store_code_index, store_lsp_references
@@ -89,6 +99,7 @@ from geond.storage.repository import (
     reserve_symbols,
     resolve_workspace_id,
     set_workspace_coordination_policy,
+    store_antigravity_session,
     store_claude_code_session,
     store_codex_session,
     store_manus_task,
@@ -182,6 +193,103 @@ def format_benchmark_result_markdown(result: dict[str, object]) -> str:
                 mrr=quality.get("mrr") or "",
                 ndcg=quality.get("ndcg_at_k") or "",
             )
+        )
+    return "\n".join(lines)
+
+
+def run_agent_compare(
+    agent: str,
+    prompt: str,
+    *,
+    timeout_seconds: int,
+    workspace_root: Path,
+) -> dict[str, object]:
+    if agent == "geond-mcp":
+        started = perf_counter()
+        report = run_stdio_smoke(
+            cwd=workspace_root,
+            query="app_context",
+            workspace_uri="file:///sample/geond",
+            allow_empty_search=True,
+        )
+        return {
+            "agent": agent,
+            "command": "uv --directory <repo> run geond-mcp",
+            "wall_time_ms": round((perf_counter() - started) * 1000, 3),
+            "final_output": json.dumps(report, ensure_ascii=False),
+            "metadata": {"status": report.get("status")},
+        }
+
+    if agent == "codex":
+        command = ["codex", "exec", prompt, "--ephemeral", "--output-last-message"]
+        suffix = ".codex.final.txt"
+    elif agent == "antigravity":
+        agy = resolve_antigravity_cli()
+        command = [agy, "--print", prompt, "--print-timeout", f"{timeout_seconds}s", "--log-file"]
+        suffix = ".agy.log"
+    else:
+        raise ValueError(f"Unsupported agent: {agent}")
+
+    with tempfile.NamedTemporaryFile("w", delete=False, suffix=suffix, encoding="utf-8") as temp:
+        output_path = Path(temp.name)
+    if agent == "codex":
+        command.append(str(output_path))
+    else:
+        command.append(str(output_path))
+
+    started = perf_counter()
+    completed = subprocess.run(
+        command,
+        cwd=workspace_root,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=timeout_seconds,
+    )
+    wall_time_ms = round((perf_counter() - started) * 1000, 3)
+    final_output = ""
+    if output_path.exists():
+        final_output = output_path.read_text(encoding="utf-8", errors="replace")
+    if not final_output:
+        final_output = completed.stdout or completed.stderr or ""
+    return {
+        "agent": agent,
+        "command": " ".join(command),
+        "wall_time_ms": wall_time_ms,
+        "final_output": final_output,
+        "stdout_bytes": len((completed.stdout or "").encode("utf-8")),
+        "stderr_bytes": len((completed.stderr or "").encode("utf-8")),
+        "transcript_paths": [str(output_path)] if agent == "codex" else [],
+        "log_paths": [str(output_path)] if agent == "antigravity" else [],
+        "metadata": {"returncode": completed.returncode},
+    }
+
+
+def resolve_antigravity_cli() -> str:
+    path_agy = shutil.which("agy")
+    if path_agy:
+        return path_agy
+    local_appdata = Path.home() / "AppData" / "Local"
+    env_local_appdata = (
+        Path(os.environ["LOCALAPPDATA"]) if "LOCALAPPDATA" in os.environ else local_appdata
+    )
+    candidate = env_local_appdata / "agy" / "bin" / "agy.exe"
+    return str(candidate)
+
+
+def format_compare_agents_markdown(result: dict[str, object]) -> str:
+    lines = [
+        "# Compare Agents",
+        "",
+        "| Agent | Benchmark run | Wall ms | Status |",
+        "| --- | --- | ---: | --- |",
+    ]
+    for row in result.get("runs", []):
+        if not isinstance(row, dict):
+            continue
+        lines.append(
+            f"| {row.get('agent') or ''} | {row.get('benchmark_run_id') or ''} | "
+            f"{row.get('wall_time_ms') or ''} | {row.get('status') or ''} |"
         )
     return "\n".join(lines)
 
@@ -537,6 +645,11 @@ def main() -> None:
     doctor.add_argument("--format", choices=["json", "text"], default="json")
     doctor.add_argument("--skip-db", action="store_true", help="Skip live Postgres checks")
     doctor.add_argument("--skip-mcp", action="store_true", help="Skip MCP registration checks")
+    doctor.add_argument(
+        "--skip-antigravity",
+        action="store_true",
+        help="Skip Antigravity CLI and MCP config checks",
+    )
     doctor.add_argument("--strict", action="store_true", help="Exit non-zero when errors are found")
 
     mcp_smoke = subparsers.add_parser(
@@ -707,6 +820,13 @@ def main() -> None:
     parse_claude.add_argument("--session-id")
     parse_claude.add_argument("--limit", type=int)
 
+    parse_antigravity = subparsers.add_parser(
+        "parse-antigravity", help="Parse Antigravity CLI transcript JSONL files"
+    )
+    parse_antigravity.add_argument("storage_path", nargs="?", type=Path)
+    parse_antigravity.add_argument("--session-id")
+    parse_antigravity.add_argument("--limit", type=int)
+
     import_vscode = subparsers.add_parser(
         "import-vscode", help="Import VS Code Copilot Chat storage into Geond DB"
     )
@@ -730,6 +850,15 @@ def main() -> None:
     import_claude.add_argument("--limit", type=int)
     import_claude.add_argument("--workspace-uri")
     import_claude.add_argument("--workspace-name")
+
+    import_antigravity = subparsers.add_parser(
+        "import-antigravity", help="Import Antigravity CLI transcript JSONL files"
+    )
+    import_antigravity.add_argument("storage_path", nargs="?", type=Path)
+    import_antigravity.add_argument("--session-id")
+    import_antigravity.add_argument("--limit", type=int)
+    import_antigravity.add_argument("--workspace-uri", required=True)
+    import_antigravity.add_argument("--workspace-name")
 
     import_manus = subparsers.add_parser(
         "import-manus-task", help="Import a Manus API v2 task into Geond"
@@ -1278,8 +1407,62 @@ def main() -> None:
     )
     benchmark_report.add_argument("--workspace-uri")
     benchmark_report.add_argument("--mode")
+    benchmark_report.add_argument(
+        "--kind",
+        choices=["search", "agent-run", "all"],
+        default="search",
+        help="Benchmark record kind to report",
+    )
     benchmark_report.add_argument("--limit", type=int, default=20)
     benchmark_report.add_argument("--format", choices=["json", "markdown"], default="json")
+
+    record_agent_run = subparsers.add_parser(
+        "record-agent-run",
+        help="Store timing and capture metadata for an external agent run",
+    )
+    record_agent_run.add_argument("--agent", required=True)
+    record_agent_run.add_argument("--command", dest="agent_command", required=True)
+    record_agent_run.add_argument("--workspace-uri")
+    record_agent_run.add_argument("--label", default="")
+    record_agent_run.add_argument("--prompt-file", type=Path)
+    record_agent_run.add_argument("--prompt-label")
+    record_agent_run.add_argument("--prompt-hash")
+    record_agent_run.add_argument("--wall-time-ms", type=float)
+    record_agent_run.add_argument("--provider")
+    record_agent_run.add_argument("--model")
+    record_agent_run.add_argument("--sandbox")
+    record_agent_run.add_argument("--approval")
+    record_agent_run.add_argument("--final-output")
+    record_agent_run.add_argument("--final-output-file", type=Path)
+    record_agent_run.add_argument("--final-output-hash")
+    record_agent_run.add_argument("--stdout-path")
+    record_agent_run.add_argument("--stderr-path")
+    record_agent_run.add_argument("--stdout-bytes", type=int)
+    record_agent_run.add_argument("--stderr-bytes", type=int)
+    record_agent_run.add_argument("--transcript-path", action="append")
+    record_agent_run.add_argument("--log-path", action="append")
+    record_agent_run.add_argument("--input-tokens", type=int)
+    record_agent_run.add_argument("--output-tokens", type=int)
+    record_agent_run.add_argument("--cached-input-tokens", type=int)
+    record_agent_run.add_argument("--reasoning-tokens", type=int)
+    record_agent_run.add_argument("--total-tokens", type=int)
+
+    compare_agents = subparsers.add_parser(
+        "compare-agents",
+        help="Run simple smoke prompts across agents and store agent-run benchmarks",
+    )
+    compare_agents.add_argument("--prompt-file", type=Path, required=True)
+    compare_agents.add_argument(
+        "--agent",
+        dest="agents",
+        action="append",
+        choices=["codex", "antigravity", "geond-mcp"],
+        required=True,
+    )
+    compare_agents.add_argument("--workspace-uri")
+    compare_agents.add_argument("--label", default="")
+    compare_agents.add_argument("--timeout-seconds", type=int, default=120)
+    compare_agents.add_argument("--format", choices=["json", "markdown"], default="json")
 
     record_changeset_cmd = subparsers.add_parser(
         "record-changeset",
@@ -1341,6 +1524,7 @@ def main() -> None:
             Path.cwd(),
             check_database=not args.skip_db,
             check_mcp=not args.skip_mcp,
+            check_antigravity=not args.skip_antigravity,
         )
         if args.format == "text":
             print(format_doctor_report(report))
@@ -1591,13 +1775,134 @@ def main() -> None:
         else:
             print(json.dumps(result, ensure_ascii=False, indent=2))
         return
+    if args.command == "record-agent-run":
+        final_output = args.final_output
+        if args.final_output_file:
+            final_output = args.final_output_file.read_text(encoding="utf-8")
+        prompt_text = args.prompt_file.read_text(encoding="utf-8") if args.prompt_file else None
+        token_usage = {
+            key: value
+            for key, value in {
+                "input_tokens": args.input_tokens,
+                "output_tokens": args.output_tokens,
+                "cached_input_tokens": args.cached_input_tokens,
+                "reasoning_tokens": args.reasoning_tokens,
+                "total_tokens": args.total_tokens,
+            }.items()
+            if value is not None
+        }
+        with connect(get_settings()) as conn:
+            run_id = save_agent_run_benchmark(
+                conn,
+                agent=args.agent,
+                command=args.agent_command,
+                workspace_uri=args.workspace_uri,
+                label=args.label,
+                prompt_text=prompt_text,
+                prompt_hash=args.prompt_hash,
+                prompt_label=args.prompt_label,
+                wall_time_ms=args.wall_time_ms,
+                provider=args.provider,
+                model=args.model,
+                sandbox=args.sandbox,
+                approval=args.approval,
+                final_output=final_output,
+                final_output_hash=args.final_output_hash,
+                stdout_path=args.stdout_path,
+                stderr_path=args.stderr_path,
+                stdout_bytes=args.stdout_bytes,
+                stderr_bytes=args.stderr_bytes,
+                transcript_paths=args.transcript_path,
+                log_paths=args.log_path,
+                token_usage=token_usage,
+                metadata={"source": "cli"},
+            )
+        print(
+            json.dumps(
+                {"status": "ok", "benchmark_run_id": run_id},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
+    if args.command == "compare-agents":
+        prompt_text = args.prompt_file.read_text(encoding="utf-8")
+        runs: list[dict[str, object]] = []
+        with connect(get_settings()) as conn:
+            for agent in args.agents:
+                try:
+                    run = run_agent_compare(
+                        agent,
+                        prompt_text,
+                        timeout_seconds=args.timeout_seconds,
+                        workspace_root=Path.cwd(),
+                    )
+                except (OSError, subprocess.SubprocessError) as exc:
+                    run = {
+                        "agent": agent,
+                        "command": agent,
+                        "wall_time_ms": None,
+                        "final_output": str(exc),
+                        "metadata": {"status": "error", "error_type": type(exc).__name__},
+                    }
+                run_id = save_agent_run_benchmark(
+                    conn,
+                    agent=agent,
+                    command=str(run["command"]),
+                    workspace_uri=args.workspace_uri,
+                    label=args.label or f"{agent}-compare",
+                    prompt_text=prompt_text,
+                    prompt_label=args.prompt_file.name,
+                    wall_time_ms=float(run["wall_time_ms"])
+                    if run.get("wall_time_ms") is not None
+                    else None,
+                    final_output=str(run.get("final_output") or ""),
+                    stdout_bytes=run.get("stdout_bytes")
+                    if isinstance(run.get("stdout_bytes"), int)
+                    else None,
+                    stderr_bytes=run.get("stderr_bytes")
+                    if isinstance(run.get("stderr_bytes"), int)
+                    else None,
+                    transcript_paths=run.get("transcript_paths")
+                    if isinstance(run.get("transcript_paths"), list)
+                    else None,
+                    log_paths=run.get("log_paths")
+                    if isinstance(run.get("log_paths"), list)
+                    else None,
+                    metadata={"source": "compare-agents", **dict(run.get("metadata") or {})},
+                )
+                runs.append(
+                    {
+                        "agent": agent,
+                        "benchmark_run_id": run_id,
+                        "wall_time_ms": run.get("wall_time_ms"),
+                        "status": (run.get("metadata") or {}).get("status")
+                        if isinstance(run.get("metadata"), dict)
+                        else None,
+                    }
+                )
+        result = {"status": "ok", "runs": runs}
+        if args.format == "markdown":
+            print(format_compare_agents_markdown(result))
+        else:
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
     if args.command == "benchmark-report":
         with connect(get_settings()) as conn:
-            if args.format == "markdown" or not args.mode:
+            report_kind = None if args.kind == "all" else args.kind
+            if args.kind == "agent-run":
+                result = compare_agent_run_benchmark_runs(
+                    conn,
+                    workspace_uri=args.workspace_uri,
+                    agent=args.mode,
+                    limit=args.limit,
+                )
+            elif args.format == "markdown" or not args.mode:
                 result = compare_benchmark_runs(
                     conn,
                     workspace_uri=args.workspace_uri,
                     mode=args.mode,
+                    kind=report_kind,
                     limit=args.limit,
                 )
             else:
@@ -1606,11 +1911,15 @@ def main() -> None:
                         conn,
                         workspace_uri=args.workspace_uri,
                         mode=args.mode,
+                        kind=report_kind,
                         limit=args.limit,
                     )
                 }
         if args.format == "markdown":
-            print(format_benchmark_report_markdown(result))
+            if args.kind == "agent-run":
+                print(format_agent_run_report_markdown(result))
+            else:
+                print(format_benchmark_report_markdown(result))
         else:
             print(json.dumps(result, ensure_ascii=False, indent=2))
         return
@@ -1681,6 +1990,12 @@ def main() -> None:
     if args.command == "parse-claude-code":
         sessions = parse_claude_code_storage(args.storage_path, args.session_id, args.limit)
         summaries = [claude_code_to_summary(session) for session in sessions]
+        print(json.dumps(summaries, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "parse-antigravity":
+        sessions = parse_antigravity_storage(args.storage_path, args.session_id, args.limit)
+        summaries = [antigravity_to_summary(session) for session in sessions]
         print(json.dumps(summaries, ensure_ascii=False, indent=2))
         return
 
@@ -1784,6 +2099,35 @@ def main() -> None:
                         "session_id": session_row_id,
                         "external_id": session.session_id,
                         "usage_events": usage_events,
+                    }
+                )
+        print(
+            json.dumps(
+                {"status": "ok", "imported_sessions": imported},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
+
+    if args.command == "import-antigravity":
+        sessions = parse_antigravity_storage(args.storage_path, args.session_id, args.limit)
+        imported: list[dict[str, object]] = []
+        workspace_name = args.workspace_name or workspace_name_from_uri(args.workspace_uri)
+        with connect(get_settings()) as conn:
+            workspace_id = upsert_workspace(
+                conn,
+                root_uri=args.workspace_uri,
+                name=workspace_name,
+                metadata={"source": "cli", "import_source": "antigravity"},
+            )
+            for session in sessions:
+                session_row_id = store_antigravity_session(conn, workspace_id, session)
+                imported.append(
+                    {
+                        "workspace_id": workspace_id,
+                        "session_id": session_row_id,
+                        "external_id": session.session_id,
                     }
                 )
         print(

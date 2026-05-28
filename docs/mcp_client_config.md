@@ -226,6 +226,33 @@ continue, review a handoff, reassign work, or ask an agent to release a claim.
 - `review_workspace_context`: compare requested intent/files/symbols with active
     reservations, open handoffs, and lineage before starting an agent task.
 
+## Codex MCP Server And Geond MCP
+
+`codex mcp-server` and `geond-mcp` are complementary surfaces:
+
+- `codex mcp-server` exposes Codex itself as an agent that another MCP client
+  can call for coding work or a reply.
+- `geond-mcp` exposes the shared memory, evidence refs, reservations, handoffs,
+  benchmark records, and compact dashboard read models that agents coordinate
+  through.
+
+Use Codex as an MCP client of Geond when Codex should read or write shared
+context. Use Codex as an MCP server when another orchestrator, such as
+Antigravity, should delegate a specific agent task to Codex. Do not treat the
+Codex server as a replacement for Geond's shared evidence layer.
+
+Antigravity can be configured with:
+
+```powershell
+uv run geond install --client antigravity --write
+uv run geond doctor
+```
+
+The Antigravity config target is
+`C:\Users\<user>\.gemini\config\mcp_config.json`; Geond preserves other
+`mcpServers` entries and writes `GEOND_PRIVACY_MODE=local-only` plus
+`GEOND_EMBEDDING_PROVIDER=none` by default.
+
 ## Useful Resources
 
 - `geond://sessions`

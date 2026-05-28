@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import platform
 import shutil
@@ -83,6 +84,7 @@ def collect_doctor_report(
     *,
     check_database: bool = True,
     check_mcp: bool = True,
+    check_antigravity: bool = True,
     runner: Runner = default_runner,
     which: Which = shutil.which,
 ) -> dict[str, Any]:
@@ -352,6 +354,9 @@ def collect_doctor_report(
         except Exception as exc:
             checks.append(make_check("mcp_registration", "error", f"MCP import failed: {exc}"))
 
+    if check_antigravity:
+        checks.extend(antigravity_checks(which=which))
+
     summary = summarize_checks(checks)
     return {
         "status": summary["status"],
@@ -359,6 +364,136 @@ def collect_doctor_report(
         "workspace_root": str(root),
         "checks": checks,
     }
+
+
+def antigravity_checks(which: Which = shutil.which) -> list[dict[str, Any]]:
+    home = Path.home()
+    config_path = home / ".gemini" / "config" / "mcp_config.json"
+    antigravity_link = home / ".gemini" / "antigravity" / "mcp_config.json"
+    checks: list[dict[str, Any]] = []
+
+    if not config_path.exists():
+        checks.append(
+            make_check(
+                "antigravity_config",
+                "warning",
+                f"Antigravity MCP config was not found at {config_path}.",
+                path=str(config_path),
+            )
+        )
+    else:
+        try:
+            loaded = json.loads(config_path.read_text(encoding="utf-8") or "{}")
+        except json.JSONDecodeError as exc:
+            checks.append(
+                make_check(
+                    "antigravity_config",
+                    "error",
+                    f"Antigravity MCP config is malformed JSON: {exc.msg}.",
+                    path=str(config_path),
+                    error=str(exc),
+                )
+            )
+        else:
+            servers = loaded.get("mcpServers") if isinstance(loaded, dict) else None
+            has_geond = isinstance(servers, dict) and isinstance(servers.get("geond"), dict)
+            checks.append(
+                make_check(
+                    "antigravity_config",
+                    "ok" if has_geond else "warning",
+                    "Antigravity MCP config contains mcpServers.geond."
+                    if has_geond
+                    else "Antigravity MCP config is valid JSON but lacks mcpServers.geond.",
+                    path=str(config_path),
+                    has_geond=has_geond,
+                    server_count=len(servers) if isinstance(servers, dict) else 0,
+                )
+            )
+
+    if antigravity_link.is_symlink():
+        try:
+            target = antigravity_link.resolve()
+        except OSError:
+            target = None
+        checks.append(
+            make_check(
+                "antigravity_config_link",
+                "ok",
+                "Antigravity state config path is a symlink.",
+                path=str(antigravity_link),
+                target=str(target) if target else None,
+            )
+        )
+    elif antigravity_link.exists():
+        checks.append(
+            make_check(
+                "antigravity_config_link",
+                "warning",
+                "Antigravity state config path exists but is not a symlink.",
+                path=str(antigravity_link),
+            )
+        )
+    else:
+        checks.append(
+            make_check(
+                "antigravity_config_link",
+                "warning",
+                "Antigravity state config symlink was not found.",
+                path=str(antigravity_link),
+            )
+        )
+
+    checks.append(antigravity_cli_check(which))
+    return checks
+
+
+def antigravity_cli_check(which: Which = shutil.which) -> dict[str, Any]:
+    local_appdata = os.environ.get("LOCALAPPDATA")
+    appdata = os.environ.get("APPDATA")
+    standalone_path = (
+        Path(local_appdata) / "agy" / "bin" / "agy.exe"
+        if local_appdata
+        else Path.home() / "AppData" / "Local" / "agy" / "bin" / "agy.exe"
+    )
+    shim_path = (
+        Path(appdata) / "Antigravity" / "bin" / "agy-node.cmd"
+        if appdata
+        else Path.home() / "AppData" / "Roaming" / "Antigravity" / "bin" / "agy-node.cmd"
+    )
+    path_agy = which("agy")
+
+    if standalone_path.exists():
+        return make_check(
+            "antigravity_cli",
+            "ok",
+            f"Standalone Antigravity CLI found at {standalone_path}.",
+            path=str(standalone_path),
+            shim_path=str(shim_path) if shim_path.exists() else None,
+            path_agy=path_agy,
+        )
+    if path_agy and Path(path_agy) != shim_path:
+        return make_check(
+            "antigravity_cli",
+            "ok",
+            f"Antigravity CLI found on PATH at {path_agy}.",
+            path=path_agy,
+            expected_standalone=str(standalone_path),
+        )
+    if shim_path.exists():
+        return make_check(
+            "antigravity_cli",
+            "warning",
+            "Only the Antigravity desktop shim was found; install standalone agy for CLI runs.",
+            shim_path=str(shim_path),
+            expected_standalone=str(standalone_path),
+        )
+    return make_check(
+        "antigravity_cli",
+        "warning",
+        "Standalone Antigravity CLI was not found.",
+        expected_standalone=str(standalone_path),
+        shim_path=str(shim_path),
+    )
 
 
 def format_doctor_report(report: dict[str, Any]) -> str:

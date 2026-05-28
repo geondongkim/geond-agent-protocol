@@ -3,8 +3,10 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import sys
 from copy import deepcopy
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +15,7 @@ SUPPORTED_INSTALL_CLIENTS = (
     "claude-desktop",
     "continue",
     "vscode-lsp-task",
+    "antigravity",
 )
 DEFAULT_INSTALL_CLIENTS = ("vscode-mcp", "vscode-lsp-task")
 DEFAULT_DATABASE_URL = "postgresql://geond:geond_dev_password@localhost:55432/geond"
@@ -38,6 +41,8 @@ def path_for_config(client: str, workspace_root: Path) -> Path:
         return workspace_root / ".vscode" / "mcp.json"
     if client == "vscode-lsp-task":
         return workspace_root / ".vscode" / "tasks.json"
+    if client == "antigravity":
+        return Path.home() / ".gemini" / "config" / "mcp_config.json"
     if client == "continue":
         return Path.home() / ".continue" / "config.yaml"
     if client == "claude-desktop":
@@ -218,13 +223,40 @@ def yaml_scalar(value: object) -> str:
 
 
 def load_json_config(path: Path) -> dict[str, Any]:
+    return load_json_config_for_install(path, write=False)["content"]
+
+
+def load_json_config_for_install(path: Path, *, write: bool) -> dict[str, Any]:
+    result: dict[str, Any] = {"content": {}, "message": None, "backup_path": None}
     if not path.exists():
-        return {}
+        return result
     content = path.read_text(encoding="utf-8").strip()
     if not content:
-        return {}
-    loaded = json.loads(content)
-    return loaded if isinstance(loaded, dict) else {}
+        return result
+    try:
+        loaded = json.loads(content)
+    except json.JSONDecodeError as exc:
+        if write:
+            backup_path = backup_malformed_json(path)
+            result["backup_path"] = str(backup_path)
+            result["message"] = f"Malformed JSON was backed up before repair: {backup_path}"
+        else:
+            result["message"] = (
+                f"Existing JSON is malformed; write mode will back it up before repair: {exc.msg}"
+            )
+        return result
+    if isinstance(loaded, dict):
+        result["content"] = loaded
+    else:
+        result["message"] = "Existing JSON root is not an object; Geond will replace it."
+    return result
+
+
+def backup_malformed_json(path: Path) -> Path:
+    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    backup_path = path.with_name(f"{path.name}.{timestamp}.bak")
+    shutil.copy2(path, backup_path)
+    return backup_path
 
 
 def write_json_config(path: Path, data: dict[str, Any]) -> None:
@@ -288,11 +320,18 @@ def install_one_client(
 ) -> dict[str, Any]:
     existed_before = path.exists()
     if client == "vscode-lsp-task":
-        existing = load_json_config(path)
+        loaded = load_json_config_for_install(path, write=write)
+        existing = loaded["content"]
         content = vscode_lsp_task_config(existing)
         if write:
             write_json_config(path, content)
-        return install_result(client, path, write_action(write, existed_before), content)
+        return install_result(
+            client,
+            path,
+            write_action(write, existed_before),
+            content,
+            loaded.get("message"),
+        )
 
     entry = mcp_server_entry(
         repo_root,
@@ -304,17 +343,31 @@ def install_one_client(
         include_type=client == "vscode-mcp",
     )
     if client == "vscode-mcp":
-        existing = load_json_config(path)
+        loaded = load_json_config_for_install(path, write=write)
+        existing = loaded["content"]
         content = vscode_mcp_config(existing, server_name, entry)
         if write:
             write_json_config(path, content)
-        return install_result(client, path, write_action(write, existed_before), content)
-    if client == "claude-desktop":
-        existing = load_json_config(path)
+        return install_result(
+            client,
+            path,
+            write_action(write, existed_before),
+            content,
+            loaded.get("message"),
+        )
+    if client in {"claude-desktop", "antigravity"}:
+        loaded = load_json_config_for_install(path, write=write)
+        existing = loaded["content"]
         content = claude_desktop_config(existing, server_name, entry)
         if write:
             write_json_config(path, content)
-        return install_result(client, path, write_action(write, existed_before), content)
+        return install_result(
+            client,
+            path,
+            write_action(write, existed_before),
+            content,
+            loaded.get("message"),
+        )
     if client == "continue":
         text = render_continue_config(server_name, entry)
         if write:
