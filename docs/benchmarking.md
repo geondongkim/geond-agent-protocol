@@ -160,9 +160,10 @@ uv run geond record-agent-run \
     --workspace-uri file:///sample/geond
 ```
 
-For Antigravity captures, include the brain transcript session id when you know
-it. If the transcript has already been imported for the same workspace, Geond
-links the benchmark row to that imported session automatically.
+For agent transcript captures, include the transcript session id when you know
+it. If a Codex, Claude Code, VS Code Copilot, or Antigravity transcript has
+already been imported for the same workspace, Geond links the benchmark row to
+that imported session automatically.
 
 ```bash
 uv run geond record-agent-run \
@@ -202,6 +203,11 @@ empty in some Windows environments. `compare-agents --agent antigravity` tries
 to attach the newest updated brain transcript path/session id to the stored
 agent-run benchmark; the report renders a compact evidence pointer when the
 transcript is imported, such as `session:<id> transcript:<external-id>`.
+
+`compare-agents --agent codex` also tries to attach the newest updated Codex
+JSONL session transcript. Plain final-output text files are still stored as
+capture metadata, but JSONL transcripts are preferred because they can resolve
+to imported session evidence.
 
 ## Cleanup
 
