@@ -88,6 +88,18 @@ Regenerate them with `uv run python scripts/render_readme_gifs.py`.
 For browser-verified dashboard captures and longer terminal demo notes, see
 [docs/public_demo_script.md](docs/public_demo_script.md).
 
+## Learning Path
+
+Start with [learn/README.md](learn/README.md) for guided notebooks that mirror
+the README scenarios:
+
+| Lesson | Focus |
+| --- | --- |
+| [01 Local Shared Memory](learn/01_local_shared_memory.ipynb) | Run local PostgreSQL, seed sample evidence, search memory, and smoke-test MCP. |
+| [02 Handoffs And Reservations](learn/02_handoffs_and_reservations.ipynb) | Practice context review, symbol reservations, conflicts, and handoff packets. |
+| [03 AI Pair Coding Workflow](learn/03_ai_pair_coding_workflow.ipynb) | Share evidence between Agent A and Agent B across different agent tools. |
+| [04 Shared PostgreSQL Team Mode](learn/04_shared_postgres_team_mode.ipynb) | Understand optional shared PostgreSQL profiles for multi-PC collaboration. |
+
 ## How It Works
 
 ```mermaid
@@ -177,6 +189,7 @@ project rather than copying their product scope:
 - [docs/ai_usage_observability.md](docs/ai_usage_observability.md) covers token, cost, pricing snapshot, and usage-versus-evidence design.
 - [docs/benchmarking.md](docs/benchmarking.md) explains retrieval, evidence, and agent-run benchmark commands.
 - [docs/open_source_readiness.md](docs/open_source_readiness.md) tracks launch risks, privacy, dependency, and governance issues.
+- [learn/README.md](learn/README.md) provides a notebook-based onboarding path.
 
 ## Contributing
 

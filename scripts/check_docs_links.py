@@ -13,6 +13,8 @@ DEFAULT_INCLUDE_PATTERNS = (
     "docs/**/*.md",
     "examples/*.md",
     "examples/**/*.md",
+    "learn/*.md",
+    "learn/**/*.md",
 )
 DEFAULT_EXCLUDE_PATTERNS = (
     ".git/**",

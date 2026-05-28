@@ -48,6 +48,25 @@ The browser smoke checks every dashboard tab, opens related timeline context,
 captures screenshots, and verifies that the screenshots are nonblank before
 GIF rendering.
 
+## Current Tutorial Assets
+
+Tutorial-specific assets live with the notebooks:
+
+- [learn/assets/geond_lesson_01_local_memory.gif](../learn/assets/geond_lesson_01_local_memory.gif)
+- [learn/assets/geond_lesson_02_handoff_reservation.gif](../learn/assets/geond_lesson_02_handoff_reservation.gif)
+- [learn/assets/geond_lesson_03_pair_coding.gif](../learn/assets/geond_lesson_03_pair_coding.gif)
+- [learn/assets/geond_lesson_04_team_db.gif](../learn/assets/geond_lesson_04_team_db.gif)
+
+Regenerate them with:
+
+```bash
+uv run python scripts/render_tutorial_assets.py
+uv run python scripts/check_tutorial_notebooks.py
+```
+
+The notebook-based learning path is in
+[learn/README.md](../learn/README.md).
+
 ## Legacy Terminal Demo
 
 The older terminal demo asset is still useful for release notes:
