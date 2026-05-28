@@ -44,12 +44,12 @@ model as adapters are added.
 - [x] CONTRIBUTING guide added.
 - [x] SECURITY policy added.
 - [ ] Code of Conduct decision.
-- [ ] Issue templates.
-- [ ] PR template.
+- [x] Issue templates.
+- [x] PR template.
 - [ ] Release tags and changelog after the next stable alpha slice.
 - [ ] TestPyPI or publish observation after the first tag.
 - [ ] GitHub Private Vulnerability Reporting enabled, if available.
-- [ ] Repository topics added: `mcp`, `model-context-protocol`, `ai-agents`, `agent-memory`, `postgresql`, `pgvector`, `multi-agent`, `local-first`.
+- [x] Repository topics added: `mcp`, `model-context-protocol`, `ai-agents`, `agent-memory`, `postgresql`, `pgvector`, `multi-agent`, `local-first`, `developer-tools`, `agent-coordination`, `ai-coding`, `copilot`, `claude-code`, `codex`, `code-graph`.
 
 ## Public Claims Boundary
 

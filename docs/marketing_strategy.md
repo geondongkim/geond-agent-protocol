@@ -20,6 +20,7 @@ marketing plan for Geond.
   - [GitHub repository topics](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/classifying-your-repository-with-topics)
   - [Hacker News Guidelines](https://news.ycombinator.com/newsguidelines.html)
   - [Awesome MCP Servers](https://github.com/punkpeye/awesome-mcp-servers)
+- Execution companion: [docs/marketing_agent_execution_plan.md](marketing_agent_execution_plan.md)
 
 ## Executive Decision
 
@@ -298,6 +299,14 @@ Best workflow:
 | P2 | Draft 3-post technical content series. | Antigravity first draft, Codex fact check |
 | P2 | Create community monitoring prompt/runbook for HN, Reddit, and GitHub. | Antigravity |
 | P2 | Add FAQ from repeated issues after first external feedback. | Codex |
+
+Completed on 2026-05-29:
+
+- GitHub repository description and topics were updated with `gh`.
+- [docs/comparison.md](comparison.md) was added.
+- Issue templates and a PR template were added under `.github/`.
+- Antigravity `agy` was used for bounded copy ideation; Codex reviewed and
+  rejected over-broad wording before writing source-of-truth docs.
 
 ## Messaging Guardrails
 
