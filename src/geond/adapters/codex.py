@@ -125,7 +125,12 @@ def parse_session_file(
     for ordinal, raw_line in enumerate(session_path.read_text(encoding="utf-8").splitlines()):
         if not raw_line.strip():
             continue
-        raw = json.loads(raw_line)
+        try:
+            raw = json.loads(raw_line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(raw, dict):
+            continue
         timestamp = raw.get("timestamp") if isinstance(raw.get("timestamp"), str) else None
         record_type = str(raw.get("type") or "unknown")
         payload = raw.get("payload") if isinstance(raw.get("payload"), dict) else {}

@@ -57,3 +57,29 @@ def test_parse_codex_storage_limits_to_newest_session(tmp_path: Path) -> None:
 
     assert len(sessions) == 1
     assert sessions[0].session_id == "newer"
+
+
+def test_parse_codex_session_skips_malformed_jsonl_lines(tmp_path: Path) -> None:
+    session_file = tmp_path / "codex-bad-line.jsonl"
+    session_file.write_text(
+        "\n".join(
+            [
+                '{"type":"session_meta","payload":{"id":"codex-good-session","cwd":"/repo"}}',
+                '{"type":"response_item","payload":{"type":"message","role":"user",'
+                '"content":[{"type":"input_text","text":"before bad line"}]}}',
+                '{"type":"response_item","payload":',
+                '{"type":"response_item","payload":{"type":"message","role":"assistant",'
+                '"content":[{"type":"output_text","text":"after bad line"}]}}',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    session = parse_session_file(session_file)
+
+    assert session.session_id == "codex-good-session"
+    assert [message.content for message in session.messages] == [
+        "before bad line",
+        "after bad line",
+    ]
