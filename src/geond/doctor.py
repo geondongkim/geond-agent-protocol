@@ -16,6 +16,7 @@ from geond.config import database_url_env_names, get_settings
 
 Runner = Callable[[Sequence[str], int], subprocess.CompletedProcess[str]]
 Which = Callable[[str], str | None]
+LOCAL_POSTGRES_CONTAINER = "geond-postgres"
 
 
 def default_runner(
@@ -59,6 +60,67 @@ def command_output(
         return False, str(exc)
     output = (completed.stdout or completed.stderr or "").strip()
     return completed.returncode == 0, output
+
+
+def local_postgres_container_check(docker_path: str, runner: Runner) -> dict[str, Any]:
+    ok, output = command_output(
+        [
+            docker_path,
+            "ps",
+            "-a",
+            "--filter",
+            f"name=^/{LOCAL_POSTGRES_CONTAINER}$",
+            "--format",
+            "{{.Names}}\t{{.Status}}\t{{.Ports}}",
+        ],
+        runner,
+        timeout_seconds=5,
+    )
+    if not ok:
+        return make_check(
+            "local_postgres_container",
+            "warning",
+            f"Could not inspect the local Postgres Docker container: {output or 'no output'}.",
+            container=LOCAL_POSTGRES_CONTAINER,
+        )
+
+    rows = [row.strip() for row in output.splitlines() if row.strip()]
+    if not rows:
+        return make_check(
+            "local_postgres_container",
+            "ok",
+            "No existing geond-postgres Docker container name conflict was found.",
+            container=LOCAL_POSTGRES_CONTAINER,
+        )
+
+    fields = rows[0].split("\t")
+    name = fields[0] if fields else LOCAL_POSTGRES_CONTAINER
+    status = fields[1] if len(fields) > 1 else ""
+    ports = fields[2] if len(fields) > 2 else ""
+    lowered_status = status.lower()
+    if lowered_status.startswith("up"):
+        return make_check(
+            "local_postgres_container",
+            "ok",
+            f"{name} is already running ({status}).",
+            container=name,
+            docker_status=status,
+            ports=ports or None,
+        )
+
+    suggestion = f"docker start {LOCAL_POSTGRES_CONTAINER}"
+    return make_check(
+        "local_postgres_container",
+        "warning",
+        (
+            f"{name} exists but is not running ({status or 'unknown status'}); "
+            f"run `{suggestion}` before recreating the compose service."
+        ),
+        container=name,
+        docker_status=status or None,
+        ports=ports or None,
+        suggested_command=suggestion,
+    )
 
 
 def read_env_keys(env_path: Path) -> set[str]:
@@ -192,6 +254,7 @@ def collect_doctor_report(
             )
         )
 
+    docker_daemon_ok = False
     docker_path = which("docker")
     if not docker_path:
         checks.append(make_check("docker_cli", "error", "docker is not on PATH."))
@@ -210,6 +273,7 @@ def collect_doctor_report(
             timeout_seconds=10,
         )
         if ok and output:
+            docker_daemon_ok = True
             checks.append(make_check("docker_daemon", "ok", f"Docker daemon is running: {output}."))
         else:
             checks.append(
@@ -246,6 +310,9 @@ def collect_doctor_report(
         )
     else:
         checks.append(make_check("docker_compose", "error", "Docker Compose is not available."))
+
+    if docker_path and docker_daemon_ok:
+        checks.append(local_postgres_container_check(docker_path, runner))
 
     env_path = root / ".env"
     env_keys = read_env_keys(env_path)

@@ -133,8 +133,10 @@ uv run geond doctor --format text
 uv run pytest
 ```
 
-`geond doctor` verifies `.env`, Docker, Compose, Postgres, pgvector, embedding
-configuration, and MCP tool/resource registration.
+`geond doctor` verifies `.env`, Docker, Compose, local Postgres container state,
+Postgres, pgvector, embedding configuration, and MCP tool/resource registration.
+If a stopped `geond-postgres` container already owns the compose service name,
+the report suggests `docker start geond-postgres` before recreating the service.
 
 ## Database Profiles
 

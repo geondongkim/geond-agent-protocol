@@ -17,6 +17,8 @@ def fake_runner(command: Sequence[str], timeout_seconds: int) -> subprocess.Comp
         return subprocess.CompletedProcess(command, 0, stdout="5.1.3\n", stderr="")
     if len(command) >= 2 and command[1] == "version" and "docker" in command[0]:
         return subprocess.CompletedProcess(command, 0, stdout="29.4.3\n", stderr="")
+    if len(command) >= 2 and command[1] == "ps" and "docker" in command[0]:
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
     return subprocess.CompletedProcess(command, 1, stdout="", stderr="unexpected command")
 
 
@@ -113,6 +115,52 @@ def test_collect_doctor_report_warns_on_amd64_emulation(
     assert checks["docker_default_platform"]["status"] == "warning"
     assert checks["uv"]["status"] == "error"
     assert report["status"] == "error"
+
+
+def test_collect_doctor_report_warns_on_stopped_geond_postgres(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    (tmp_path / ".env").write_text(
+        "GEOND_DATABASE_URL=postgresql://geond:geond_dev_password@localhost:55432/geond\n"
+        "GEOND_EMBEDDING_PROVIDER=none\n",
+        encoding="utf-8",
+    )
+
+    def runner(command: Sequence[str], timeout_seconds: int) -> subprocess.CompletedProcess[str]:
+        del timeout_seconds
+        if len(command) >= 2 and command[1] == "ps" and "docker" in command[0]:
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout="geond-postgres\tExited (0) 2 hours ago\t0.0.0.0:55432->5432/tcp\n",
+                stderr="",
+            )
+        return fake_runner(command, 5)
+
+    monkeypatch.setattr("geond.doctor.platform.system", lambda: "Linux")
+    monkeypatch.setattr("geond.doctor.platform.machine", lambda: "x86_64")
+    monkeypatch.delenv("DOCKER_DEFAULT_PLATFORM", raising=False)
+
+    paths = {
+        "uv": "/usr/bin/uv",
+        "docker": "/usr/bin/docker",
+        "docker-compose": "/usr/bin/docker-compose",
+    }
+    report = collect_doctor_report(
+        tmp_path,
+        check_database=False,
+        check_mcp=False,
+        check_antigravity=False,
+        runner=runner,
+        which=paths.get,
+    )
+
+    checks = {check["name"]: check for check in report["checks"]}
+    local_postgres = checks["local_postgres_container"]
+    assert local_postgres["status"] == "warning"
+    assert "docker start geond-postgres" in local_postgres["message"]
+    assert local_postgres["metadata"]["suggested_command"] == "docker start geond-postgres"
 
 
 def test_format_doctor_report() -> None:
