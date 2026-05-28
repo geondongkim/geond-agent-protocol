@@ -77,6 +77,12 @@ def candidate_transcript_paths(root: Path, session_id: str | None = None) -> lis
     return paths
 
 
+def latest_transcript_path(storage_path: Path | None = None) -> Path | None:
+    root = (storage_path or DEFAULT_TRANSCRIPT_ROOT).expanduser().resolve()
+    paths = candidate_transcript_paths(root)
+    return paths[0] if paths else None
+
+
 def parse_transcript_file(session_path: Path) -> ParsedAntigravitySession:
     events: list[ParsedAntigravityEvent] = []
     messages: list[ParsedAntigravityMessage] = []

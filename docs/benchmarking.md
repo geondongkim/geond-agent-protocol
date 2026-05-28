@@ -160,6 +160,20 @@ uv run geond record-agent-run \
     --workspace-uri file:///sample/geond
 ```
 
+For Antigravity captures, include the brain transcript session id when you know
+it. If the transcript has already been imported for the same workspace, Geond
+links the benchmark row to that imported session automatically.
+
+```bash
+uv run geond record-agent-run \
+    --agent antigravity \
+    --command "agy --print smoke" \
+    --stdout-bytes 0 \
+    --transcript-path ~/.gemini/antigravity-cli/brain/<session>/.system_generated/logs/transcript.jsonl \
+    --transcript-session-id <session> \
+    --workspace-uri file:///sample/geond
+```
+
 Report agent runs:
 
 ```bash
@@ -184,8 +198,10 @@ uv run geond compare-agents \
 ```
 
 Antigravity `agy --print` may produce a correct transcript while stdout stays
-empty in some Windows environments. In that case, store the transcript/log path
-and final-output hash as the authoritative capture.
+empty in some Windows environments. `compare-agents --agent antigravity` tries
+to attach the newest updated brain transcript path/session id to the stored
+agent-run benchmark; the report renders a compact evidence pointer when the
+transcript is imported, such as `session:<id> transcript:<external-id>`.
 
 ## Cleanup
 
