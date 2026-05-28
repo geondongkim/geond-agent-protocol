@@ -9,6 +9,7 @@ import pytest
 
 from geond.config import get_settings
 from geond.db import connect, run_schema_file
+from geond.mcp_server import server as mcp_server
 from geond.retrieval.simple import search_dev_memory
 from geond.storage.context_review import review_workspace_context
 from geond.storage.maintenance import seed_sample_workspace
@@ -19,6 +20,12 @@ SCHEMA = Path(__file__).parents[1] / "schemas" / "001_initial.sql"
 
 def _json_size(value: object) -> int:
     return len(json.dumps(value, ensure_ascii=False, default=str).encode("utf-8"))
+
+
+def test_search_dev_memory_mcp_schema_defaults_to_keyword() -> None:
+    tool = mcp_server.mcp._tool_manager._tools["search_dev_memory"]
+
+    assert tool.parameters["properties"]["mode"]["default"] == "keyword"
 
 
 def test_common_mcp_payloads_stay_compact_by_default() -> None:

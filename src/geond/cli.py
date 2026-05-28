@@ -60,6 +60,7 @@ from geond.storage.benchmark import (
     compare_benchmark_runs,
     format_agent_run_report_markdown,
     format_benchmark_report_markdown,
+    format_combined_benchmark_report_markdown,
     list_benchmark_runs,
     load_judgments,
     save_agent_run_benchmark,
@@ -1889,8 +1890,23 @@ def main() -> None:
         return
     if args.command == "benchmark-report":
         with connect(get_settings()) as conn:
-            report_kind = None if args.kind == "all" else args.kind
-            if args.kind == "agent-run":
+            if args.kind == "all":
+                result = {
+                    "search": compare_benchmark_runs(
+                        conn,
+                        workspace_uri=args.workspace_uri,
+                        mode=args.mode,
+                        kind="search",
+                        limit=args.limit,
+                    ),
+                    "agent_run": compare_agent_run_benchmark_runs(
+                        conn,
+                        workspace_uri=args.workspace_uri,
+                        agent=args.mode,
+                        limit=args.limit,
+                    ),
+                }
+            elif args.kind == "agent-run":
                 result = compare_agent_run_benchmark_runs(
                     conn,
                     workspace_uri=args.workspace_uri,
@@ -1902,7 +1918,7 @@ def main() -> None:
                     conn,
                     workspace_uri=args.workspace_uri,
                     mode=args.mode,
-                    kind=report_kind,
+                    kind=args.kind,
                     limit=args.limit,
                 )
             else:
@@ -1911,12 +1927,14 @@ def main() -> None:
                         conn,
                         workspace_uri=args.workspace_uri,
                         mode=args.mode,
-                        kind=report_kind,
+                        kind=args.kind,
                         limit=args.limit,
                     )
                 }
         if args.format == "markdown":
-            if args.kind == "agent-run":
+            if args.kind == "all":
+                print(format_combined_benchmark_report_markdown(result))
+            elif args.kind == "agent-run":
                 print(format_agent_run_report_markdown(result))
             else:
                 print(format_benchmark_report_markdown(result))

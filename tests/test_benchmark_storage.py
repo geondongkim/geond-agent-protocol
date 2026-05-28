@@ -12,6 +12,7 @@ from geond.storage.benchmark import (
     benchmark_search,
     compare_agent_run_benchmark_runs,
     compare_benchmark_runs,
+    format_combined_benchmark_report_markdown,
     save_agent_run_benchmark,
     save_benchmark_run,
 )
@@ -131,3 +132,34 @@ def test_agent_run_benchmark_can_be_saved_and_reported() -> None:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM workspaces WHERE id = %s", (workspace_id,))
             conn.commit()
+
+
+def test_combined_benchmark_report_markdown_keeps_kind_sections_separate() -> None:
+    markdown = format_combined_benchmark_report_markdown(
+        {
+            "search": {
+                "runs": [
+                    {
+                        "label": "search-smoke",
+                        "mode": "keyword",
+                        "query_count": 1,
+                        "total_results": 2,
+                    }
+                ]
+            },
+            "agent_run": {
+                "runs": [
+                    {
+                        "label": "agent-smoke",
+                        "agent": "antigravity",
+                        "wall_time_ms": 123.4,
+                    }
+                ]
+            },
+        }
+    )
+
+    assert "# Benchmark Report" in markdown
+    assert "# Agent Run Benchmark Report" in markdown
+    assert "search-smoke" in markdown
+    assert "agent-smoke" in markdown

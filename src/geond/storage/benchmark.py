@@ -647,6 +647,17 @@ def format_agent_run_report_markdown(report: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def format_combined_benchmark_report_markdown(report: dict[str, Any]) -> str:
+    search_report = report.get("search") if isinstance(report.get("search"), dict) else {}
+    agent_run_report = report.get("agent_run") if isinstance(report.get("agent_run"), dict) else {}
+    return "\n\n".join(
+        [
+            format_benchmark_report_markdown(search_report),
+            format_agent_run_report_markdown(agent_run_report),
+        ]
+    )
+
+
 def markdown_value(value: Any) -> str:
     return "" if value is None else str(value)
 

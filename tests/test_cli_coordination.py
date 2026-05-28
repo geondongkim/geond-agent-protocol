@@ -527,6 +527,67 @@ def test_benchmark_report_cli_routes_agent_run_markdown(monkeypatch, capsys) -> 
     assert captured == {"workspace_uri": "file:///repo", "agent": "codex", "limit": 3}
 
 
+def test_benchmark_report_cli_routes_all_kind_to_separate_reports(monkeypatch, capsys) -> None:
+    captured: dict[str, dict[str, object]] = {}
+
+    def fake_connect(settings) -> FakeConnection:  # noqa: ANN001
+        return FakeConnection()
+
+    def fake_compare_benchmark_runs(conn, **kwargs):  # noqa: ANN001, ANN202
+        captured["search"] = kwargs
+        return {"runs": [{"label": "search"}]}
+
+    def fake_compare_agent_run_benchmark_runs(conn, **kwargs):  # noqa: ANN001, ANN202
+        captured["agent_run"] = kwargs
+        return {"runs": [{"label": "agent"}]}
+
+    monkeypatch.setattr(cli, "connect", fake_connect)
+    monkeypatch.setattr(cli, "compare_benchmark_runs", fake_compare_benchmark_runs)
+    monkeypatch.setattr(
+        cli,
+        "compare_agent_run_benchmark_runs",
+        fake_compare_agent_run_benchmark_runs,
+    )
+    monkeypatch.setattr(
+        cli,
+        "format_combined_benchmark_report_markdown",
+        lambda result: (
+            f"{result['search']['runs'][0]['label']}+{result['agent_run']['runs'][0]['label']}"
+        ),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "geond",
+            "benchmark-report",
+            "--kind",
+            "all",
+            "--workspace-uri",
+            "file:///repo",
+            "--mode",
+            "codex",
+            "--limit",
+            "4",
+            "--format",
+            "markdown",
+        ],
+    )
+
+    cli.main()
+
+    assert capsys.readouterr().out.strip() == "search+agent"
+    assert captured == {
+        "search": {
+            "workspace_uri": "file:///repo",
+            "mode": "codex",
+            "kind": "search",
+            "limit": 4,
+        },
+        "agent_run": {"workspace_uri": "file:///repo", "agent": "codex", "limit": 4},
+    }
+
+
 def test_compare_agents_cli_records_failed_agent_run(monkeypatch, tmp_path, capsys) -> None:
     captured: list[dict[str, object]] = []
     prompt_file = tmp_path / "prompt.txt"

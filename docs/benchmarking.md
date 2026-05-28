@@ -166,6 +166,12 @@ Report agent runs:
 uv run geond benchmark-report --kind agent-run --format markdown
 ```
 
+Show search and agent-run history together without mixing their table shapes:
+
+```bash
+uv run geond benchmark-report --kind all --format markdown
+```
+
 For simple local smoke comparisons:
 
 ```bash

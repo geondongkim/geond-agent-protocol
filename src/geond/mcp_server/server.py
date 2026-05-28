@@ -69,7 +69,7 @@ mcp = FastMCP("geond-agent-protocol")
 def search_dev_memory(
     query: str,
     limit: int = 10,
-    mode: str = "hybrid",
+    mode: str = "keyword",
     workspace_uri: str | None = None,
     source: str | None = None,
     rerank: str = "none",

@@ -252,6 +252,8 @@ The Antigravity config target is
 `C:\Users\<user>\.gemini\config\mcp_config.json`; Geond preserves other
 `mcpServers` entries and writes `GEOND_PRIVACY_MODE=local-only` plus
 `GEOND_EMBEDDING_PROVIDER=none` by default.
+`search_dev_memory` defaults to keyword mode on the MCP surface, so clients can
+omit `mode` and still search when embeddings are intentionally disabled.
 
 ## Useful Resources
 

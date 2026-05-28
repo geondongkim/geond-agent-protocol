@@ -37,6 +37,7 @@ Thumbs.db
 
 # Local agent state
 .claude/
+.antigravitycli/
 
 # One-off local investigation scripts at the repository root
 /_*.py

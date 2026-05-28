@@ -1,7 +1,8 @@
 # Agent Testbeds
 
-This document summarizes the current validation surface for Geond across three
-agent sources: GitHub Copilot Chat in VS Code, Codex, and Claude Code.
+This document summarizes the current validation surface for Geond across four
+agent sources: GitHub Copilot Chat in VS Code, Codex, Claude Code, and
+Antigravity.
 
 ## Evaluation Summary
 
@@ -30,6 +31,7 @@ adding DB storage and CLI import paths.
 | GitHub Copilot Chat in VS Code | `workspaceStorage/<hash>`, `state.vscdb`, `chatSessions`, `chatEditingSessions`, `GitHub.copilot-chat/transcripts` | Parser tests, fixture tests, DB import path, redaction, retrieval | Rich editor context and file snapshots | VS Code internal schema can change; live verification should stay opt-in because storage may contain private chat content |
 | Codex | `~/.codex/session_index.jsonl`, `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` | Parser tests, DB import, redaction, retrieval, source filtering | Good second source for agent/tool event normalization; easy local JSONL validation | Large tool logs and reasoning-adjacent payloads need conservative retention defaults |
 | Claude Code | `~/.claude/projects/{encoded-cwd}/{session}.jsonl` | Parser tests, DB import, redaction, retrieval, source filtering | Strong workspace metadata, parent/child event links, tool calls, cwd/git branch/version | `thinking` blocks should remain event-only and redacted; encoded directory names are not reliable workspace identities |
+| Antigravity | `~/.gemini/antigravity-cli/brain/**/.system_generated/logs/transcript.jsonl` | Parser tests, DB import path, redaction, retrieval, source filtering, agent-run benchmark recording, live CLI/MCP smoke | Headless `agy --print` runs create importable transcripts; `geond install --client antigravity` wires the Geond MCP server into Antigravity config | CLI stdout may be empty even when the transcript has the answer; token usage is nullable; desktop/Roaming logs should stay explicit opt-in |
 
 ## Verification Status
 
@@ -39,6 +41,12 @@ adding DB storage and CLI import paths.
 - Codex: verified with sanitized JSONL fixture, DB import, redaction, and search.
 - Claude Code: verified with sanitized JSONL fixture, parser tests, DB import,
   redaction, and search.
+- Antigravity: verified with sanitized fixture tests plus live headless
+  `agy --print` smokes on 2026-05-29. The run imported the latest transcript
+  session, preserved idempotent re-import behavior, found the marker through
+  CLI source-filtered search, found the same marker through `geond mcp-smoke`,
+  and confirmed Antigravity could invoke the configured `geond`
+  `search_dev_memory` MCP tool directly.
 
 ## Improvements Derived From The Testbeds
 
@@ -54,6 +62,11 @@ adding DB storage and CLI import paths.
    can be compared by quality, not only latency.
 6. Use `geond://workspaces/{id}/timeline`, reservations, handoffs, and symbol
    resources as the common MCP validation path across all agents.
+7. When an importer supports live CLI execution, `--limit 1` should select the
+   newest transcript, not the lexicographically first transcript path.
+8. Local-only MCP client configs with `GEOND_EMBEDDING_PROVIDER=none` need
+   keyword-safe defaults, because agent clients often omit optional `mode`
+   arguments when calling a search tool.
 
 ## Next Validation Scenarios
 
