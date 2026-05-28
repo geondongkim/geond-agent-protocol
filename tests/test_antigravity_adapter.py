@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from geond.adapters.antigravity import parse_storage, parse_transcript_file, to_summary
@@ -30,3 +31,21 @@ def test_parse_antigravity_storage_uses_default_transcript_name_and_limit() -> N
 
     assert len(sessions) == 1
     assert sessions[0].session_id == "agy-session-1"
+
+
+def test_parse_antigravity_storage_limits_to_newest_transcript(tmp_path: Path) -> None:
+    older = tmp_path / "older" / ".system_generated" / "logs" / "transcript.jsonl"
+    newer = tmp_path / "newer" / ".system_generated" / "logs" / "transcript.jsonl"
+    for path, content in (
+        (older, '{"source":"user","type":"message","content":"old"}\n'),
+        (newer, '{"source":"user","type":"message","content":"new"}\n'),
+    ):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    os.utime(older, (1000, 1000))
+    os.utime(newer, (2000, 2000))
+
+    sessions = parse_storage(tmp_path, limit=1)
+
+    assert len(sessions) == 1
+    assert sessions[0].session_id == "newer"

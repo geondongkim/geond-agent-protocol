@@ -61,7 +61,10 @@ def parse_storage(
 def candidate_transcript_paths(root: Path, session_id: str | None = None) -> list[Path]:
     if root.is_file():
         return [root] if root.name == "transcript.jsonl" or root.suffix == ".jsonl" else []
-    paths = sorted(root.rglob("transcript.jsonl"))
+    paths = sorted(
+        root.rglob("transcript.jsonl"),
+        key=lambda path: (-path.stat().st_mtime, str(path)),
+    )
     if session_id:
         return [path for path in paths if session_id in str(path)]
     return paths
