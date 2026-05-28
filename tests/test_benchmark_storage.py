@@ -108,26 +108,97 @@ def test_agent_run_benchmark_can_be_saved_and_reported() -> None:
             run_id = save_agent_run_benchmark(
                 conn,
                 workspace_uri=workspace_uri,
-                agent="codex",
-                command="codex exec smoke",
+                agent="antigravity",
+                command="agy --print smoke",
                 label="agent-smoke",
                 prompt_text="hello",
                 prompt_label="smoke.txt",
                 wall_time_ms=123.4,
-                provider="openai",
-                model="gpt-test",
+                provider="google",
+                model="gemini-test",
                 final_output="SECRET_TOKEN=abc123456789abcdef",
                 stdout_bytes=0,
-                transcript_paths=["codex.final.txt"],
+                transcript_paths=[
+                    (
+                        "C:/Users/test/.gemini/antigravity-cli/brain/"
+                        "agy-session-99/.system_generated/logs/transcript.jsonl"
+                    )
+                ],
+                transcript_session_id="agy-session-99",
                 token_usage={"total_tokens": 42},
             )
             report = compare_agent_run_benchmark_runs(conn, workspace_uri=workspace_uri)
 
             assert run_id
-            assert report["runs"][0]["agent"] == "codex"
+            assert report["runs"][0]["agent"] == "antigravity"
             assert report["runs"][0]["wall_time_ms"] == 123.4
             assert report["runs"][0]["stdout_bytes"] == 0
-            assert report["runs"][0]["transcript_path"] == "codex.final.txt"
+            assert report["runs"][0]["transcript_session_id"] == "agy-session-99"
+            assert report["runs"][0]["evidence_ref"] == "transcript:agy-session-99"
+        finally:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM workspaces WHERE id = %s", (workspace_id,))
+            conn.commit()
+
+
+def test_agent_run_benchmark_links_imported_antigravity_session() -> None:
+    settings = get_settings()
+    workspace_uri = f"file:///tmp/geond-agent-run-link-test-{uuid4()}"
+
+    try:
+        conn = connect(settings)
+    except psycopg.OperationalError as exc:
+        pytest.skip(f"Postgres integration database is not available: {exc}")
+
+    with conn:
+        try:
+            run_schema_file(conn, SCHEMA)
+        except psycopg.Error as exc:
+            pytest.skip(f"Postgres integration schema is not available: {exc}")
+
+        workspace_id = seed_sample_workspace(conn)["workspace_id"]
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE workspaces SET root_uri = %s WHERE id = %s",
+                (workspace_uri, workspace_id),
+            )
+            cur.execute(
+                """
+                INSERT INTO sessions (workspace_id, source, external_id, title, metadata)
+                VALUES (%s, 'antigravity', 'agy-session-linked', 'linked', '{}')
+                RETURNING id::text
+                """,
+                (workspace_id,),
+            )
+            geond_session_id = cur.fetchone()[0]
+        conn.commit()
+        try:
+            run_id = save_agent_run_benchmark(
+                conn,
+                workspace_uri=workspace_uri,
+                agent="antigravity",
+                command="agy --print smoke",
+                label="agent-linked",
+                stdout_bytes=0,
+                transcript_paths=[
+                    (
+                        "C:/Users/test/.gemini/antigravity-cli/brain/"
+                        "agy-session-linked/.system_generated/logs/transcript.jsonl"
+                    )
+                ],
+            )
+            report = compare_agent_run_benchmark_runs(conn, workspace_uri=workspace_uri)
+            markdown = format_combined_benchmark_report_markdown(
+                {"search": {"runs": []}, "agent_run": report}
+            )
+
+            assert run_id
+            assert report["runs"][0]["transcript_session_id"] == "agy-session-linked"
+            assert report["runs"][0]["geond_session_id"] == geond_session_id
+            assert report["runs"][0]["evidence_ref"] == (
+                f"session:{geond_session_id[:8]} transcript:agy-session-linked"
+            )
+            assert f"session:{geond_session_id[:8]} transcript:agy-session-linked" in markdown
         finally:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM workspaces WHERE id = %s", (workspace_id,))

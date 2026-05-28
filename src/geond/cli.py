@@ -10,8 +10,10 @@ import sys
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
-from time import perf_counter
+from time import perf_counter, time
 
+from geond.adapters.antigravity import infer_session_id as infer_antigravity_session_id
+from geond.adapters.antigravity import latest_transcript_path as latest_antigravity_transcript_path
 from geond.adapters.antigravity import parse_storage as parse_antigravity_storage
 from geond.adapters.antigravity import to_summary as antigravity_to_summary
 from geond.adapters.claude_code import parse_storage as parse_claude_code_storage
@@ -229,6 +231,7 @@ def run_agent_compare(
         agy = resolve_antigravity_cli()
         command = [agy, "--print", prompt, "--print-timeout", f"{timeout_seconds}s", "--log-file"]
         suffix = ".agy.log"
+        before_transcript = latest_antigravity_transcript_path()
     else:
         raise ValueError(f"Unsupported agent: {agent}")
 
@@ -239,6 +242,7 @@ def run_agent_compare(
     else:
         command.append(str(output_path))
 
+    started_epoch = time()
     started = perf_counter()
     completed = subprocess.run(
         command,
@@ -254,6 +258,19 @@ def run_agent_compare(
         final_output = output_path.read_text(encoding="utf-8", errors="replace")
     if not final_output:
         final_output = completed.stdout or completed.stderr or ""
+    metadata: dict[str, object] = {"returncode": completed.returncode}
+    transcript_paths = [str(output_path)] if agent == "codex" else []
+    transcript_session_id = None
+    if agent == "antigravity":
+        transcript_path = resolve_antigravity_run_transcript(
+            before_transcript=before_transcript,
+            started_epoch=started_epoch,
+        )
+        if transcript_path is not None:
+            transcript_paths = [str(transcript_path)]
+            transcript_session_id = infer_antigravity_session_id(transcript_path)
+            metadata["transcript_session_id"] = transcript_session_id
+            metadata["transcript_path"] = str(transcript_path)
     return {
         "agent": agent,
         "command": " ".join(command),
@@ -261,10 +278,28 @@ def run_agent_compare(
         "final_output": final_output,
         "stdout_bytes": len((completed.stdout or "").encode("utf-8")),
         "stderr_bytes": len((completed.stderr or "").encode("utf-8")),
-        "transcript_paths": [str(output_path)] if agent == "codex" else [],
+        "transcript_paths": transcript_paths,
+        "transcript_session_id": transcript_session_id,
         "log_paths": [str(output_path)] if agent == "antigravity" else [],
-        "metadata": {"returncode": completed.returncode},
+        "metadata": metadata,
     }
+
+
+def resolve_antigravity_run_transcript(
+    *,
+    before_transcript: Path | None,
+    started_epoch: float,
+) -> Path | None:
+    after_transcript = latest_antigravity_transcript_path()
+    if after_transcript is None:
+        return None
+    if before_transcript is None or after_transcript != before_transcript:
+        return after_transcript
+    try:
+        modified_epoch = after_transcript.stat().st_mtime
+    except OSError:
+        return None
+    return after_transcript if modified_epoch >= started_epoch - 1 else None
 
 
 def resolve_antigravity_cli() -> str:
@@ -445,6 +480,8 @@ def run_antigravity_testbed(
                         if isinstance(agent_run.get("stderr_bytes"), int)
                         else None,
                         transcript_paths=[str(session.session_path)],
+                        transcript_session_id=session.session_id,
+                        geond_session_id=session_row_id,
                         log_paths=agent_run.get("log_paths")
                         if isinstance(agent_run.get("log_paths"), list)
                         else None,
@@ -1751,6 +1788,8 @@ def main() -> None:
     record_agent_run.add_argument("--stdout-bytes", type=int)
     record_agent_run.add_argument("--stderr-bytes", type=int)
     record_agent_run.add_argument("--transcript-path", action="append")
+    record_agent_run.add_argument("--transcript-session-id")
+    record_agent_run.add_argument("--geond-session-id")
     record_agent_run.add_argument("--log-path", action="append")
     record_agent_run.add_argument("--input-tokens", type=int)
     record_agent_run.add_argument("--output-tokens", type=int)
@@ -2152,6 +2191,8 @@ def main() -> None:
                 stdout_bytes=args.stdout_bytes,
                 stderr_bytes=args.stderr_bytes,
                 transcript_paths=args.transcript_path,
+                transcript_session_id=args.transcript_session_id,
+                geond_session_id=args.geond_session_id,
                 log_paths=args.log_path,
                 token_usage=token_usage,
                 metadata={"source": "cli"},
@@ -2204,6 +2245,9 @@ def main() -> None:
                     else None,
                     transcript_paths=run.get("transcript_paths")
                     if isinstance(run.get("transcript_paths"), list)
+                    else None,
+                    transcript_session_id=run.get("transcript_session_id")
+                    if isinstance(run.get("transcript_session_id"), str)
                     else None,
                     log_paths=run.get("log_paths")
                     if isinstance(run.get("log_paths"), list)

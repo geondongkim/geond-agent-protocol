@@ -447,6 +447,10 @@ def test_record_agent_run_cli_wires_storage(monkeypatch, tmp_path, capsys) -> No
             "14",
             "--transcript-path",
             "transcript.jsonl",
+            "--transcript-session-id",
+            "agy-session-1",
+            "--geond-session-id",
+            "session-row-1",
             "--log-path",
             "agy.log",
             "--input-tokens",
@@ -472,6 +476,8 @@ def test_record_agent_run_cli_wires_storage(monkeypatch, tmp_path, capsys) -> No
     assert captured["stdout_bytes"] == 0
     assert captured["stderr_bytes"] == 14
     assert captured["transcript_paths"] == ["transcript.jsonl"]
+    assert captured["transcript_session_id"] == "agy-session-1"
+    assert captured["geond_session_id"] == "session-row-1"
     assert captured["log_paths"] == ["agy.log"]
     assert captured["token_usage"] == {"input_tokens": 10, "total_tokens": 30}
     assert captured["metadata"] == {"source": "cli"}
@@ -651,6 +657,24 @@ def test_compare_agents_cli_records_failed_agent_run(monkeypatch, tmp_path, caps
     }
 
 
+def test_resolve_antigravity_run_transcript_accepts_updated_latest_path(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    transcript = tmp_path / "agy-session-new" / ".system_generated" / "logs" / "transcript.jsonl"
+    transcript.parent.mkdir(parents=True)
+    transcript.write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(cli, "latest_antigravity_transcript_path", lambda: transcript)
+
+    resolved = cli.resolve_antigravity_run_transcript(
+        before_transcript=None,
+        started_epoch=transcript.stat().st_mtime + 100,
+    )
+
+    assert resolved == transcript
+
+
 def test_testbed_antigravity_cli_runs_import_search_mcp_and_benchmarks(
     monkeypatch,
     tmp_path,
@@ -768,4 +792,6 @@ def test_testbed_antigravity_cli_runs_import_search_mcp_and_benchmarks(
         "source": "antigravity",
     }
     assert captured["save_agent_run_benchmark"]["transcript_paths"] == [str(transcript_path)]
+    assert captured["save_agent_run_benchmark"]["transcript_session_id"] == "agy-session-1"
+    assert captured["save_agent_run_benchmark"]["geond_session_id"] == "session-row-1"
     assert captured["benchmark_search"]["queries"] == ["GEOND_MARKER"]

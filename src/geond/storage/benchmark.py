@@ -173,6 +173,8 @@ def save_agent_run_benchmark(
     stdout_path: str | None = None,
     stderr_path: str | None = None,
     transcript_paths: list[str] | None = None,
+    transcript_session_id: str | None = None,
+    geond_session_id: str | None = None,
     log_paths: list[str] | None = None,
     stdout_bytes: int | None = None,
     stderr_bytes: int | None = None,
@@ -182,6 +184,16 @@ def save_agent_run_benchmark(
     normalized_command = command if isinstance(command, str) else " ".join(command)
     resolved_prompt_hash = prompt_hash or sha256_text(prompt_text)
     resolved_final_hash = final_output_hash or sha256_text(final_output)
+    resolved_transcript_session_id = transcript_session_id or infer_agent_transcript_session_id(
+        agent, transcript_paths
+    )
+    workspace_id = resolve_workspace_id(conn, workspace_uri) if workspace_uri else None
+    resolved_geond_session_id = geond_session_id or resolve_agent_session_row_id(
+        conn,
+        workspace_id=workspace_id,
+        source=agent,
+        external_id=resolved_transcript_session_id,
+    )
     final_excerpt = None
     if final_output:
         redacted_output, _ = redact_text(final_output)
@@ -205,6 +217,13 @@ def save_agent_run_benchmark(
         "stdout": {"path": stdout_path, "bytes": resolved_stdout_bytes},
         "stderr": {"path": stderr_path, "bytes": resolved_stderr_bytes},
         "transcript_paths": transcript_paths or [],
+        "transcript_session_id": resolved_transcript_session_id,
+        "geond_session_id": resolved_geond_session_id,
+        "evidence": {
+            "transcript_path": first_path(transcript_paths),
+            "transcript_session_id": resolved_transcript_session_id,
+            "geond_session_id": resolved_geond_session_id,
+        },
         "log_paths": log_paths or [],
         "token_usage": token_usage or {},
         "repeat": 1,
@@ -219,6 +238,31 @@ def save_agent_run_benchmark(
         metadata=metadata or {},
         kind="agent-run",
     )
+
+
+def resolve_agent_session_row_id(
+    conn: Connection,
+    *,
+    workspace_id: str | None,
+    source: str,
+    external_id: str | None,
+) -> str | None:
+    if not workspace_id or not external_id:
+        return None
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id::text
+            FROM sessions
+            WHERE workspace_id = %s::uuid
+              AND source = %s
+              AND external_id = %s
+            LIMIT 1
+            """,
+            (workspace_id, source, external_id),
+        )
+        row = cur.fetchone()
+    return row[0] if row else None
 
 
 def list_benchmark_runs(
@@ -359,6 +403,17 @@ def compare_agent_run_benchmark_runs(
         token_usage = (
             result.get("token_usage") if isinstance(result.get("token_usage"), dict) else {}
         )
+        evidence = result.get("evidence") if isinstance(result.get("evidence"), dict) else {}
+        transcript_session_id = result.get("transcript_session_id") or evidence.get(
+            "transcript_session_id"
+        )
+        geond_session_id = result.get("geond_session_id") or evidence.get("geond_session_id")
+        evidence_ref = format_agent_evidence_ref(
+            geond_session_id=geond_session_id,
+            transcript_session_id=transcript_session_id,
+            transcript_path=first_path(result.get("transcript_paths"))
+            or evidence.get("transcript_path"),
+        )
         rows.append(
             {
                 "benchmark_run_id": run.get("benchmark_run_id"),
@@ -371,6 +426,9 @@ def compare_agent_run_benchmark_runs(
                 "stdout_bytes": stdout.get("bytes"),
                 "stderr_bytes": stderr.get("bytes"),
                 "transcript_path": first_path(result.get("transcript_paths")),
+                "transcript_session_id": transcript_session_id,
+                "geond_session_id": geond_session_id,
+                "evidence_ref": evidence_ref,
                 "prompt_label": result.get("prompt_label"),
                 "total_tokens": token_usage.get("total_tokens"),
                 "created_at": run.get("created_at"),
@@ -638,7 +696,7 @@ def format_agent_run_report_markdown(report: dict[str, Any]) -> str:
                 model=row.get("model") or "",
                 wall_time_ms=markdown_value(row.get("wall_time_ms")),
                 stdout_bytes=markdown_value(row.get("stdout_bytes")),
-                transcript_path=row.get("transcript_path") or "",
+                transcript_path=row.get("evidence_ref") or row.get("transcript_path") or "",
                 prompt_label=row.get("prompt_label") or "",
                 total_tokens=markdown_value(row.get("total_tokens")),
                 created_at=row.get("created_at") or "",
@@ -682,6 +740,49 @@ def first_path(paths: Any) -> str | None:
         first = paths[0]
         return first if isinstance(first, str) else str(first)
     return None
+
+
+def infer_agent_transcript_session_id(agent: str, paths: list[str] | None) -> str | None:
+    if agent != "antigravity":
+        return None
+    path = first_path(paths)
+    if not path:
+        return None
+    parts = path.replace("\\", "/").split("/")
+    if ".system_generated" in parts:
+        index = parts.index(".system_generated")
+        if index > 0:
+            return parts[index - 1]
+    return None
+
+
+def format_agent_evidence_ref(
+    *,
+    geond_session_id: Any,
+    transcript_session_id: Any,
+    transcript_path: Any,
+) -> str:
+    parts = []
+    if isinstance(geond_session_id, str) and geond_session_id:
+        parts.append(f"session:{short_id(geond_session_id)}")
+    if isinstance(transcript_session_id, str) and transcript_session_id:
+        parts.append(f"transcript:{transcript_session_id}")
+    elif isinstance(transcript_path, str) and transcript_path:
+        parts.append(f"path:{compact_transcript_path(transcript_path)}")
+    return " ".join(parts)
+
+
+def short_id(value: str) -> str:
+    return value[:8] if len(value) > 8 else value
+
+
+def compact_transcript_path(path: str) -> str:
+    parts = path.replace("\\", "/").split("/")
+    if ".system_generated" in parts:
+        index = parts.index(".system_generated")
+        if index > 0:
+            return parts[index - 1]
+    return parts[-1] if parts else path
 
 
 def run_search_once(
