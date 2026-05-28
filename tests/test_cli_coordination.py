@@ -675,6 +675,36 @@ def test_resolve_antigravity_run_transcript_accepts_updated_latest_path(
     assert resolved == transcript
 
 
+def test_run_agent_compare_codex_prefers_latest_session_transcript(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    transcript = tmp_path / "codex-session.jsonl"
+    output_paths: list[str] = []
+
+    def fake_run(command, **kwargs):  # noqa: ANN001, ANN202
+        output_paths.append(command[-1])
+        transcript.write_text(
+            '{"type":"session_meta","payload":{"id":"codex-session-1"}}\n',
+            encoding="utf-8",
+        )
+        return SimpleNamespace(stdout="", stderr="", returncode=0)
+
+    monkeypatch.setattr(cli, "latest_codex_session_path", lambda: transcript)
+    monkeypatch.setattr(cli.subprocess, "run", fake_run)
+
+    result = cli.run_agent_compare(
+        "codex",
+        "say hello",
+        timeout_seconds=30,
+        workspace_root=tmp_path,
+    )
+
+    assert result["transcript_paths"] == [str(transcript)]
+    assert result["metadata"]["transcript_path"] == str(transcript)
+    assert result["metadata"]["final_output_path"] == output_paths[0]
+
+
 def test_testbed_antigravity_cli_runs_import_search_mcp_and_benchmarks(
     monkeypatch,
     tmp_path,

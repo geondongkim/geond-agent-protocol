@@ -9,6 +9,7 @@ from geond.adapters.paths import newest_first_key
 
 SOURCE = "codex"
 NON_SESSION_JSONL_NAMES = {"history.jsonl", "session_index.jsonl"}
+DEFAULT_SESSIONS_ROOT = Path.home() / ".codex" / "sessions"
 
 
 @dataclass(frozen=True)
@@ -76,6 +77,12 @@ def candidate_session_paths(storage_path: Path, session_id: str | None = None) -
     if not session_id:
         return paths
     return [path for path in paths if session_id in path.name]
+
+
+def latest_session_path(storage_path: Path | None = None) -> Path | None:
+    root = (storage_path or DEFAULT_SESSIONS_ROOT).expanduser().resolve()
+    paths = candidate_session_paths(root)
+    return paths[0] if paths else None
 
 
 def read_session_index(storage_path: Path) -> dict[str, str]:

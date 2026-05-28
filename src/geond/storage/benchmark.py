@@ -182,6 +182,7 @@ def save_agent_run_benchmark(
     metadata: dict[str, Any] | None = None,
 ) -> str:
     normalized_command = command if isinstance(command, str) else " ".join(command)
+    normalized_agent_source = normalize_agent_source(agent)
     resolved_prompt_hash = prompt_hash or sha256_text(prompt_text)
     resolved_final_hash = final_output_hash or sha256_text(final_output)
     resolved_transcript_session_id = transcript_session_id or infer_agent_transcript_session_id(
@@ -191,7 +192,7 @@ def save_agent_run_benchmark(
     resolved_geond_session_id = geond_session_id or resolve_agent_session_row_id(
         conn,
         workspace_id=workspace_id,
-        source=agent,
+        source=normalized_agent_source,
         external_id=resolved_transcript_session_id,
     )
     final_excerpt = None
@@ -743,17 +744,109 @@ def first_path(paths: Any) -> str | None:
 
 
 def infer_agent_transcript_session_id(agent: str, paths: list[str] | None) -> str | None:
-    if agent != "antigravity":
-        return None
+    normalized_agent = normalize_agent_source(agent)
     path = first_path(paths)
     if not path:
         return None
+    if normalized_agent == "antigravity":
+        return infer_antigravity_transcript_session_id(path)
+    if normalized_agent == "codex":
+        return infer_codex_transcript_session_id(path)
+    if normalized_agent == "claude-code":
+        return infer_claude_code_transcript_session_id(path)
+    if normalized_agent == "vscode-copilot":
+        return infer_jsonl_stem(path)
+    return None
+
+
+def normalize_agent_source(agent: str) -> str:
+    normalized = agent.strip().casefold().replace("_", "-")
+    aliases = {
+        "claude": "claude-code",
+        "claude-code": "claude-code",
+        "codex": "codex",
+        "copilot": "vscode-copilot",
+        "vscode": "vscode-copilot",
+        "vscode-copilot": "vscode-copilot",
+        "vs-code-copilot": "vscode-copilot",
+        "antigravity": "antigravity",
+    }
+    return aliases.get(normalized, normalized)
+
+
+def infer_antigravity_transcript_session_id(path: str) -> str | None:
     parts = path.replace("\\", "/").split("/")
     if ".system_generated" in parts:
         index = parts.index(".system_generated")
         if index > 0:
             return parts[index - 1]
     return None
+
+
+def infer_codex_transcript_session_id(path: str) -> str | None:
+    jsonl_session_id = first_jsonl_string(
+        path,
+        (
+            ("type=session_meta", "payload.id"),
+            ("payload.type=session_meta", "payload.id"),
+            ("id",),
+        ),
+    )
+    return jsonl_session_id or infer_jsonl_stem(path)
+
+
+def infer_claude_code_transcript_session_id(path: str) -> str | None:
+    jsonl_session_id = first_jsonl_string(path, (("sessionId",),))
+    return jsonl_session_id or infer_jsonl_stem(path)
+
+
+def infer_jsonl_stem(path: str) -> str | None:
+    candidate = Path(path)
+    return candidate.stem if candidate.suffix.casefold() == ".jsonl" else None
+
+
+def first_jsonl_string(path: str, selectors: tuple[tuple[str, ...], ...]) -> str | None:
+    candidate = Path(path)
+    if candidate.suffix.casefold() != ".jsonl" or not candidate.exists():
+        return None
+    try:
+        lines = candidate.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return None
+    for line in lines[:200]:
+        if not line.strip():
+            continue
+        try:
+            raw = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(raw, dict):
+            continue
+        for selector in selectors:
+            if selector_matches(raw, selector):
+                value = nested_get(raw, selector[-1])
+                if isinstance(value, str) and value:
+                    return value
+    return None
+
+
+def selector_matches(value: dict[str, Any], selector: tuple[str, ...]) -> bool:
+    for condition in selector[:-1]:
+        if "=" not in condition:
+            continue
+        path, expected = condition.split("=", 1)
+        if nested_get(value, path) != expected:
+            return False
+    return True
+
+
+def nested_get(value: dict[str, Any], path: str) -> Any:
+    current: Any = value
+    for part in path.split("."):
+        if not isinstance(current, dict):
+            return None
+        current = current.get(part)
+    return current
 
 
 def format_agent_evidence_ref(

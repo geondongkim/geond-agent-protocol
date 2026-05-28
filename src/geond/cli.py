@@ -18,6 +18,7 @@ from geond.adapters.antigravity import parse_storage as parse_antigravity_storag
 from geond.adapters.antigravity import to_summary as antigravity_to_summary
 from geond.adapters.claude_code import parse_storage as parse_claude_code_storage
 from geond.adapters.claude_code import to_summary as claude_code_to_summary
+from geond.adapters.codex import latest_session_path as latest_codex_session_path
 from geond.adapters.codex import parse_storage as parse_codex_storage
 from geond.adapters.codex import to_summary as codex_to_summary
 from geond.adapters.manus import AGENT_NAME as MANUS_AGENT_NAME
@@ -227,6 +228,7 @@ def run_agent_compare(
     if agent == "codex":
         command = ["codex", "exec", prompt, "--ephemeral", "--output-last-message"]
         suffix = ".codex.final.txt"
+        before_transcript = latest_codex_session_path()
     elif agent == "antigravity":
         agy = resolve_antigravity_cli()
         command = [agy, "--print", prompt, "--print-timeout", f"{timeout_seconds}s", "--log-file"]
@@ -261,6 +263,15 @@ def run_agent_compare(
     metadata: dict[str, object] = {"returncode": completed.returncode}
     transcript_paths = [str(output_path)] if agent == "codex" else []
     transcript_session_id = None
+    if agent == "codex":
+        transcript_path = resolve_codex_run_transcript(
+            before_transcript=before_transcript,
+            started_epoch=started_epoch,
+        )
+        if transcript_path is not None:
+            transcript_paths = [str(transcript_path)]
+            metadata["transcript_path"] = str(transcript_path)
+        metadata["final_output_path"] = str(output_path)
     if agent == "antigravity":
         transcript_path = resolve_antigravity_run_transcript(
             before_transcript=before_transcript,
@@ -285,21 +296,45 @@ def run_agent_compare(
     }
 
 
+def resolve_codex_run_transcript(
+    *,
+    before_transcript: Path | None,
+    started_epoch: float,
+) -> Path | None:
+    return resolve_updated_latest_path(
+        latest_path=latest_codex_session_path(),
+        before_path=before_transcript,
+        started_epoch=started_epoch,
+    )
+
+
 def resolve_antigravity_run_transcript(
     *,
     before_transcript: Path | None,
     started_epoch: float,
 ) -> Path | None:
-    after_transcript = latest_antigravity_transcript_path()
-    if after_transcript is None:
+    return resolve_updated_latest_path(
+        latest_path=latest_antigravity_transcript_path(),
+        before_path=before_transcript,
+        started_epoch=started_epoch,
+    )
+
+
+def resolve_updated_latest_path(
+    *,
+    latest_path: Path | None,
+    before_path: Path | None,
+    started_epoch: float,
+) -> Path | None:
+    if latest_path is None:
         return None
-    if before_transcript is None or after_transcript != before_transcript:
-        return after_transcript
+    if before_path is None or latest_path != before_path:
+        return latest_path
     try:
-        modified_epoch = after_transcript.stat().st_mtime
+        modified_epoch = latest_path.stat().st_mtime
     except OSError:
         return None
-    return after_transcript if modified_epoch >= started_epoch - 1 else None
+    return latest_path if modified_epoch >= started_epoch - 1 else None
 
 
 def resolve_antigravity_cli() -> str:

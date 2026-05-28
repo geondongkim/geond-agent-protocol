@@ -13,6 +13,7 @@ from geond.storage.benchmark import (
     compare_agent_run_benchmark_runs,
     compare_benchmark_runs,
     format_combined_benchmark_report_markdown,
+    infer_agent_transcript_session_id,
     save_agent_run_benchmark,
     save_benchmark_run,
 )
@@ -199,6 +200,95 @@ def test_agent_run_benchmark_links_imported_antigravity_session() -> None:
                 f"session:{geond_session_id[:8]} transcript:agy-session-linked"
             )
             assert f"session:{geond_session_id[:8]} transcript:agy-session-linked" in markdown
+        finally:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM workspaces WHERE id = %s", (workspace_id,))
+            conn.commit()
+
+
+def test_agent_run_transcript_session_id_inference_for_other_agents(tmp_path: Path) -> None:
+    codex_path = tmp_path / "codex.jsonl"
+    codex_path.write_text(
+        (
+            '{"type":"session_meta","payload":{"id":"codex-session-42"}}\n'
+            '{"type":"response_item","payload":{"type":"message","role":"assistant"}}\n'
+        ),
+        encoding="utf-8",
+    )
+    claude_path = tmp_path / "claude-session-file.jsonl"
+    claude_path.write_text(
+        '{"type":"user","sessionId":"claude-session-42","message":{"content":[]}}\n',
+        encoding="utf-8",
+    )
+    vscode_path = tmp_path / "vscode-session-42.jsonl"
+    vscode_path.write_text('{"type":"assistant.message","data":{"text":"ok"}}\n', encoding="utf-8")
+    final_output_path = tmp_path / "codex.final.txt"
+    final_output_path.write_text("not a transcript", encoding="utf-8")
+
+    assert infer_agent_transcript_session_id("codex", [str(codex_path)]) == "codex-session-42"
+    assert (
+        infer_agent_transcript_session_id("claude-code", [str(claude_path)]) == "claude-session-42"
+    )
+    assert (
+        infer_agent_transcript_session_id("vscode-copilot", [str(vscode_path)])
+        == "vscode-session-42"
+    )
+    assert infer_agent_transcript_session_id("codex", [str(final_output_path)]) is None
+
+
+def test_agent_run_benchmark_links_imported_codex_session(tmp_path: Path) -> None:
+    settings = get_settings()
+    workspace_uri = f"file:///tmp/geond-agent-run-codex-link-test-{uuid4()}"
+    transcript_path = tmp_path / "codex-session.jsonl"
+    transcript_path.write_text(
+        '{"type":"session_meta","payload":{"id":"codex-linked-session"}}\n',
+        encoding="utf-8",
+    )
+
+    try:
+        conn = connect(settings)
+    except psycopg.OperationalError as exc:
+        pytest.skip(f"Postgres integration database is not available: {exc}")
+
+    with conn:
+        try:
+            run_schema_file(conn, SCHEMA)
+        except psycopg.Error as exc:
+            pytest.skip(f"Postgres integration schema is not available: {exc}")
+
+        workspace_id = seed_sample_workspace(conn)["workspace_id"]
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE workspaces SET root_uri = %s WHERE id = %s",
+                (workspace_uri, workspace_id),
+            )
+            cur.execute(
+                """
+                INSERT INTO sessions (workspace_id, source, external_id, title, metadata)
+                VALUES (%s, 'codex', 'codex-linked-session', 'linked', '{}')
+                RETURNING id::text
+                """,
+                (workspace_id,),
+            )
+            geond_session_id = cur.fetchone()[0]
+        conn.commit()
+        try:
+            save_agent_run_benchmark(
+                conn,
+                workspace_uri=workspace_uri,
+                agent="codex",
+                command="codex exec smoke",
+                label="codex-linked",
+                transcript_paths=[str(transcript_path)],
+                stdout_bytes=128,
+            )
+            report = compare_agent_run_benchmark_runs(conn, workspace_uri=workspace_uri)
+
+            assert report["runs"][0]["transcript_session_id"] == "codex-linked-session"
+            assert report["runs"][0]["geond_session_id"] == geond_session_id
+            assert report["runs"][0]["evidence_ref"] == (
+                f"session:{geond_session_id[:8]} transcript:codex-linked-session"
+            )
         finally:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM workspaces WHERE id = %s", (workspace_id,))
