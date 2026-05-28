@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from geond.adapters.paths import newest_first_key
+
 SOURCE = "claude-code"
 PROJECTS_DIR = Path.home() / ".claude" / "projects"
 
@@ -64,7 +66,7 @@ def parse_storage(
 def candidate_session_paths(storage_path: Path, session_id: str | None = None) -> list[Path]:
     if storage_path.is_file():
         return [storage_path] if storage_path.suffix == ".jsonl" else []
-    paths = sorted(storage_path.rglob("*.jsonl"))
+    paths = sorted(storage_path.rglob("*.jsonl"), key=newest_first_key)
     if session_id:
         return [p for p in paths if session_id in p.stem]
     return paths

@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from geond.adapters.paths import newest_first_key
+
 SOURCE = "codex"
 NON_SESSION_JSONL_NAMES = {"history.jsonl", "session_index.jsonl"}
 
@@ -69,7 +71,7 @@ def candidate_session_paths(storage_path: Path, session_id: str | None = None) -
             for path in storage_path.rglob("*.jsonl")
             if path.name not in NON_SESSION_JSONL_NAMES
         ),
-        key=lambda path: str(path),
+        key=newest_first_key,
     )
     if not session_id:
         return paths

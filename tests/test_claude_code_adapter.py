@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from geond.adapters.claude_code import (
@@ -58,6 +59,28 @@ def test_parse_storage_with_limit() -> None:
     assert summary["session_id"] == "test-session-1"
     assert summary["message_count"] == 2
     assert summary["git_branch"] == "main"
+
+
+def test_parse_storage_with_limit_uses_newest_session(tmp_path: Path) -> None:
+    older = tmp_path / "projects" / "c--test-project" / "older.jsonl"
+    newer = tmp_path / "projects" / "c--test-project" / "newer.jsonl"
+    for path, session_id in ((older, "older"), (newer, "newer")):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            (
+                '{"type":"user","sessionId":"'
+                + session_id
+                + '","message":{"content":[{"type":"text","text":"hello"}]}}\n'
+            ),
+            encoding="utf-8",
+        )
+    os.utime(older, (1000, 1000))
+    os.utime(newer, (2000, 2000))
+
+    sessions = parse_storage(tmp_path, limit=1)
+
+    assert len(sessions) == 1
+    assert sessions[0].session_id == "newer"
 
 
 def test_decode_project_path_windows() -> None:

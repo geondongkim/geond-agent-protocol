@@ -62,8 +62,8 @@ adding DB storage and CLI import paths.
    can be compared by quality, not only latency.
 6. Use `geond://workspaces/{id}/timeline`, reservations, handoffs, and symbol
    resources as the common MCP validation path across all agents.
-7. When an importer supports live CLI execution, `--limit 1` should select the
-   newest transcript, not the lexicographically first transcript path.
+7. Session-file importers with a `limit` argument should select the newest
+   transcript/session file first, not the lexicographically first path.
 8. Local-only MCP client configs with `GEOND_EMBEDDING_PROVIDER=none` need
    keyword-safe defaults, because agent clients often omit optional `mode`
    arguments when calling a search tool.

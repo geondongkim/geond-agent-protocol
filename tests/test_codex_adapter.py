@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from geond.adapters.codex import parse_session_file, parse_storage, to_summary
@@ -38,3 +39,21 @@ def test_parse_codex_storage_uses_session_index_and_limit() -> None:
     assert len(sessions) == 1
     assert sessions[0].title == "Codex parser fixture"
     assert to_summary(sessions[0])["message_count"] == 3
+
+
+def test_parse_codex_storage_limits_to_newest_session(tmp_path: Path) -> None:
+    older = tmp_path / "sessions" / "2026" / "05" / "01" / "older.jsonl"
+    newer = tmp_path / "sessions" / "2026" / "05" / "02" / "newer.jsonl"
+    for path, session_id in ((older, "older"), (newer, "newer")):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            f'{{"type":"session_meta","payload":{{"id":"{session_id}"}}}}\n',
+            encoding="utf-8",
+        )
+    os.utime(older, (1000, 1000))
+    os.utime(newer, (2000, 2000))
+
+    sessions = parse_storage(tmp_path, limit=1)
+
+    assert len(sessions) == 1
+    assert sessions[0].session_id == "newer"

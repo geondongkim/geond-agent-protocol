@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from geond.adapters.paths import newest_first_key
+
 SOURCE = "antigravity"
 DEFAULT_TRANSCRIPT_ROOT = Path.home() / ".gemini" / "antigravity-cli" / "brain"
 
@@ -61,10 +63,7 @@ def parse_storage(
 def candidate_transcript_paths(root: Path, session_id: str | None = None) -> list[Path]:
     if root.is_file():
         return [root] if root.name == "transcript.jsonl" or root.suffix == ".jsonl" else []
-    paths = sorted(
-        root.rglob("transcript.jsonl"),
-        key=lambda path: (-path.stat().st_mtime, str(path)),
-    )
+    paths = sorted(root.rglob("transcript.jsonl"), key=newest_first_key)
     if session_id:
         return [path for path in paths if session_id in str(path)]
     return paths
