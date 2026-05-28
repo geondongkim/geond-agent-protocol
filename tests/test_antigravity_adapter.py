@@ -49,3 +49,39 @@ def test_parse_antigravity_storage_limits_to_newest_transcript(tmp_path: Path) -
 
     assert len(sessions) == 1
     assert sessions[0].session_id == "newer"
+
+
+def test_parse_antigravity_transcript_normalizes_wrapped_user_content(
+    tmp_path: Path,
+) -> None:
+    transcript = tmp_path / "wrapped-session" / ".system_generated" / "logs" / "transcript.jsonl"
+    transcript.parent.mkdir(parents=True)
+    transcript.write_text(
+        "\n".join(
+            [
+                (
+                    '{"source":"user","type":"message","content":'
+                    '"<USER_REQUEST>\\nPlease verify GEOND_WRAPPED_MARKER.\\n'
+                    "Keep the searchable text compact.\\n</USER_REQUEST>\\n"
+                    '<ADDITIONAL_METADATA>\\nwindow=Antigravity\\n</ADDITIONAL_METADATA>"}'
+                ),
+                (
+                    '{"source":"user","type":"message","content":'
+                    '"<USER_SETTINGS_CHANGE>\\ntheme=dark\\n</USER_SETTINGS_CHANGE>"}'
+                ),
+                '{"source":"user","type":"message","content":"Plain text fallback"}',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    session = parse_transcript_file(transcript)
+
+    assert [message.content for message in session.messages] == [
+        "Please verify GEOND_WRAPPED_MARKER.\nKeep the searchable text compact.",
+        "Plain text fallback",
+    ]
+    assert session.messages[0].metadata["content_normalized"] is True
+    assert isinstance(session.messages[0].metadata["raw_content_sha256"], str)
+    assert "<ADDITIONAL_METADATA>" in session.events[0].content
