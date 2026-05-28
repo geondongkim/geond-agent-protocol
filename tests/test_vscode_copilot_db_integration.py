@@ -83,6 +83,7 @@ def test_import_vscode_fixture_records_usage_estimate(tmp_path: Path) -> None:
         try:
             session = parse_storage(storage_path)[0]
             session_row_id = store_vscode_session(conn, workspace_id, session)
+            store_vscode_session(conn, workspace_id, session)
             usage_events = record_vscode_copilot_usage_events(
                 conn,
                 workspace_id=workspace_id,
@@ -96,12 +97,26 @@ def test_import_vscode_fixture_records_usage_estimate(tmp_path: Path) -> None:
                 session_row_id=session_row_id,
             )
             summary = summarize_usage(conn, workspace_id, source=SOURCE)
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT count(*)
+                    FROM agent_actions aa
+                    JOIN agents a ON a.id = aa.agent_id
+                    WHERE aa.workspace_id = %s
+                      AND aa.action_type = 'session_observed'
+                      AND a.name = %s
+                    """,
+                    (workspace_id, SOURCE),
+                )
+                action_count = cur.fetchone()[0]
 
             assert usage_events
             assert summary["totals"]["event_count"] == 1
             assert summary["totals"]["estimated_event_count"] == 1
             assert summary["totals"]["total_tokens"] > 0
             assert summary["by_model"][0]["provider"] == "github"
+            assert action_count == 1
         finally:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM workspaces WHERE id = %s", (workspace_id,))

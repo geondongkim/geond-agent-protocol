@@ -47,6 +47,7 @@ def test_import_codex_fixture_redacts_payloads_and_supports_search() -> None:
             for session in sessions:
                 session_row_id = store_codex_session(conn, workspace_id, session)
                 stored.append(session_row_id)
+                store_codex_session(conn, workspace_id, session)
                 usage_events.extend(
                     record_codex_usage_events(
                         conn,
@@ -91,6 +92,18 @@ def test_import_codex_fixture_redacts_payloads_and_supports_search() -> None:
                     (workspace_id,),
                 )
                 finding_count = cur.fetchone()[0]
+                cur.execute(
+                    """
+                    SELECT count(*)
+                    FROM agent_actions aa
+                    JOIN agents a ON a.id = aa.agent_id
+                    WHERE aa.workspace_id = %s
+                      AND aa.action_type = 'session_observed'
+                      AND a.name = 'codex'
+                    """,
+                    (workspace_id,),
+                )
+                action_count = cur.fetchone()[0]
             usage_summary = summarize_usage(conn, workspace_id, source="codex")
 
             assert stored
@@ -102,6 +115,7 @@ def test_import_codex_fixture_redacts_payloads_and_supports_search() -> None:
             assert results[0]["source"] == "codex"
             assert unredacted_event_count == 0
             assert finding_count >= 1
+            assert action_count == 1
         finally:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM workspaces WHERE id = %s", (workspace_id,))

@@ -47,6 +47,7 @@ def test_import_claude_code_fixture_redacts_payloads_and_supports_search() -> No
             for session in sessions:
                 session_row_id = store_claude_code_session(conn, workspace_id, session)
                 stored.append(session_row_id)
+                store_claude_code_session(conn, workspace_id, session)
                 usage_events.extend(
                     record_claude_code_usage_events(
                         conn,
@@ -91,6 +92,18 @@ def test_import_claude_code_fixture_redacts_payloads_and_supports_search() -> No
                     (workspace_id, SOURCE),
                 )
                 finding_count = cur.fetchone()[0]
+                cur.execute(
+                    """
+                    SELECT count(*)
+                    FROM agent_actions aa
+                    JOIN agents a ON a.id = aa.agent_id
+                    WHERE aa.workspace_id = %s
+                      AND aa.action_type = 'session_observed'
+                      AND a.name = %s
+                    """,
+                    (workspace_id, SOURCE),
+                )
+                action_count = cur.fetchone()[0]
             usage_summary = summarize_usage(conn, workspace_id, source=SOURCE)
 
             assert stored
@@ -103,6 +116,7 @@ def test_import_claude_code_fixture_redacts_payloads_and_supports_search() -> No
             assert "dummyBearerTokenValue12345" not in message_content
             assert "[REDACTED]" in message_content
             assert finding_count >= 1
+            assert action_count == 1
         finally:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM workspaces WHERE id = %s", (workspace_id,))
