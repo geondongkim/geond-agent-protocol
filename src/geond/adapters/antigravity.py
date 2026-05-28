@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +11,12 @@ from geond.adapters.paths import newest_first_key
 
 SOURCE = "antigravity"
 DEFAULT_TRANSCRIPT_ROOT = Path.home() / ".gemini" / "antigravity-cli" / "brain"
+WRAPPER_SECTION_RE = re.compile(r"<([A-Z][A-Z0-9_]*)>\s*(.*?)\s*</\1>", re.DOTALL)
+NOISE_WRAPPER_SECTIONS = {"ADDITIONAL_METADATA", "USER_SETTINGS_CHANGE"}
+PRIMARY_WRAPPER_SECTIONS_BY_ROLE = {
+    "user": ("USER_REQUEST", "USER_MESSAGE", "PROMPT"),
+    "assistant": ("ASSISTANT_RESPONSE", "MODEL_RESPONSE", "RESPONSE"),
+}
 
 
 @dataclass(frozen=True)
@@ -155,12 +163,23 @@ def message_from_event(
     role = role_from_source(source, record_type)
     if role not in {"user", "assistant"}:
         return None
+    normalized_content = normalize_message_content(content, role)
+    if not normalized_content:
+        return None
+    metadata: dict[str, Any] = {
+        "source": source,
+        "type": record_type,
+        "tool_call_count": len(tool_calls),
+    }
+    if normalized_content != content:
+        metadata["content_normalized"] = True
+        metadata["raw_content_sha256"] = sha256(content.encode("utf-8")).hexdigest()
     return ParsedAntigravityMessage(
         ordinal=ordinal,
         role=role,
-        content=content,
+        content=normalized_content,
         timestamp=timestamp,
-        metadata={"source": source, "type": record_type, "tool_call_count": len(tool_calls)},
+        metadata=metadata,
     )
 
 
@@ -177,6 +196,50 @@ def normalize_tool_calls(value: Any) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, dict)]
+
+
+def normalize_message_content(content: str, role: str) -> str:
+    sections = list(WRAPPER_SECTION_RE.finditer(content))
+    if not sections:
+        return compact_message_text(content)
+
+    primary_names = PRIMARY_WRAPPER_SECTIONS_BY_ROLE.get(role, ())
+    primary_parts = [
+        match.group(2) for match in sections if match.group(1).upper() in primary_names
+    ]
+    if primary_parts:
+        return compact_message_text("\n\n".join(primary_parts))
+
+    kept_parts: list[str] = []
+    cursor = 0
+    for match in sections:
+        outside = content[cursor : match.start()]
+        if outside.strip():
+            kept_parts.append(outside)
+        section_name = match.group(1).upper()
+        if section_name not in NOISE_WRAPPER_SECTIONS:
+            kept_parts.append(match.group(2))
+        cursor = match.end()
+    tail = content[cursor:]
+    if tail.strip():
+        kept_parts.append(tail)
+    return compact_message_text("\n\n".join(kept_parts))
+
+
+def compact_message_text(value: str) -> str:
+    lines = [line.rstrip() for line in value.replace("\r\n", "\n").replace("\r", "\n").split("\n")]
+    compacted: list[str] = []
+    previous_blank = False
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            if compacted and not previous_blank:
+                compacted.append("")
+            previous_blank = True
+            continue
+        compacted.append(stripped)
+        previous_blank = False
+    return "\n".join(compacted).strip()
 
 
 def first_string(value: dict[str, Any], *keys: str) -> str | None:
