@@ -703,6 +703,22 @@ def store_codex_session(conn: Connection, workspace_id: str, session: ParsedCode
             session_row_id=session_row_id,
             current_ordinals=[message.ordinal for message in session.messages],
         )
+        record_imported_session_observed_action(
+            cur,
+            workspace_id=workspace_id,
+            session_row_id=session_row_id,
+            agent_name=CODEX_SOURCE,
+            source=CODEX_SOURCE,
+            external_id=session.session_id,
+            title=session.title,
+            event_count=len(session.events),
+            message_count=len(session.messages),
+            metadata={
+                "model": session.metadata.get("model"),
+                "model_provider": session.metadata.get("model_provider"),
+                "originator": session.metadata.get("originator"),
+            },
+        )
 
     conn.commit()
     return session_row_id
@@ -817,6 +833,22 @@ def store_claude_code_session(
             cur,
             session_row_id=session_row_id,
             current_ordinals=[message.ordinal for message in session.messages],
+        )
+        record_imported_session_observed_action(
+            cur,
+            workspace_id=workspace_id,
+            session_row_id=session_row_id,
+            agent_name=CLAUDE_CODE_SOURCE,
+            source=CLAUDE_CODE_SOURCE,
+            external_id=session.session_id,
+            title=title,
+            event_count=len(session.events),
+            message_count=len(session.messages),
+            metadata={
+                "cwd": session.metadata.get("cwd"),
+                "git_branch": session.metadata.get("gitBranch"),
+                "version": session.metadata.get("version"),
+            },
         )
 
     conn.commit()
@@ -982,6 +1014,62 @@ def record_antigravity_session_action(
     )
 
 
+def record_imported_session_observed_action(
+    cur: Cursor,
+    *,
+    workspace_id: str,
+    session_row_id: str,
+    agent_name: str,
+    source: str,
+    external_id: str,
+    title: str,
+    event_count: int,
+    message_count: int,
+    metadata: dict[str, Any] | None = None,
+) -> None:
+    agent_id = upsert_agent(cur.connection, agent_name)
+    cur.execute(
+        """
+        SELECT 1
+        FROM agent_actions
+        WHERE workspace_id = %s
+          AND session_id = %s::uuid
+          AND agent_id = %s::uuid
+          AND action_type = 'session_observed'
+        LIMIT 1
+        """,
+        (workspace_id, session_row_id, agent_id),
+    )
+    if cur.fetchone():
+        return
+
+    compact_metadata = {
+        "source": source,
+        "session_id": external_id,
+        "event_count": event_count,
+        "message_count": message_count,
+        **{key: value for key, value in (metadata or {}).items() if value is not None},
+    }
+    cur.execute(
+        """
+        INSERT INTO agent_actions (
+            workspace_id, agent_id, session_id,
+            action_type, status, summary, metadata
+        )
+        VALUES (%s, %s, %s::uuid, %s, %s, %s, %s)
+        """,
+        (
+            workspace_id,
+            agent_id,
+            session_row_id,
+            "session_observed",
+            "recorded",
+            f"{agent_name} session imported: {title}",
+            Jsonb(compact_metadata),
+        ),
+    )
+
+
 def title_from_claude_metadata(session: ParsedClaudeCodeSession) -> str:
     cwd = session.metadata.get("cwd")
     if isinstance(cwd, str) and cwd.strip():
@@ -1133,6 +1221,23 @@ def store_vscode_session(conn: Connection, workspace_id: str, session: ParsedCop
                         Jsonb({"source": "chatEditingSessions", "session_id": session.session_id}),
                     ),
                 )
+        record_imported_session_observed_action(
+            cur,
+            workspace_id=workspace_id,
+            session_row_id=session_row_id,
+            agent_name=SOURCE,
+            source=SOURCE,
+            external_id=session.session_id,
+            title=session.title,
+            event_count=len(session.chat_lines) + len(session.transcript_events),
+            message_count=len(session.chat_lines),
+            metadata={
+                "chat_line_count": len(session.chat_lines),
+                "transcript_event_count": len(session.transcript_events),
+                "has_editing_context": session.has_editing_context,
+                "editing_content_count": session.editing_session.content_count,
+            },
+        )
 
     conn.commit()
     return session_row_id
