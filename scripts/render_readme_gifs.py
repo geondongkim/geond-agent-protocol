@@ -28,7 +28,6 @@ class Frame:
     surface: str
     shared_state: str
     outcome: str
-    footer: str
 
 
 @dataclass(frozen=True)
@@ -55,7 +54,6 @@ SCENARIOS: tuple[Scenario, ...] = (
                     "Visible outcome: the agent sees prior sessions and active "
                     "coordination state before work starts."
                 ),
-                footer="Geond MCP exposes shared evidence. It does not replace the agent.",
             ),
             Frame(
                 title="2. Agent B records work",
@@ -65,7 +63,6 @@ SCENARIOS: tuple[Scenario, ...] = (
                     "Visible outcome: Agent B activity becomes searchable evidence "
                     "for the next agent."
                 ),
-                footer="Importers preserve provenance and redact before persistence.",
             ),
             Frame(
                 title="3. Both agents coordinate ownership",
@@ -77,7 +74,6 @@ SCENARIOS: tuple[Scenario, ...] = (
                     "Visible outcome: agents can split work without losing "
                     "current ownership and risk context."
                 ),
-                footer="Verified example: Codex + Antigravity; pattern is tool-agnostic.",
             ),
             Frame(
                 title="4. Reviewer sees one evidence trail",
@@ -89,7 +85,6 @@ SCENARIOS: tuple[Scenario, ...] = (
                     "Visible outcome: reviewers can see who did what, why, "
                     "and what should happen next."
                 ),
-                footer="The shared layer is compact by default and evidence-ref first.",
             ),
         ),
     ),
@@ -108,7 +103,6 @@ SCENARIOS: tuple[Scenario, ...] = (
                     "Visible outcome: local workflows work offline against "
                     "Docker PostgreSQL by default."
                 ),
-                footer="Local-first remains the default posture.",
             ),
             Frame(
                 title="2. Switch to an Azure profile",
@@ -121,7 +115,6 @@ SCENARIOS: tuple[Scenario, ...] = (
                     "Visible outcome: the same MCP server now reads and writes "
                     "shared PostgreSQL memory."
                 ),
-                footer="Azure PostgreSQL is optional shared storage, not a hard dependency.",
             ),
             Frame(
                 title="3. Another PC sees the same work",
@@ -133,7 +126,6 @@ SCENARIOS: tuple[Scenario, ...] = (
                     "Visible outcome: the second machine sees Windows-created "
                     "evidence without copying transcripts."
                 ),
-                footer="Each machine still keeps MCP and dashboard processes local.",
             ),
             Frame(
                 title="4. Dashboard labels the source",
@@ -143,7 +135,6 @@ SCENARIOS: tuple[Scenario, ...] = (
                     "Visible outcome: reviewers know whether they are looking "
                     "at local, Azure, or remote PostgreSQL."
                 ),
-                footer="The validated flow is documented under docs/azure_validation.",
             ),
         ),
     ),
@@ -157,7 +148,6 @@ SCENARIOS: tuple[Scenario, ...] = (
                 surface="Agent surface: dashboard-overview and get_dashboard_overview",
                 shared_state="Shared state: active agents, sessions, reservations, latest actions",
                 outcome="Visible outcome: a PM sees ownership and blockers in seconds.",
-                footer="The dashboard is a read-only view over MCP-visible evidence.",
             ),
             Frame(
                 title="2. Handoffs",
@@ -166,14 +156,12 @@ SCENARIOS: tuple[Scenario, ...] = (
                 outcome=(
                     "Visible outcome: the next agent or reviewer starts from a structured packet."
                 ),
-                footer="Handoffs turn transcript history into executable next steps.",
             ),
             Frame(
                 title="3. Code Risk",
                 surface="Agent surface: code graph, changesets, file and symbol reservations",
                 shared_state="Shared state: hot files, touched symbols, fan-out, open claims",
                 outcome="Visible outcome: reviewers spot risky overlap before another edit lands.",
-                footer="Reservations are advisory or strict depending on workspace policy.",
             ),
             Frame(
                 title="4. Timeline evidence",
@@ -183,7 +171,6 @@ SCENARIOS: tuple[Scenario, ...] = (
                     "Visible outcome: the review trail stays inspectable without "
                     "flooding the LLM context."
                 ),
-                footer="Large transcript detail is lazy; README demos show sanitized state.",
             ),
         ),
     ),
@@ -257,7 +244,6 @@ def render_frame(
     )
     y = draw_card(draw, 64, y + 14, "Visible outcome", frame.outcome, subtitle_font, body_font, OK)
 
-    draw.text((64, HEIGHT - 56), frame.footer, font=small_font, fill=MUTED)
     return image
 
 
