@@ -1,4 +1,4 @@
-> 언어: [English](README.md) | **한국어**
+> 언어: [English](README.md) | **한국어** | [日本語](README.ja.md) | [简体中文](README.zh-CN.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md)
 
 # Geond Agent Protocol
 
