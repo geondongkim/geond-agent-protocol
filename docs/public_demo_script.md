@@ -1,18 +1,35 @@
 # Public Demo Script
 
-This is the first recording/GIF script for `v0.1.0-alpha`. It keeps the demo local, repeatable, and short enough for a README GIF or release note clip.
+This runbook keeps README and release-note visuals local, repeatable, and safe
+to share. Public demo assets must not contain private transcripts, raw access
+tokens, local connection strings, or account identifiers.
 
-Current scripted demo asset: [docs/assets/geond_demo.gif](assets/geond_demo.gif).
-Current browser-verified dashboard assets:
-[docs/assets/geond_dashboard_operations.gif](assets/geond_dashboard_operations.gif),
-[docs/assets/geond_dashboard_evidence.gif](assets/geond_dashboard_evidence.gif), and
-[docs/assets/geond_dashboard_timeline_review.gif](assets/geond_dashboard_timeline_review.gif).
+## Current README Assets
 
-Regenerate the terminal demo with:
+README-specific narrative GIFs:
+
+- [docs/assets/geond_readme_pair_coding.gif](assets/geond_readme_pair_coding.gif)
+- [docs/assets/geond_readme_team_db.gif](assets/geond_readme_team_db.gif)
+- [docs/assets/geond_readme_review_loop.gif](assets/geond_readme_review_loop.gif)
+
+Regenerate them with:
 
 ```bash
-uv run python scripts/render_demo_gif.py
+uv run python scripts/render_readme_gifs.py
 ```
+
+These GIFs are sanitized narrative assets. They explain validated architecture
+and workflow patterns, but they do not replay private Codex, Antigravity,
+Copilot, Claude, or Manus transcripts.
+
+## Current Dashboard Assets
+
+Browser-verified dashboard assets:
+
+- [docs/assets/geond_dashboard_operations.gif](assets/geond_dashboard_operations.gif)
+- [docs/assets/geond_dashboard_evidence.gif](assets/geond_dashboard_evidence.gif)
+- [docs/assets/geond_dashboard_timeline_review.gif](assets/geond_dashboard_timeline_review.gif)
+- [docs/assets/geond_dashboard_azure_collaboration.gif](assets/geond_dashboard_azure_collaboration.gif)
 
 Regenerate the dashboard GIFs after running the local dashboard browser smoke:
 
@@ -27,11 +44,125 @@ uv run python scripts/render_dashboard_gifs.py \
     --output-dir docs/assets
 ```
 
-## Target Story
+The browser smoke checks every dashboard tab, opens related timeline context,
+captures screenshots, and verifies that the screenshots are nonblank before
+GIF rendering.
 
-One agent leaves memory, code graph context, reservations, and a handoff. A second MCP client can retrieve that context without manual re-explanation.
+## Legacy Terminal Demo
 
-## Setup Shot
+The older terminal demo asset is still useful for release notes:
+
+- [docs/assets/geond_demo.gif](assets/geond_demo.gif)
+
+Regenerate it with:
+
+```bash
+uv run python scripts/render_demo_gif.py
+```
+
+## README Scenario Scripts
+
+### AI Pair Coding Across Agent Tools
+
+Purpose: show that Geond is the shared evidence and coordination substrate, not
+a replacement for the agents that do the work.
+
+Public narrative:
+
+- Agent A can read prior context through Geond MCP before starting.
+- Agent B can record work through CLI, MCP, or an imported transcript.
+- Both agents can share reservations, handoffs, changesets, and review context.
+- A reviewer can inspect one evidence trail instead of replaying every chat.
+
+Verified concrete example:
+
+- Codex sessions can be imported or recorded into the same Geond workspace.
+- Antigravity can read Geond through MCP.
+- `codex mcp-server` can expose Codex as a callable agent surface while Geond
+  remains the shared layer for search, reservations, handoffs, dashboard read
+  models, lineage, and compact evidence refs.
+
+Evidence docs:
+
+- [antigravity_codex_geond_verification.md](antigravity_codex_geond_verification.md)
+- [mcp_client_config.md](mcp_client_config.md)
+- [agent_testbeds.md](agent_testbeds.md)
+
+Repeatable checks:
+
+```bash
+uv run geond doctor --format text
+uv run geond mcp-smoke --format text --strict
+uv run geond testbed-antigravity \
+    --workspace-uri file:///C:/path/to/repo \
+    --skip-run \
+    --format markdown
+```
+
+Use `--skip-run` for documentation-only verification when you do not want to
+launch a live Antigravity prompt.
+
+### Multi-PC Shared PostgreSQL Profile
+
+Purpose: show that local MCP, CLI, and dashboard processes can collaborate
+through a shared PostgreSQL-compatible database.
+
+Public narrative:
+
+- One machine can run local Geond against Docker PostgreSQL.
+- The same repo can switch to `GEOND_DATABASE_PROFILE=azure`.
+- A second machine can run its own local `geond-mcp` and dashboard against the
+  same Azure PostgreSQL database.
+- The dashboard shows safe source metadata without exposing credentials.
+
+Evidence docs:
+
+- [azure_validation/team_collab_validation.md](azure_validation/team_collab_validation.md)
+- [azure_validation/README.md](azure_validation/README.md)
+
+Profile shape:
+
+```bash
+GEOND_DATABASE_PROFILE=azure
+AZURE_GEOND_DATABASE_URL=postgresql://...
+```
+
+The README `geond_readme_team_db.gif` is a sanitized narrative GIF. The
+Azure-backed dashboard GIF, `geond_dashboard_azure_collaboration.gif`, is tied
+to the documented validation flow and sanitized run artifacts.
+
+### PM And Reviewer Dashboard Loop
+
+Purpose: show that humans can review multi-agent work without reading raw MCP
+JSON.
+
+Public narrative:
+
+- Mission Control shows active agents, latest work, and source metadata.
+- Handoffs show next actions, blockers, tested commands, and remaining risks.
+- Code Risk shows active claims, recent changesets, and graph fan-out.
+- Timeline and Relationships connect sessions, actions, changesets, handoffs,
+  benchmarks, and evidence refs.
+
+Evidence docs:
+
+- [agent_activity_dashboard.md](agent_activity_dashboard.md)
+- [agent_operating_loop.md](agent_operating_loop.md)
+
+Useful commands:
+
+```bash
+uv run geond dashboard serve
+uv run geond dashboard-overview <workspace-id-or-uri> --limit 25
+uv run geond dashboard-events <workspace-id-or-uri> --limit 50
+uv run geond dashboard-code-risk <workspace-id-or-uri> --limit 50
+```
+
+## Local Terminal Storyboard
+
+For a longer terminal-only demo, use the following flow.
+
+### Setup Shot
 
 ```bash
 docker compose up -d postgres
@@ -45,7 +176,7 @@ Show:
 - Seed inserts a sample workspace/session.
 - No external agent service is required.
 
-## Code Graph Shot
+### Code Graph Shot
 
 ```bash
 uv run geond index-tree-sitter examples/python_service \
@@ -54,7 +185,8 @@ uv run geond index-tree-sitter examples/python_service \
     --workspace-name geond-sample
 ```
 
-Show `build_answer` in [examples/python_service/service.py](../examples/python_service/service.py).
+Show `build_answer` in
+[examples/python_service/service.py](../examples/python_service/service.py).
 
 Optional TypeScript shot:
 
@@ -65,7 +197,7 @@ uv run geond index-tree-sitter examples/typescript_service \
     --workspace-name geond-sample
 ```
 
-## Retrieval Shot
+### Retrieval Shot
 
 ```bash
 uv run geond search app_context --mode keyword --workspace-uri file:///sample/geond
@@ -84,7 +216,7 @@ Show:
 - prior session memory returns evidence
 - benchmark output includes latency and optional quality metrics
 
-## Coordination Shot
+### Coordination Shot
 
 Use the workspace id returned from `seed-sample`.
 
@@ -114,7 +246,7 @@ Show:
 - symbol-level conflict appears before another agent edits
 - handoff is stored as durable memory
 
-## MCP Shot
+### MCP Shot
 
 Start the server:
 
@@ -135,21 +267,7 @@ In the MCP client, show resources/tools:
 
 Client config examples are in [examples/mcp_clients](../examples/mcp_clients).
 
-## Browser-Verified Dashboard Shot
-
-Open the local Command Center and show the same stored evidence visually:
-
-- Mission Control with ownership, active work, and project hot files
-- Sessions with readable prompts and replies separated from technical trace rows
-- Handoffs and Changesets as review queues with next actions and touched files
-- Usage Evidence and Code Risk evidence cards for spend/output and hot-file review
-- Filtered Timeline details with Related Review Context
-- Graph and Relationships views connecting sessions, work, handoffs, and evidence
-
-The dashboard plan is tracked in [docs/agent_activity_dashboard.md](agent_activity_dashboard.md),
-and the browser smoke writes a JSON report plus screenshots to `tmp/dashboard_browser`.
-
-## Cleanup Shot
+### Cleanup Shot
 
 ```bash
 uv run geond purge-workspace file:///sample/geond --yes
@@ -157,9 +275,25 @@ uv run geond purge-workspace file:///sample/geond --yes
 
 Show cascaded deletion counts.
 
+## Reference README Patterns
+
+The README visuals and tables intentionally borrow public onboarding patterns:
+
+- OpenHuman: transparent local memory and compact context language.
+- CLI-Anything: visual first screen and action-oriented demo assets.
+- Microsoft AI Agents for Beginners: scenario tables and repeatable learning
+  paths.
+
+These are reference patterns only. Geond should keep its claims tied to the
+current implementation and validation evidence in this repository.
+
 ## Capture Notes
 
-- Keep the terminal width around 100 columns.
+- Keep terminal width around 100 columns.
 - Hide `.env` and any shell history that may contain secrets.
-- Use keyword mode for the GIF so the demo does not depend on external embedding credentials.
-- For a longer video, add a second pass with hybrid retrieval after configuring an embedding provider.
+- Use keyword mode for public GIFs so the demo does not depend on external
+  embedding credentials.
+- Keep Azure URLs, passwords, subscription ids, tenant ids, and user names out
+  of screenshots and generated GIF text.
+- For a longer video, add a second pass with hybrid retrieval after configuring
+  an embedding provider.
