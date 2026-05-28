@@ -1,3 +1,5 @@
+> Language: **English** | [한국어](README.ko.md)
+
 # Geond Agent Protocol
 
 [![CI](https://github.com/geondongkim/geond-agent-protocol/actions/workflows/ci.yml/badge.svg)](https://github.com/geondongkim/geond-agent-protocol/actions/workflows/ci.yml)

@@ -8,7 +8,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 DEFAULT_INCLUDE_PATTERNS = (
-    "README.md",
+    "README*.md",
     "docs/*.md",
     "docs/**/*.md",
     "examples/*.md",
