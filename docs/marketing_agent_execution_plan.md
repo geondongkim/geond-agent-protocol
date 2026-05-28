@@ -35,11 +35,13 @@ is under `tmp/marketing_agy/`. These local logs are not public launch artifacts.
 Use `agy` for prompt-only tasks that do not require changing repository files:
 
 1. Generate Show HN title variants in plain, low-hype style.
-2. Generate community-specific angles for `r/mcp`, `r/LocalLLaMA`, `r/ClaudeAI`,
-   and general AI coding audiences.
+2. Generate community-specific angles for GeekNews, `r/mcp`, `r/LocalLLaMA`,
+   `r/ClaudeAI`, and general AI coding audiences.
 3. Draft outlines for technical blog posts.
 4. Review whether marketing copy is understandable in 10 seconds.
 5. List potential overclaim risks in proposed copy.
+6. Draft localized post openings for the README languages, as long as Codex or a
+   fluent reviewer checks them before publication.
 
 Do not use `agy` for:
 
@@ -89,14 +91,17 @@ Rejected or adjusted outputs:
 ## Next Antigravity Prompt
 
 ```text
-You are Antigravity via agy. Use only the context in this prompt. Draft 10 short
-community post openings for Geond Agent Protocol. Product boundary: Geond is a
-local-first MCP server and CLI for shared repo memory, file/symbol reservations,
-handoffs, code graph evidence, compact evidence refs, dashboard review, and
-optional shared PostgreSQL team mode. It does not run agents and does not
-guarantee automatic merge-conflict resolution. Keep Codex + Antigravity as one
-verified example, not the category. Return only draft copy, risk notes, and
-which audience each draft targets. Do not ask to edit files.
+You are Antigravity via agy. Use only the context in this prompt. Draft localized
+community post openings for Geond Agent Protocol in English, Korean, Japanese,
+Simplified Chinese, Spanish, French, and German. Target channels: Hacker News,
+GeekNews, Zenn/Qiita, V2EX, HackniA/Menéame, LinuxFr, and German developer
+communities. Product boundary: Geond is a local-first MCP server and CLI for
+shared repo memory, file/symbol reservations, handoffs, code graph evidence,
+compact evidence refs, dashboard review, and optional shared PostgreSQL team
+mode. It does not run agents and does not guarantee automatic merge-conflict
+resolution. Keep Codex + Antigravity as one verified example, not the category.
+Return only draft copy, risk notes, and which audience each draft targets. Do
+not ask to edit files.
 ```
 
 ## Next Codex Tasks
@@ -105,4 +110,6 @@ which audience each draft targets. Do not ask to edit files.
 2. Add GitHub social preview art.
 3. Draft Awesome MCP Servers PR body from `docs/marketing_strategy.md`.
 4. Draft Show HN first comment and human review checklist.
-5. Keep `docs/open_source_readiness.md` synced with completed launch hygiene.
+5. Draft and review GeekNews plus localized launch posts from
+   `docs/international_launch_channels.md`.
+6. Keep `docs/open_source_readiness.md` synced with completed launch hygiene.

@@ -19,8 +19,11 @@ marketing plan for Geond.
 - Launch references:
   - [GitHub repository topics](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/classifying-your-repository-with-topics)
   - [Hacker News Guidelines](https://news.ycombinator.com/newsguidelines.html)
+  - [GeekNews](https://news.hada.io/)
   - [Awesome MCP Servers](https://github.com/punkpeye/awesome-mcp-servers)
 - Execution companion: [docs/marketing_agent_execution_plan.md](marketing_agent_execution_plan.md)
+- International launch channels:
+  [docs/international_launch_channels.md](international_launch_channels.md)
 
 ## Executive Decision
 
@@ -222,7 +225,31 @@ Use different messages per community.
 Do not post the same text everywhere. Each post should include one concrete
 workflow and one ask for feedback.
 
-### Phase 4: Technical Content Series
+### Phase 4: Korea And Localized Launches
+
+Goal: use the multilingual README as an actual distribution asset, not just a
+polish signal.
+
+Start with GeekNews for Korea. GeekNews is the closest Korean launch analogue to
+Hacker News for this project because it focuses on development, technology,
+products, open source, and startup stories. Use a Korean title and comment, not
+a direct English HN translation.
+
+Then expand by language:
+
+| Language | First channel | Launch style |
+| --- | --- | --- |
+| Korean | GeekNews | Korean link submission plus builder comment. |
+| Japanese | Zenn, then Qiita | Technical article with setup, MCP config, and pair-coding workflow. |
+| Simplified Chinese | V2EX, then Juejin or SegmentFault | Discussion-first post asking for workflow critique before article syndication. |
+| Spanish | HackniA, then Menéame if there is a useful Spanish article | Maker/dev community feedback first; broad social-news link later. |
+| French | LinuxFr.org | Open-source focused write-up with local-first and PostgreSQL details. |
+| German | heise Developer, entwickler.de, Golem.de watchlist, plus German-speaking dev communities | German technical article or editorial pitch; emphasize privacy and engineering tradeoffs. |
+
+Detailed channel notes, localized hooks, and the GeekNews draft are in
+[docs/international_launch_channels.md](international_launch_channels.md).
+
+### Phase 5: Technical Content Series
 
 Publish three posts after the repo is ready enough for strangers to try.
 
@@ -296,8 +323,9 @@ Best workflow:
 | P1 | Add GitHub social preview image. | Codex |
 | P1 | Draft Awesome MCP Servers PR body and checklist. | Codex, then human review |
 | P1 | Draft Show HN title and first comment. | Codex + Antigravity variants |
+| P1 | Draft GeekNews title/comment and localized channel sequence. | Codex, Korean human review |
 | P2 | Draft 3-post technical content series. | Antigravity first draft, Codex fact check |
-| P2 | Create community monitoring prompt/runbook for HN, Reddit, and GitHub. | Antigravity |
+| P2 | Create community monitoring prompt/runbook for HN, GeekNews, Reddit, GitHub, and localized language channels. | Antigravity |
 | P2 | Add FAQ from repeated issues after first external feedback. | Codex |
 
 Completed on 2026-05-29:
@@ -307,6 +335,8 @@ Completed on 2026-05-29:
 - Issue templates and a PR template were added under `.github/`.
 - Antigravity `agy` was used for bounded copy ideation; Codex reviewed and
   rejected over-broad wording before writing source-of-truth docs.
+- [docs/international_launch_channels.md](international_launch_channels.md)
+  was added to cover GeekNews and the README language launch lanes.
 
 ## Messaging Guardrails
 
