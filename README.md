@@ -161,7 +161,7 @@ and summarized in [docs/azure_validation/README.md](docs/azure_validation/README
 - [docs/agent_collaboration.md](docs/agent_collaboration.md) compares Geond with git-only review and simple shared notes.
 - [docs/agent_activity_dashboard.md](docs/agent_activity_dashboard.md) describes the dashboard read model and PM/orchestration views.
 - [docs/agent_operating_loop.md](docs/agent_operating_loop.md) defines the read, reserve, record, and handoff loop for agents.
-- [docs/agent_testbeds.md](docs/agent_testbeds.md) tracks Copilot Chat, Codex, and Claude Code test beds.
+- [docs/agent_testbeds.md](docs/agent_testbeds.md) tracks Copilot Chat, Codex, Claude Code, and Antigravity test beds.
 - [docs/manus_integration.md](docs/manus_integration.md) documents Manus API v2 import, context packets, task contracts, and limitations.
 - [docs/mcp_client_config.md](docs/mcp_client_config.md) shows VS Code, Claude Desktop, Continue, and other MCP client setup.
 - [docs/ai_usage_observability.md](docs/ai_usage_observability.md) covers token, cost, pricing snapshot, and usage-versus-evidence design.
