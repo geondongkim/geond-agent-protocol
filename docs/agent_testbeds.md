@@ -48,6 +48,20 @@ adding DB storage and CLI import paths.
   and confirmed Antigravity could invoke the configured `geond`
   `search_dev_memory` MCP tool directly.
 
+Repeat the Antigravity testbed path with:
+
+```powershell
+uv run geond testbed-antigravity `
+  --workspace-uri file:///C:/path/to/repo `
+  --marker GEOND_ANTIGRAVITY_TESTBED_MANUAL `
+  --save-benchmark `
+  --format markdown
+```
+
+The command runs an Antigravity prompt unless `--skip-run` is set, imports the
+newest transcript or requested session, verifies source-filtered CLI search,
+runs MCP smoke against the same marker, and optionally saves benchmark rows.
+
 ## Improvements Derived From The Testbeds
 
 1. Treat every importer as a provenance-preserving adapter, not just a parser.

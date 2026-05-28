@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+from types import SimpleNamespace
 
 import geond.cli as cli
 
@@ -648,3 +649,123 @@ def test_compare_agents_cli_records_failed_agent_run(monkeypatch, tmp_path, caps
         "status": "error",
         "error_type": "OSError",
     }
+
+
+def test_testbed_antigravity_cli_runs_import_search_mcp_and_benchmarks(
+    monkeypatch,
+    tmp_path,
+    capsys,
+) -> None:
+    captured: dict[str, object] = {}
+    transcript_path = tmp_path / "transcript.jsonl"
+    transcript_path.write_text("{}", encoding="utf-8")
+    session = SimpleNamespace(
+        session_id="agy-session-1",
+        session_path=transcript_path,
+    )
+
+    def fake_connect(settings) -> FakeConnection:  # noqa: ANN001
+        return FakeConnection()
+
+    def fake_run_agent_compare(*args, **kwargs):  # noqa: ANN001, ANN202
+        captured["run_agent_compare"] = {"args": args, "kwargs": kwargs}
+        return {
+            "command": "agy --print",
+            "wall_time_ms": 12.3,
+            "final_output": "GEOND_MARKER",
+            "stdout_bytes": 0,
+            "stderr_bytes": 0,
+            "log_paths": ["agy.log"],
+            "metadata": {"returncode": 0},
+        }
+
+    def fake_parse_antigravity_storage(*args, **kwargs):  # noqa: ANN001, ANN202
+        captured["parse_antigravity_storage"] = {"args": args, "kwargs": kwargs}
+        return [session]
+
+    def fake_upsert_workspace(conn, **kwargs):  # noqa: ANN001, ANN202
+        captured["upsert_workspace"] = kwargs
+        return "workspace-1"
+
+    def fake_store_antigravity_session(conn, workspace_id, parsed_session):  # noqa: ANN001
+        captured["store_antigravity_session"] = {
+            "workspace_id": workspace_id,
+            "session_id": parsed_session.session_id,
+        }
+        return "session-row-1"
+
+    def fake_search_dev_memory(conn, query, **kwargs):  # noqa: ANN001, ANN202
+        captured["search_dev_memory"] = {"query": query, **kwargs}
+        return [{"message_id": "message-1"}]
+
+    def fake_run_stdio_smoke(**kwargs):  # noqa: ANN202
+        captured["run_stdio_smoke"] = kwargs
+        return {
+            "status": "ok",
+            "checks": [
+                {
+                    "name": "call_search_dev_memory",
+                    "metadata": {"result_count": 1},
+                }
+            ],
+        }
+
+    def fake_save_agent_run_benchmark(conn, **kwargs):  # noqa: ANN001, ANN202
+        captured["save_agent_run_benchmark"] = kwargs
+        return "agent-run-1"
+
+    def fake_benchmark_search(conn, queries, **kwargs):  # noqa: ANN001, ANN202
+        captured["benchmark_search"] = {"queries": queries, **kwargs}
+        return {"mode": "keyword", "repeat": 1, "queries": []}
+
+    def fake_save_benchmark_run(conn, result, **kwargs):  # noqa: ANN001, ANN202
+        captured["save_benchmark_run"] = {"result": result, **kwargs}
+        return "search-run-1"
+
+    monkeypatch.setattr(cli, "connect", fake_connect)
+    monkeypatch.setattr(cli, "run_agent_compare", fake_run_agent_compare)
+    monkeypatch.setattr(cli, "parse_antigravity_storage", fake_parse_antigravity_storage)
+    monkeypatch.setattr(cli, "upsert_workspace", fake_upsert_workspace)
+    monkeypatch.setattr(cli, "store_antigravity_session", fake_store_antigravity_session)
+    monkeypatch.setattr(cli, "search_dev_memory", fake_search_dev_memory)
+    monkeypatch.setattr(cli, "run_stdio_smoke", fake_run_stdio_smoke)
+    monkeypatch.setattr(cli, "save_agent_run_benchmark", fake_save_agent_run_benchmark)
+    monkeypatch.setattr(cli, "benchmark_search", fake_benchmark_search)
+    monkeypatch.setattr(cli, "save_benchmark_run", fake_save_benchmark_run)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "geond",
+            "testbed-antigravity",
+            "--workspace-uri",
+            "file:///repo",
+            "--workspace-name",
+            "repo",
+            "--marker",
+            "GEOND_MARKER",
+            "--prompt",
+            "Use GEOND_MARKER",
+            "--save-benchmark",
+        ],
+    )
+
+    cli.main()
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["status"] == "ok"
+    assert output["marker"] == "GEOND_MARKER"
+    assert output["cli_search_result_count"] == 1
+    assert output["imported_sessions"][0]["external_id"] == "agy-session-1"
+    assert output["benchmark_run_ids"] == {
+        "agent_run": "agent-run-1",
+        "search": "search-run-1",
+    }
+    assert captured["search_dev_memory"] == {
+        "query": "GEOND_MARKER",
+        "limit": 5,
+        "workspace_uri": "file:///repo",
+        "source": "antigravity",
+    }
+    assert captured["save_agent_run_benchmark"]["transcript_paths"] == [str(transcript_path)]
+    assert captured["benchmark_search"]["queries"] == ["GEOND_MARKER"]

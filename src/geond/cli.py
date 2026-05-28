@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
 
@@ -276,6 +277,289 @@ def resolve_antigravity_cli() -> str:
     )
     candidate = env_local_appdata / "agy" / "bin" / "agy.exe"
     return str(candidate)
+
+
+def generate_antigravity_testbed_marker() -> str:
+    return f"GEOND_ANTIGRAVITY_TESTBED_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}"
+
+
+def build_antigravity_testbed_prompt(marker: str, prompt: str | None = None) -> str:
+    if prompt and marker in prompt:
+        return prompt
+    base_prompt = prompt or (
+        "You are an Antigravity testbed run for Geond Agent Protocol. Do not edit files."
+    )
+    return (
+        f"{base_prompt}\n\n"
+        f"Reply with the marker {marker} and one sentence saying this was a CLI smoke run."
+    )
+
+
+def _check_status(checks: list[dict[str, object]]) -> str:
+    if any(check.get("status") == "error" for check in checks):
+        return "error"
+    if any(check.get("status") == "warning" for check in checks):
+        return "warning"
+    return "ok"
+
+
+def run_antigravity_testbed(
+    *,
+    workspace_uri: str,
+    workspace_name: str | None,
+    marker: str,
+    prompt_text: str,
+    storage_path: Path | None,
+    session_id: str | None,
+    timeout_seconds: int,
+    search_limit: int,
+    run_agent: bool,
+    run_mcp: bool,
+    save_benchmark: bool,
+    label: str,
+) -> dict[str, object]:
+    checks: list[dict[str, object]] = []
+    benchmark_ids: dict[str, str] = {}
+    agent_run: dict[str, object] | None = None
+
+    if run_agent:
+        try:
+            agent_run = run_agent_compare(
+                "antigravity",
+                prompt_text,
+                timeout_seconds=timeout_seconds,
+                workspace_root=Path.cwd(),
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            checks.append(
+                {
+                    "name": "run_antigravity",
+                    "status": "error",
+                    "message": f"Antigravity run failed: {exc}",
+                    "metadata": {"exception_type": type(exc).__name__},
+                }
+            )
+        else:
+            metadata = (
+                agent_run.get("metadata") if isinstance(agent_run.get("metadata"), dict) else {}
+            )
+            returncode = metadata.get("returncode")
+            checks.append(
+                {
+                    "name": "run_antigravity",
+                    "status": "ok" if returncode in (0, None) else "warning",
+                    "message": f"Antigravity run completed with return code {returncode}.",
+                    "metadata": {
+                        "wall_time_ms": agent_run.get("wall_time_ms"),
+                        "stdout_bytes": agent_run.get("stdout_bytes"),
+                        "stderr_bytes": agent_run.get("stderr_bytes"),
+                    },
+                }
+            )
+    else:
+        checks.append(
+            {
+                "name": "run_antigravity",
+                "status": "ok",
+                "message": "Skipped live Antigravity run.",
+            }
+        )
+
+    sessions = parse_antigravity_storage(storage_path, session_id, 1)
+    imported: list[dict[str, object]] = []
+    search_results: list[dict[str, object]] = []
+    workspace_id: str | None = None
+    session = sessions[0] if sessions else None
+    if session is None:
+        checks.append(
+            {
+                "name": "import_antigravity",
+                "status": "error",
+                "message": "No Antigravity transcript session was found to import.",
+            }
+        )
+    else:
+        with connect(get_settings()) as conn:
+            workspace_id = upsert_workspace(
+                conn,
+                root_uri=workspace_uri,
+                name=workspace_name or workspace_name_from_uri(workspace_uri),
+                metadata={"source": "cli", "import_source": "antigravity-testbed"},
+            )
+            session_row_id = store_antigravity_session(conn, workspace_id, session)
+            imported.append(
+                {
+                    "workspace_id": workspace_id,
+                    "session_id": session_row_id,
+                    "external_id": session.session_id,
+                    "session_path": str(session.session_path),
+                }
+            )
+            checks.append(
+                {
+                    "name": "import_antigravity",
+                    "status": "ok",
+                    "message": f"Imported Antigravity session {session.session_id}.",
+                    "metadata": {
+                        "session_id": session_row_id,
+                        "external_id": session.session_id,
+                        "session_path": str(session.session_path),
+                    },
+                }
+            )
+
+            search_results = search_dev_memory(
+                conn,
+                marker,
+                limit=search_limit,
+                workspace_uri=workspace_uri,
+                source="antigravity",
+            )
+            checks.append(
+                {
+                    "name": "cli_search",
+                    "status": "ok" if search_results else "error",
+                    "message": f"CLI search returned {len(search_results)} Antigravity result(s).",
+                    "metadata": {"result_count": len(search_results), "query": marker},
+                }
+            )
+
+            if save_benchmark:
+                if agent_run is not None:
+                    benchmark_ids["agent_run"] = save_agent_run_benchmark(
+                        conn,
+                        agent="antigravity",
+                        command=str(agent_run.get("command") or "agy --print"),
+                        workspace_uri=workspace_uri,
+                        label=label,
+                        prompt_text=prompt_text,
+                        prompt_label="antigravity-testbed",
+                        wall_time_ms=agent_run.get("wall_time_ms")
+                        if isinstance(agent_run.get("wall_time_ms"), int | float)
+                        else None,
+                        final_output=str(agent_run.get("final_output") or ""),
+                        stdout_bytes=agent_run.get("stdout_bytes")
+                        if isinstance(agent_run.get("stdout_bytes"), int)
+                        else None,
+                        stderr_bytes=agent_run.get("stderr_bytes")
+                        if isinstance(agent_run.get("stderr_bytes"), int)
+                        else None,
+                        transcript_paths=[str(session.session_path)],
+                        log_paths=agent_run.get("log_paths")
+                        if isinstance(agent_run.get("log_paths"), list)
+                        else None,
+                        metadata={"source": "testbed-antigravity"},
+                    )
+                search_benchmark = benchmark_search(
+                    conn,
+                    [marker],
+                    mode="keyword",
+                    repeat=1,
+                    limit=search_limit,
+                    workspace_uri=workspace_uri,
+                    source="antigravity",
+                )
+                benchmark_ids["search"] = save_benchmark_run(
+                    conn,
+                    search_benchmark,
+                    label=f"{label}-search",
+                    workspace_uri=workspace_uri,
+                    metadata={"source": "testbed-antigravity"},
+                )
+
+    mcp_report: dict[str, object] | None = None
+    if run_mcp:
+        try:
+            mcp_report = run_stdio_smoke(
+                cwd=Path.cwd(),
+                query=marker,
+                workspace_uri=workspace_uri,
+                limit=search_limit,
+                allow_empty_search=False,
+            )
+        except Exception as exc:
+            checks.append(
+                {
+                    "name": "mcp_smoke",
+                    "status": "error",
+                    "message": f"MCP smoke failed: {exc}",
+                    "metadata": {"exception_type": type(exc).__name__},
+                }
+            )
+        else:
+            mcp_status = str(mcp_report.get("status") or "error")
+            search_check = next(
+                (
+                    check
+                    for check in mcp_report.get("checks", [])
+                    if isinstance(check, dict) and check.get("name") == "call_search_dev_memory"
+                ),
+                {},
+            )
+            checks.append(
+                {
+                    "name": "mcp_smoke",
+                    "status": mcp_status,
+                    "message": f"MCP smoke completed with status {mcp_status}.",
+                    "metadata": search_check.get("metadata")
+                    if isinstance(search_check, dict)
+                    else {},
+                }
+            )
+    else:
+        checks.append(
+            {
+                "name": "mcp_smoke",
+                "status": "ok",
+                "message": "Skipped MCP smoke.",
+            }
+        )
+
+    return {
+        "schema": "geond.antigravity_testbed_report.v1",
+        "status": _check_status(checks),
+        "marker": marker,
+        "workspace_uri": workspace_uri,
+        "workspace_id": workspace_id,
+        "checks": checks,
+        "imported_sessions": imported,
+        "cli_search_result_count": len(search_results),
+        "mcp_report": mcp_report,
+        "benchmark_run_ids": benchmark_ids,
+    }
+
+
+def format_antigravity_testbed_report_markdown(report: dict[str, object]) -> str:
+    lines = [
+        "# Antigravity Testbed Report",
+        "",
+        f"Status: {report.get('status')}",
+        f"Marker: `{report.get('marker')}`",
+        f"Workspace: `{report.get('workspace_uri')}`",
+        "",
+        "| Check | Status | Message |",
+        "| --- | --- | --- |",
+    ]
+    for check in report.get("checks", []):
+        if not isinstance(check, dict):
+            continue
+        message = str(check.get("message") or "").replace("|", "\\|")
+        lines.append(f"| {check.get('name') or ''} | {check.get('status') or ''} | {message} |")
+
+    imported = report.get("imported_sessions")
+    if isinstance(imported, list) and imported:
+        lines.extend(["", "## Imported Sessions", ""])
+        for session in imported:
+            if not isinstance(session, dict):
+                continue
+            lines.append(f"- `{session.get('external_id')}` -> `{session.get('session_id')}`")
+
+    benchmark_ids = report.get("benchmark_run_ids")
+    if isinstance(benchmark_ids, dict) and benchmark_ids:
+        lines.extend(["", "## Benchmark Runs", ""])
+        for kind, run_id in benchmark_ids.items():
+            lines.append(f"- {kind}: `{run_id}`")
+    return "\n".join(lines)
 
 
 def format_compare_agents_markdown(result: dict[str, object]) -> str:
@@ -683,6 +967,32 @@ def main() -> None:
         "--allow-empty-search",
         action="store_true",
         help="Treat an empty search result as ok; useful for structural MCP transport checks",
+    )
+
+    testbed_antigravity = subparsers.add_parser(
+        "testbed-antigravity",
+        help="Run a repeatable Antigravity CLI/import/search/MCP testbed validation",
+    )
+    testbed_antigravity.add_argument(
+        "--workspace-uri", default=workspace_uri_from_cwd(str(Path.cwd()))
+    )
+    testbed_antigravity.add_argument("--workspace-name")
+    testbed_antigravity.add_argument("--storage-path", type=Path)
+    testbed_antigravity.add_argument("--session-id")
+    testbed_antigravity.add_argument("--prompt-file", type=Path)
+    testbed_antigravity.add_argument("--prompt")
+    testbed_antigravity.add_argument("--marker")
+    testbed_antigravity.add_argument("--timeout-seconds", type=int, default=180)
+    testbed_antigravity.add_argument("--search-limit", type=int, default=5)
+    testbed_antigravity.add_argument("--skip-run", action="store_true")
+    testbed_antigravity.add_argument("--skip-mcp", action="store_true")
+    testbed_antigravity.add_argument("--save-benchmark", action="store_true")
+    testbed_antigravity.add_argument("--label", default="antigravity-testbed")
+    testbed_antigravity.add_argument("--format", choices=["json", "markdown"], default="json")
+    testbed_antigravity.add_argument(
+        "--strict",
+        action="store_true",
+        help="Exit non-zero when any testbed check fails",
     )
 
     install = subparsers.add_parser(
@@ -1564,6 +1874,34 @@ def main() -> None:
             }
         if args.format == "text":
             print(format_smoke_report(report))
+        else:
+            print(json.dumps(report, ensure_ascii=False, indent=2))
+        if args.strict and report["status"] != "ok":
+            raise SystemExit(1)
+        return
+
+    if args.command == "testbed-antigravity":
+        marker = args.marker or generate_antigravity_testbed_marker()
+        prompt_source = args.prompt
+        if args.prompt_file:
+            prompt_source = args.prompt_file.read_text(encoding="utf-8")
+        prompt_text = build_antigravity_testbed_prompt(marker, prompt_source)
+        report = run_antigravity_testbed(
+            workspace_uri=args.workspace_uri,
+            workspace_name=args.workspace_name,
+            marker=marker,
+            prompt_text=prompt_text,
+            storage_path=args.storage_path,
+            session_id=args.session_id,
+            timeout_seconds=args.timeout_seconds,
+            search_limit=args.search_limit,
+            run_agent=not args.skip_run,
+            run_mcp=not args.skip_mcp,
+            save_benchmark=args.save_benchmark,
+            label=args.label,
+        )
+        if args.format == "markdown":
+            print(format_antigravity_testbed_report_markdown(report))
         else:
             print(json.dumps(report, ensure_ascii=False, indent=2))
         if args.strict and report["status"] != "ok":
