@@ -9,8 +9,12 @@ from psycopg import Connection
 from psycopg.cursor import Cursor
 from psycopg.types.json import Jsonb
 
-from geond.storage.repository import resolve_workspace_id, resolve_workspace_id_cursor
-from geond.storage.repository import upsert_agent, upsert_workspace
+from geond.storage.repository import (
+    resolve_workspace_id,
+    resolve_workspace_id_cursor,
+    upsert_agent,
+    upsert_workspace,
+)
 
 GOAL_SCHEMA = "geond.goal.v1"
 RUN_SCHEMA = "geond.run.v1"
@@ -25,6 +29,7 @@ READINESS_SCHEMA = "geond.readiness_report.v1"
 BRIEF_SCHEMA = "geond.orchestrator_brief.v1"
 RUN_HANDOFF_PACKAGE_SCHEMA = "geond.run_handoff_package.v1"
 RUN_SUMMARY_SCHEMA = "geond.run_summary.v1"
+TASK_GRAPH_SCHEMA = "geond.task_graph.v1"
 
 ACTIVE_LEASE_STATUSES = {"active", "renewed"}
 BLOCKING_FINDING_SEVERITIES = {"P0", "P1"}
@@ -243,6 +248,203 @@ def update_task_state(
         remember_idempotency(cur, "update_task_state", task["workspace_id"], idempotency_key, payload, result)
     conn.commit()
     return result
+
+
+def create_task_graph(
+    conn: Connection,
+    run_id: str,
+    tasks: list[dict[str, Any]],
+    created_by_agent: str | None = "geond-orchestrator",
+) -> dict[str, Any]:
+    if not task_graph_table_exists(conn):
+        return error_result(
+            "TASK_GRAPH_SCHEMA_MISSING",
+            "Task graph migration 008_orchestration_task_graph is not applied.",
+        )
+
+    keys = [str(item.get("key") or "").strip() for item in tasks]
+    if any(not key for key in keys):
+        return error_result("VALIDATION_ERROR", "Each task graph task requires a key.")
+    if len(set(keys)) != len(keys):
+        return error_result("VALIDATION_ERROR", "Task graph keys must be unique.")
+    known_keys = set(keys)
+    for item in tasks:
+        to_key = str(item.get("key") or "").strip()
+        for from_key in item.get("depends_on") or []:
+            from_key = str(from_key).strip()
+            if from_key not in known_keys:
+                return error_result(
+                    "TASK_GRAPH_DEPENDENCY_NOT_FOUND",
+                    "Task graph dependency key was not found.",
+                    related_ids={"dependency_key": from_key, "task_key": to_key},
+                )
+
+    created_tasks: dict[str, dict[str, Any]] = {}
+    for item in tasks:
+        key = str(item.get("key") or "").strip()
+        result = create_task(
+            conn,
+            run_id,
+            str(item.get("title") or ""),
+            description=str(item.get("description") or ""),
+            status=str(item.get("status") or "ready"),
+            priority=int(item.get("priority") or 0),
+            required_evidence=item.get("required_evidence") or [],
+            created_by_agent=created_by_agent,
+            metadata={"graph_key": key, "source": "task_graph"},
+            idempotency_key=f"task_graph:{run_id}:task:{key}",
+        )
+        if result.get("status") != "ok":
+            return result
+        created_tasks[key] = result["task"]
+
+    edges: list[dict[str, Any]] = []
+    with conn.cursor() as cur:
+        run = get_run_row_cursor(cur, run_id)
+        if not run:
+            conn.commit()
+            return error_result(
+                "RUN_NOT_FOUND",
+                "Run was not found.",
+                related_ids={"run_id": run_id},
+            )
+        for item in tasks:
+            to_key = str(item.get("key") or "").strip()
+            to_task = created_tasks[to_key]
+            for from_key in item.get("depends_on") or []:
+                from_key = str(from_key).strip()
+                from_task = created_tasks[from_key]
+                cur.execute(
+                    """
+                    INSERT INTO orchestration_task_edges (
+                        workspace_id, run_id, from_task_id, to_task_id, edge_type, metadata
+                    )
+                    VALUES (%s, %s, %s, %s, 'blocks', %s)
+                    ON CONFLICT (from_task_id, to_task_id, edge_type)
+                    DO UPDATE SET metadata = orchestration_task_edges.metadata || EXCLUDED.metadata
+                    RETURNING
+                        id::text, workspace_id::text, run_id::text,
+                        from_task_id::text, to_task_id::text, edge_type,
+                        metadata, created_at
+                    """,
+                    (
+                        run["workspace_id"],
+                        run_id,
+                        from_task["task_id"],
+                        to_task["task_id"],
+                        Jsonb({"from_key": from_key, "to_key": to_key}),
+                    ),
+                )
+                edges.append(task_edge_row(cur.fetchone()))
+    conn.commit()
+    return {
+        "schema": TASK_GRAPH_SCHEMA,
+        "status": "ok",
+        "code": None,
+        "run_id": run_id,
+        "tasks": list(created_tasks.values()),
+        "edges": edges,
+    }
+
+
+def list_task_graph(conn: Connection, run_id: str) -> dict[str, Any]:
+    if not task_graph_table_exists(conn):
+        return {
+            "schema": TASK_GRAPH_SCHEMA,
+            "status": "ok",
+            "code": None,
+            "run_id": run_id,
+            "tasks": [],
+            "edges": [],
+            "blocked_tasks": [],
+        }
+    with conn.cursor() as cur:
+        run = get_run_row_cursor(cur, run_id)
+        if not run:
+            return error_result(
+                "RUN_NOT_FOUND",
+                "Run was not found.",
+                related_ids={"run_id": run_id},
+            )
+        tasks = list_run_tasks_cursor(cur, run_id)
+        cur.execute(
+            """
+            SELECT
+                id::text, workspace_id::text, run_id::text,
+                from_task_id::text, to_task_id::text, edge_type,
+                metadata, created_at
+            FROM orchestration_task_edges
+            WHERE run_id = %s::uuid
+            ORDER BY created_at, id
+            """,
+            (run_id,),
+        )
+        edges = [task_edge_row(row) for row in cur.fetchall()]
+    return {
+        "schema": TASK_GRAPH_SCHEMA,
+        "status": "ok",
+        "code": None,
+        "run_id": run_id,
+        "tasks": tasks,
+        "edges": edges,
+        "blocked_tasks": get_blocked_task_reasons(conn, run_id).get("blocked_tasks", []),
+    }
+
+
+def get_blocked_task_reasons(conn: Connection, run_id: str) -> dict[str, Any]:
+    if not task_graph_table_exists(conn):
+        return {
+            "schema": TASK_GRAPH_SCHEMA + ".blocked_reasons",
+            "status": "ok",
+            "code": None,
+            "run_id": run_id,
+            "blocked_tasks": [],
+        }
+    with conn.cursor() as cur:
+        run = get_run_row_cursor(cur, run_id)
+        if not run:
+            return error_result(
+                "RUN_NOT_FOUND",
+                "Run was not found.",
+                related_ids={"run_id": run_id},
+            )
+        cur.execute(
+            """
+            SELECT
+                t.id::text,
+                t.title,
+                jsonb_agg(
+                    jsonb_build_object(
+                        'task_id', dep.id::text,
+                        'title', dep.title,
+                        'status', dep.status,
+                        'edge_id', e.id::text
+                    )
+                    ORDER BY dep.priority DESC, dep.created_at
+                ) AS blockers
+            FROM orchestration_tasks t
+            JOIN orchestration_task_edges e ON e.to_task_id = t.id
+            JOIN orchestration_tasks dep ON dep.id = e.from_task_id
+            WHERE t.run_id = %s::uuid
+              AND t.status = 'ready'
+              AND dep.status <> 'done'
+              AND e.edge_type = 'blocks'
+            GROUP BY t.id, t.title
+            ORDER BY t.title
+            """,
+            (run_id,),
+        )
+        blocked = [
+            {"task_id": row[0], "title": row[1], "blockers": row[2] or []}
+            for row in cur.fetchall()
+        ]
+    return {
+        "schema": TASK_GRAPH_SCHEMA + ".blocked_reasons",
+        "status": "ok",
+        "code": None,
+        "run_id": run_id,
+        "blocked_tasks": blocked,
+    }
 
 
 def register_worker_session(
@@ -1088,6 +1290,18 @@ def get_claimable_tasks(
         if workspace_id:
             filters.append("t.workspace_id = %s::uuid")
             params.append(workspace_id)
+        dependency_filter = ""
+        if task_graph_table_exists_cursor(cur):
+            dependency_filter = """
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM orchestration_task_edges e
+                  JOIN orchestration_tasks dep ON dep.id = e.from_task_id
+                  WHERE e.to_task_id = t.id
+                    AND e.edge_type = 'blocks'
+                    AND dep.status <> 'done'
+              )
+            """
         params.append(limit)
         cur.execute(
             f"""
@@ -1103,6 +1317,7 @@ def get_claimable_tasks(
                     AND l.released_at IS NULL
                     AND l.status IN ('active', 'renewed')
               )
+              {dependency_filter}
             ORDER BY t.priority DESC, t.created_at
             LIMIT %s
             """,
@@ -1181,6 +1396,9 @@ def get_readiness_report(conn: Connection, run_id: str) -> dict[str, Any]:
             blocking_reasons.append("no completed tasks")
         if command_count == 0:
             blocking_reasons.append("no command evidence")
+    elif done_count < task_count:
+        report_status = "not_ready"
+        blocking_reasons.append("unfinished tasks")
 
     return {
         "schema": READINESS_SCHEMA,
@@ -1662,6 +1880,31 @@ def task_belongs_to_run_cursor(cur: Cursor, task_id: str, run_id: str) -> bool:
         (task_id, run_id),
     )
     return cur.fetchone() is not None
+
+
+def list_run_tasks_cursor(cur: Cursor, run_id: str) -> list[dict[str, Any]]:
+    cur.execute(
+        """
+        SELECT
+            id::text, workspace_id::text, run_id::text, title, description, status,
+            priority, required_evidence, created_by_agent, metadata, created_at, updated_at
+        FROM orchestration_tasks
+        WHERE run_id = %s::uuid
+        ORDER BY priority DESC, created_at
+        """,
+        (run_id,),
+    )
+    return [task_row(row) for row in cur.fetchall()]
+
+
+def task_graph_table_exists(conn: Connection) -> bool:
+    with conn.cursor() as cur:
+        return task_graph_table_exists_cursor(cur)
+
+
+def task_graph_table_exists_cursor(cur: Cursor) -> bool:
+    cur.execute("SELECT to_regclass('public.orchestration_task_edges')::text")
+    return cur.fetchone()[0] == "orchestration_task_edges"
 
 
 def get_worker_session_row_cursor(cur: Cursor, worker_session_id: str | None) -> dict[str, Any] | None:
@@ -2181,6 +2424,20 @@ def task_row(row: Any) -> dict[str, Any]:
         "metadata": row[9],
         "created_at": iso(row[10]),
         "updated_at": iso(row[11]),
+    }
+
+
+def task_edge_row(row: Any) -> dict[str, Any]:
+    return {
+        "schema": TASK_GRAPH_SCHEMA + ".edge",
+        "edge_id": row[0],
+        "workspace_id": row[1],
+        "run_id": row[2],
+        "from_task_id": row[3],
+        "to_task_id": row[4],
+        "edge_type": row[5],
+        "metadata": row[6],
+        "created_at": iso(row[7]),
     }
 
 

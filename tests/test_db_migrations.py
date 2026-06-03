@@ -11,6 +11,8 @@ from geond.db import connect, discover_schema_files, run_schema_file, run_schema
 
 SCHEMA = Path(__file__).parents[1] / "schemas" / "001_initial.sql"
 ORCHESTRATION_SCHEMA = Path(__file__).parents[1] / "schemas" / "007_orchestration.sql"
+TASK_GRAPH_SCHEMA = Path(__file__).parents[1] / "schemas" / "008_orchestration_task_graph.sql"
+TASK_GRAPH_UNIQUE_INDEX = "orchestration_task_edges_from_task_id_to_task_id_edge_type_key"
 
 
 def test_discover_schema_files_sorts_sql_files(tmp_path: Path) -> None:
@@ -76,6 +78,8 @@ def test_orchestration_schema_adds_worker_lease_contract() -> None:
             run_schema_file(conn, SCHEMA)
             run_schema_file(conn, ORCHESTRATION_SCHEMA)
             run_schema_file(conn, ORCHESTRATION_SCHEMA)
+            run_schema_file(conn, TASK_GRAPH_SCHEMA)
+            run_schema_file(conn, TASK_GRAPH_SCHEMA)
         except psycopg.Error as exc:
             pytest.skip(f"Postgres integration schema is not available: {exc}")
 
@@ -86,5 +90,9 @@ def test_orchestration_schema_adds_worker_lease_contract() -> None:
             assert cur.fetchone()[0] == "task_leases"
             cur.execute("SELECT to_regclass('public.idx_task_leases_one_active_per_task')::text")
             assert cur.fetchone()[0] == "idx_task_leases_one_active_per_task"
+            cur.execute("SELECT to_regclass('public.orchestration_task_edges')::text")
+            assert cur.fetchone()[0] == "orchestration_task_edges"
+            cur.execute("SELECT to_regclass(%s)::text", (f"public.{TASK_GRAPH_UNIQUE_INDEX}",))
+            assert cur.fetchone()[0] == TASK_GRAPH_UNIQUE_INDEX
             cur.execute("SELECT to_regclass('public.idempotency_records')::text")
             assert cur.fetchone()[0] == "idempotency_records"

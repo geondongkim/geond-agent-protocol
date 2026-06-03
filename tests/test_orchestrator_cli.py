@@ -15,8 +15,10 @@ class FakeConnection:
         return None
 
 
-def test_orchestrator_run_cli_wires_service(monkeypatch, capsys) -> None:
+def test_orchestrator_run_cli_wires_service(monkeypatch, capsys, tmp_path: Path) -> None:
     captured: dict[str, object] = {}
+    graph_path = tmp_path / "graph.md"
+    graph_path.write_text("- [ ] repro | Reproduce issue\n", encoding="utf-8")
 
     def fake_connect(settings) -> FakeConnection:  # noqa: ANN001
         return FakeConnection()
@@ -38,6 +40,8 @@ def test_orchestrator_run_cli_wires_service(monkeypatch, capsys) -> None:
             "file:///repo",
             "--risk-level",
             "medium",
+            "--task-graph",
+            str(graph_path),
             "--format",
             "json",
         ],
@@ -51,6 +55,7 @@ def test_orchestrator_run_cli_wires_service(monkeypatch, capsys) -> None:
         "goal": "Fix checkout flow",
         "workspace_id_or_uri": "file:///repo",
         "risk_level": "medium",
+        "task_graph_path": graph_path,
     }
 
 
@@ -60,8 +65,8 @@ def test_orchestrator_status_dispatch_resume_finalize_cli(monkeypatch, capsys) -
     def fake_connect(settings) -> FakeConnection:  # noqa: ANN001
         return FakeConnection()
 
-    def fake_status(conn, run_id):  # noqa: ANN001
-        captured["status"] = run_id
+    def fake_status(conn, run_id, **kwargs):  # noqa: ANN001, ANN202
+        captured["status"] = {"run_id": run_id, **kwargs}
         return {
             "schema": "geond.orchestrator_status.v1",
             "status": "ok",
@@ -76,8 +81,8 @@ def test_orchestrator_status_dispatch_resume_finalize_cli(monkeypatch, capsys) -
             "markdown": "# Dispatch\n",
         }
 
-    def fake_resume(conn, run_id):  # noqa: ANN001
-        captured["resume"] = run_id
+    def fake_resume(conn, run_id, **kwargs):  # noqa: ANN001, ANN202
+        captured["resume"] = {"run_id": run_id, **kwargs}
         return {
             "schema": "geond.orchestrator_resume.v1",
             "status": "ok",
@@ -131,10 +136,10 @@ def test_orchestrator_status_dispatch_resume_finalize_cli(monkeypatch, capsys) -
     orchestrator_cli.main()
     assert capsys.readouterr().out == "# Finalize\n"
 
-    assert captured["status"] == "run-1"
+    assert captured["status"]["run_id"] == "run-1"
     assert captured["dispatch"]["run_id"] == "run-1"
     assert captured["dispatch"]["agent_name"] == "claude"
-    assert captured["resume"] == "run-1"
+    assert captured["resume"]["run_id"] == "run-1"
     assert captured["finalize"]["write_manifest"] is True
 
 

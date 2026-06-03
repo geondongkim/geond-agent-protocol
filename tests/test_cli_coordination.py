@@ -447,7 +447,17 @@ def test_orchestration_approval_review_decision_cli_wire_storage(monkeypatch, ca
     monkeypatch.setattr(
         sys,
         "argv",
-        ["geond", "approval", "request", "--run", "run-1", "--reason", "deploy", "--risk-level", "high"],
+        [
+            "geond",
+            "approval",
+            "request",
+            "--run",
+            "run-1",
+            "--reason",
+            "deploy",
+            "--risk-level",
+            "high",
+        ],
     )
     cli.main()
     assert json.loads(capsys.readouterr().out)["approval"]["approval_id"] == "approval-1"
@@ -455,7 +465,16 @@ def test_orchestration_approval_review_decision_cli_wire_storage(monkeypatch, ca
     monkeypatch.setattr(
         sys,
         "argv",
-        ["geond", "approval", "resolve", "approval-1", "--status", "approved", "--resolved-by", "human"],
+        [
+            "geond",
+            "approval",
+            "resolve",
+            "approval-1",
+            "--status",
+            "approved",
+            "--resolved-by",
+            "human",
+        ],
     )
     cli.main()
     assert json.loads(capsys.readouterr().out)["approval"]["approval_id"] == "approval-1"
@@ -463,7 +482,17 @@ def test_orchestration_approval_review_decision_cli_wire_storage(monkeypatch, ca
     monkeypatch.setattr(
         sys,
         "argv",
-        ["geond", "review", "finding", "--run", "run-1", "--summary", "Missing test", "--severity", "P1"],
+        [
+            "geond",
+            "review",
+            "finding",
+            "--run",
+            "run-1",
+            "--summary",
+            "Missing test",
+            "--severity",
+            "P1",
+        ],
     )
     cli.main()
     assert json.loads(capsys.readouterr().out)["finding"]["finding_id"] == "finding-1"
@@ -558,6 +587,85 @@ def test_orchestration_run_summarize_and_manifest_cli(monkeypatch, capsys, tmp_p
     assert output["status"] == "ok"
     assert captured["manifest"]["base_dir"] == tmp_path
     assert captured["manifest"]["write_result"] is True
+
+
+def test_orchestration_task_graph_cli_wires_storage(monkeypatch, capsys, tmp_path) -> None:
+    captured: dict[str, object] = {}
+    graph_path = tmp_path / "graph.md"
+    graph_path.write_text(
+        "- [ ] repro | Reproduce issue | priority=100\n"
+        "- [ ] fix | Implement fix | depends_on=repro\n",
+        encoding="utf-8",
+    )
+
+    def fake_connect(settings) -> FakeConnection:  # noqa: ANN001
+        return FakeConnection()
+
+    def fake_create_graph(conn, **kwargs):  # noqa: ANN001, ANN202
+        captured.update(kwargs)
+        return {
+            "schema": "geond.task_graph.v1",
+            "status": "ok",
+            "run_id": kwargs["run_id"],
+            "tasks": [{"task_id": "task-1", "title": "Reproduce issue"}],
+            "edges": [],
+        }
+
+    monkeypatch.setattr(cli, "connect", fake_connect)
+    monkeypatch.setattr(cli, "orchestration_create_task_graph", fake_create_graph)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["geond", "task", "graph", "run-1", "--from", str(graph_path)],
+    )
+
+    cli.main()
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["schema"] == "geond.task_graph.v1"
+    assert captured["run_id"] == "run-1"
+    assert [task["key"] for task in captured["tasks"]] == ["repro", "fix"]
+
+
+def test_degraded_ledger_reconcile_cli_wires_service(monkeypatch, capsys, tmp_path) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_connect(settings) -> FakeConnection:  # noqa: ANN001
+        return FakeConnection()
+
+    def fake_reconcile(conn, **kwargs):  # noqa: ANN001, ANN202
+        captured.update(kwargs)
+        return {
+            "schema": "geond.degraded_ledger_reconcile.v1",
+            "status": "ok",
+            "run_id": kwargs["run_id"],
+            "dry_run": kwargs["dry_run"],
+            "pending_count": 1,
+            "applied_count": 0,
+            "results": [],
+        }
+
+    monkeypatch.setattr(cli, "connect", fake_connect)
+    monkeypatch.setattr(cli.degraded_ledger, "reconcile", fake_reconcile)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "geond",
+            "ledger",
+            "reconcile",
+            "run-1",
+            "--base-dir",
+            str(tmp_path),
+            "--dry-run",
+        ],
+    )
+
+    cli.main()
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["schema"] == "geond.degraded_ledger_reconcile.v1"
+    assert captured == {"run_id": "run-1", "base_dir": tmp_path, "dry_run": True}
 
 
 def test_usage_summary_cli_wires_storage(monkeypatch, capsys) -> None:

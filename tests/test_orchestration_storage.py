@@ -13,6 +13,7 @@ from geond.storage import orchestration
 
 SCHEMA = Path(__file__).parents[1] / "schemas" / "001_initial.sql"
 ORCHESTRATION_SCHEMA = Path(__file__).parents[1] / "schemas" / "007_orchestration.sql"
+TASK_GRAPH_SCHEMA = Path(__file__).parents[1] / "schemas" / "008_orchestration_task_graph.sql"
 
 
 def _connect_with_schema() -> psycopg.Connection:
@@ -24,6 +25,7 @@ def _connect_with_schema() -> psycopg.Connection:
     try:
         run_schema_file(conn, SCHEMA)
         run_schema_file(conn, ORCHESTRATION_SCHEMA)
+        run_schema_file(conn, TASK_GRAPH_SCHEMA)
     except psycopg.Error as exc:
         pytest.skip(f"Postgres integration schema is not available: {exc}")
     return conn
@@ -215,6 +217,62 @@ def test_high_risk_run_requires_pending_approval_resolution() -> None:
         assert resolved["approval"]["status"] == "approved"
         ready = orchestration.get_readiness_report(conn, run["run"]["run_id"])
         assert ready["status"] == "ready"
+
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM workspaces WHERE root_uri = %s", (workspace_uri,))
+        conn.commit()
+
+
+def test_task_graph_dependencies_gate_claimable_tasks() -> None:
+    workspace_uri = f"file:///tmp/geond-orchestration-task-graph-{uuid4()}"
+    conn = _connect_with_schema()
+    with conn:
+        run = orchestration.create_run(conn, workspace_uri, "Task graph run")
+        graph = orchestration.create_task_graph(
+            conn,
+            run["run"]["run_id"],
+            [
+                {"key": "repro", "title": "Reproduce issue", "priority": 100},
+                {
+                    "key": "fix",
+                    "title": "Implement fix",
+                    "priority": 50,
+                    "depends_on": ["repro"],
+                },
+            ],
+        )
+        assert graph["status"] == "ok"
+        by_title = {task["title"]: task for task in graph["tasks"]}
+        claimable = orchestration.get_claimable_tasks(conn, run_id=run["run"]["run_id"])
+        blocked = orchestration.get_blocked_task_reasons(conn, run["run"]["run_id"])
+        assert [task["title"] for task in claimable["tasks"]] == ["Reproduce issue"]
+        assert blocked["blocked_tasks"][0]["title"] == "Implement fix"
+
+        worker = orchestration.register_worker_session(conn, run["run"]["run_id"], "codex")
+        claim = orchestration.claim_task(
+            conn,
+            by_title["Reproduce issue"]["task_id"],
+            "codex",
+            worker_session_id=worker["worker_session"]["worker_session_id"],
+        )
+        orchestration.finish_task_with_handoff(conn, claim["lease"]["lease_id"], "Repro done")
+        claimable_after_repro = orchestration.get_claimable_tasks(conn, run_id=run["run"]["run_id"])
+        assert [task["title"] for task in claimable_after_repro["tasks"]] == ["Implement fix"]
+
+        claim_fix = orchestration.claim_task(
+            conn,
+            by_title["Implement fix"]["task_id"],
+            "codex",
+            worker_session_id=worker["worker_session"]["worker_session_id"],
+        )
+        orchestration.finish_task_with_handoff(conn, claim_fix["lease"]["lease_id"], "Fix done")
+        orchestration.record_command_evidence(
+            conn,
+            run["run"]["run_id"],
+            "uv run pytest",
+            exit_code=0,
+        )
+        assert orchestration.get_readiness_report(conn, run["run"]["run_id"])["status"] == "ready"
 
         with conn.cursor() as cur:
             cur.execute("DELETE FROM workspaces WHERE root_uri = %s", (workspace_uri,))

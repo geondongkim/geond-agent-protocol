@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter, time
 
+from geond import degraded_ledger
 from geond.adapters.antigravity import infer_session_id as infer_antigravity_session_id
 from geond.adapters.antigravity import latest_transcript_path as latest_antigravity_transcript_path
 from geond.adapters.antigravity import parse_storage as parse_antigravity_storage
@@ -87,19 +88,24 @@ from geond.storage.orchestration import claim_task as orchestration_claim_task
 from geond.storage.orchestration import create_goal as orchestration_create_goal
 from geond.storage.orchestration import create_run as orchestration_create_run
 from geond.storage.orchestration import create_task as orchestration_create_task
+from geond.storage.orchestration import create_task_graph as orchestration_create_task_graph
 from geond.storage.orchestration import finish_task_with_handoff as orchestration_finish_task
 from geond.storage.orchestration import get_claimable_tasks as orchestration_claimable_tasks
 from geond.storage.orchestration import get_readiness_report as orchestration_readiness
 from geond.storage.orchestration import get_run_handoff_package as orchestration_handoff_package
-from geond.storage.orchestration import record_command_evidence as orchestration_record_command_evidence
+from geond.storage.orchestration import (
+    record_command_evidence as orchestration_record_command_evidence,
+)
 from geond.storage.orchestration import record_decision as orchestration_record_decision
 from geond.storage.orchestration import record_review_finding as orchestration_record_review_finding
 from geond.storage.orchestration import register_worker_session as orchestration_register_worker
 from geond.storage.orchestration import release_task_lease as orchestration_release_lease
+from geond.storage.orchestration import renew_task_lease as orchestration_renew_lease
 from geond.storage.orchestration import request_approval as orchestration_request_approval
 from geond.storage.orchestration import resolve_approval as orchestration_resolve_approval
-from geond.storage.orchestration import resolve_review_finding as orchestration_resolve_review_finding
-from geond.storage.orchestration import renew_task_lease as orchestration_renew_lease
+from geond.storage.orchestration import (
+    resolve_review_finding as orchestration_resolve_review_finding,
+)
 from geond.storage.orchestration import summarize_run as orchestration_summarize_run
 from geond.storage.repository import (
     cleanup_expired_reservations_for_workspace,
@@ -143,6 +149,7 @@ from geond.storage.usage import (
     summarize_usage,
     usage_group_report,
 )
+from geond.task_graph import parse_task_graph_file
 from geond.workspace_identity import (
     discover_workspace_fingerprints,
     workspace_uri_from_path_or_uri,
@@ -176,6 +183,27 @@ def parse_evidence_refs(values: list[str] | None) -> list[dict[str, str]]:
             raise SystemExit("--evidence-ref must use TYPE:ID format")
         refs.append({"type": ref_type, "id": ref_id})
     return refs
+
+
+def format_task_graph_markdown(result: dict[str, object]) -> str:
+    lines = [
+        "# Task Graph",
+        "",
+        f"- Run: `{result.get('run_id')}`",
+        f"- Status: `{result.get('status')}`",
+        f"- Tasks: `{len(result.get('tasks') or [])}`",
+        f"- Edges: `{len(result.get('edges') or [])}`",
+        "",
+        "## Tasks",
+    ]
+    for task in result.get("tasks") or []:
+        if isinstance(task, dict):
+            lines.append(f"- {task.get('title')} (`{task.get('task_id')}`)")
+    lines.extend(["", "## Edges"])
+    for edge in result.get("edges") or []:
+        if isinstance(edge, dict):
+            lines.append(f"- `{edge.get('from_task_id')}` blocks `{edge.get('to_task_id')}`")
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def changed_files_from_args(
@@ -1673,6 +1701,10 @@ def main() -> None:
     task_create.add_argument("--priority", type=int, default=0)
     task_create.add_argument("--agent-name", dest="created_by_agent")
     task_create.add_argument("--idempotency-key")
+    task_graph = task_subparsers.add_parser("graph", help="Create a dependency-aware task graph")
+    task_graph.add_argument("run_id")
+    task_graph.add_argument("--from", dest="source_path", type=Path, required=True)
+    task_graph.add_argument("--format", choices=["json", "markdown"], default="json")
 
     worker_cmd = subparsers.add_parser("worker", help="Manage orchestration worker leases")
     worker_subparsers = worker_cmd.add_subparsers(dest="worker_command", required=True)
@@ -1776,6 +1808,17 @@ def main() -> None:
     decision_record.add_argument("--decided-by")
     decision_record.add_argument("--evidence-ref", dest="evidence_refs", action="append")
     decision_record.add_argument("--idempotency-key")
+
+    ledger_cmd = subparsers.add_parser("ledger", help="Manage degraded local orchestration ledger")
+    ledger_subparsers = ledger_cmd.add_subparsers(dest="ledger_command", required=True)
+    ledger_reconcile = ledger_subparsers.add_parser(
+        "reconcile",
+        help="Replay pending degraded ledger events into the database",
+    )
+    ledger_reconcile.add_argument("run_id")
+    ledger_reconcile.add_argument("--base-dir", type=Path, default=Path("tmp/geond-runs"))
+    ledger_reconcile.add_argument("--dry-run", action="store_true")
+    ledger_reconcile.add_argument("--format", choices=["json", "markdown"], default="json")
 
     start_task_cmd = subparsers.add_parser(
         "start-task",
@@ -3611,6 +3654,20 @@ def main() -> None:
         print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
         return
 
+    if args.command == "task" and args.task_command == "graph":
+        graph_payload = parse_task_graph_file(args.source_path)
+        with connect(get_settings()) as conn:
+            result = orchestration_create_task_graph(
+                conn,
+                run_id=args.run_id,
+                tasks=graph_payload.get("tasks") or [],
+            )
+        if args.format == "markdown":
+            print(format_task_graph_markdown(result), end="")
+        else:
+            print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        return
+
     if args.command == "worker" and args.worker_command == "register":
         worker_metadata = {
             key: value
@@ -3796,6 +3853,20 @@ def main() -> None:
                 idempotency_key=args.idempotency_key,
             )
         print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        return
+
+    if args.command == "ledger" and args.ledger_command == "reconcile":
+        with connect(get_settings()) as conn:
+            result = degraded_ledger.reconcile(
+                conn,
+                run_id=args.run_id,
+                base_dir=args.base_dir,
+                dry_run=args.dry_run,
+            )
+        if args.format == "markdown":
+            print(degraded_ledger.format_reconcile_markdown(result), end="")
+        else:
+            print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
         return
 
     if args.command == "start-task":

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import uuid
@@ -13,6 +14,8 @@ from urllib.parse import unquote, urlparse
 from psycopg import Connection
 
 CODEX_AGENT_NAME = "codex"
+CLAUDE_AGENT_NAME = "claude"
+SUPPORTED_SPAWN_AGENTS = {CODEX_AGENT_NAME, CLAUDE_AGENT_NAME}
 OUTPUT_SCHEMA_NAME = "OUTPUT_SCHEMA.json"
 PROMPT_NAME = "PROMPT.md"
 CODEX_EVENTS_NAME = "CODEX_EVENTS.jsonl"
@@ -157,12 +160,30 @@ def find_codex_binary() -> str | None:
     return shutil.which("codex")
 
 
+def find_agent_binary(agent_name: str) -> str | None:
+    if agent_name == CODEX_AGENT_NAME:
+        return find_codex_binary()
+    if agent_name == CLAUDE_AGENT_NAME:
+        configured = os.environ.get("GEOND_CLAUDE_BIN")
+        if configured:
+            return configured
+        return shutil.which("claude")
+    return None
+
+
+def missing_binary_code(agent_name: str) -> str:
+    if agent_name == CLAUDE_AGENT_NAME:
+        return "CLAUDE_CLI_NOT_FOUND"
+    return "CODEX_CLI_NOT_FOUND"
+
+
 def build_worker_prompt(
     *,
     status_payload: dict[str, Any],
     run_summary: dict[str, Any],
     selected_task: dict[str, Any],
     workspace_path: str,
+    agent_name: str = CODEX_AGENT_NAME,
 ) -> str:
     readiness = status_payload.get("readiness") or {}
     prompt_payload = {
@@ -178,7 +199,7 @@ def build_worker_prompt(
     }
     return (
         "# Geond Spawned Worker Task\n\n"
-        "You are a spawned Codex worker controlled by Geond Orchestrator.\n"
+        f"You are a spawned {agent_name} worker controlled by Geond Orchestrator.\n"
         "Work only on the selected task. Do not commit or push changes.\n"
         "Use the repository at the provided workspace path.\n"
         "Run only the validation commands that are needed for this task, and report only "
@@ -233,6 +254,54 @@ def build_codex_command(
     return command
 
 
+def build_claude_command(
+    *,
+    claude_bin: str,
+    workspace_path: str,
+    model: str | None = None,
+    max_turns: int = 10,
+) -> list[str]:
+    inner = [
+        claude_bin,
+        "-p",
+        "--output-format",
+        "json",
+        "--max-turns",
+        str(max_turns),
+    ]
+    if model:
+        inner.extend(["--model", model])
+    return [
+        "/bin/sh",
+        "-c",
+        f"cd {shlex.quote(workspace_path)} && exec {shlex.join(inner)}",
+    ]
+
+
+def build_agent_command(
+    *,
+    agent_name: str,
+    agent_bin: str,
+    workspace_path: str,
+    invocation: SpawnInvocation,
+    model: str | None = None,
+    sandbox: str = "workspace-write",
+) -> list[str]:
+    if agent_name == CLAUDE_AGENT_NAME:
+        return build_claude_command(
+            claude_bin=agent_bin,
+            workspace_path=workspace_path,
+            model=model,
+        )
+    return build_codex_command(
+        codex_bin=agent_bin,
+        workspace_path=workspace_path,
+        invocation=invocation,
+        model=model,
+        sandbox=sandbox,
+    )
+
+
 def run_codex(
     *,
     command: list[str],
@@ -262,6 +331,8 @@ def run_codex(
 
     invocation.events_path.write_text(stdout, encoding="utf-8")
     invocation.stderr_path.write_text(stderr, encoding="utf-8")
+    if stdout.strip() and not invocation.last_message_path.exists():
+        invocation.last_message_path.write_text(stdout.strip(), encoding="utf-8")
     return CodexRunResult(
         exit_code=exit_code,
         timed_out=timed_out,
@@ -296,6 +367,7 @@ def parse_worker_result(invocation: SpawnInvocation) -> dict[str, Any]:
             "message": str(exc),
             "raw_text": raw_text[:4000],
         }
+    payload = unwrap_worker_result(payload)
     validation = validate_worker_result(payload)
     if validation.get("status") != "ok":
         validation["raw_payload"] = payload
@@ -305,6 +377,21 @@ def parse_worker_result(invocation: SpawnInvocation) -> dict[str, Any]:
         encoding="utf-8",
     )
     return {"status": "ok", "code": None, "result": payload}
+
+
+def unwrap_worker_result(payload: Any) -> Any:
+    if isinstance(payload, dict):
+        result = payload.get("result")
+        if isinstance(result, dict):
+            return result
+        if isinstance(result, str):
+            stripped = result.strip()
+            if stripped.startswith("{"):
+                try:
+                    return json.loads(stripped)
+                except json.JSONDecodeError:
+                    return payload
+    return payload
 
 
 def validate_worker_result(payload: Any) -> dict[str, Any]:

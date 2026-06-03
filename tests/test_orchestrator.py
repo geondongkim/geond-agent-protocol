@@ -86,6 +86,66 @@ def test_start_run_creates_goal_run_task_and_status(monkeypatch) -> None:
     assert payload["orchestrator_status"]["schema"] == "geond.orchestrator_status.v1"
 
 
+def test_start_run_can_seed_task_graph(monkeypatch, tmp_path: Path) -> None:
+    calls: list[tuple[str, dict[str, object]]] = []
+    graph_path = tmp_path / "graph.md"
+    graph_path.write_text("- [ ] repro | Reproduce issue | priority=100\n", encoding="utf-8")
+
+    monkeypatch.setattr(
+        orchestrator.orchestration_store,
+        "create_goal",
+        lambda conn, workspace, title, **kwargs: {
+            "status": "ok",
+            "goal": {"goal_id": "goal-1", "title": title},
+        },
+    )
+    monkeypatch.setattr(
+        orchestrator.orchestration_store,
+        "create_run",
+        lambda conn, workspace, title, **kwargs: {
+            "status": "ok",
+            "run": {"run_id": "run-1", "title": title, "risk_level": kwargs["risk_level"]},
+        },
+    )
+
+    def fake_create_task(conn, run_id, title, **kwargs):  # noqa: ANN001, ANN202
+        calls.append(("planning_task", {"run_id": run_id, "title": title, **kwargs}))
+        return {"status": "ok", "task": {"task_id": "planning-task", "title": title}}
+
+    def fake_create_graph(conn, run_id, tasks, **kwargs):  # noqa: ANN001, ANN202
+        calls.append(("graph", {"run_id": run_id, "tasks": tasks, **kwargs}))
+        return {"status": "ok", "tasks": [{"task_id": "task-1"}], "edges": []}
+
+    monkeypatch.setattr(orchestrator.orchestration_store, "create_task", fake_create_task)
+    monkeypatch.setattr(orchestrator.orchestration_store, "create_task_graph", fake_create_graph)
+    monkeypatch.setattr(
+        orchestrator.orchestration_store,
+        "get_run_handoff_package",
+        lambda conn, run_id, limit=100: sample_package(run_id),
+    )
+    monkeypatch.setattr(
+        orchestrator.orchestration_store,
+        "get_readiness_report",
+        lambda conn, run_id: ready_report(),
+    )
+    monkeypatch.setattr(
+        orchestrator.orchestration_store,
+        "get_claimable_tasks",
+        lambda conn, **kwargs: {"status": "ok", "tasks": [{"task_id": "task-1", "title": "Task"}]},
+    )
+
+    payload = orchestrator.start_run(
+        object(),
+        goal="Fix checkout flow",
+        workspace_id_or_uri="file:///repo",
+        task_graph_path=graph_path,
+    )
+
+    assert payload["task_graph"]["status"] == "ok"
+    assert calls[0][1]["status"] == "done"
+    assert calls[1][1]["tasks"][0]["key"] == "repro"
+
+
 def test_status_and_dispatch_return_claim_mode_commands(monkeypatch) -> None:
     monkeypatch.setattr(
         orchestrator.orchestration_store,

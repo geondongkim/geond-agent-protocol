@@ -18,10 +18,16 @@ def main() -> None:
     run_cmd.add_argument("goal")
     run_cmd.add_argument("--workspace", required=True)
     run_cmd.add_argument("--risk-level", default="medium")
+    run_cmd.add_argument("--task-graph", type=Path)
     run_cmd.add_argument("--format", choices=["markdown", "json"], default="markdown")
 
     status_cmd = subparsers.add_parser("status", help="Read orchestrator run status")
     status_cmd.add_argument("run_id")
+    status_cmd.add_argument(
+        "--base-dir",
+        type=Path,
+        default=orchestrator.DEFAULT_MANIFEST_BASE_DIR,
+    )
     status_cmd.add_argument("--format", choices=["markdown", "json"], default="markdown")
 
     dispatch_cmd = subparsers.add_parser("dispatch", help="Dispatch claim-mode or spawn-mode work")
@@ -43,6 +49,11 @@ def main() -> None:
 
     resume_cmd = subparsers.add_parser("resume", help="Resume and summarize an existing run")
     resume_cmd.add_argument("run_id")
+    resume_cmd.add_argument(
+        "--base-dir",
+        type=Path,
+        default=orchestrator.DEFAULT_MANIFEST_BASE_DIR,
+    )
     resume_cmd.add_argument("--format", choices=["markdown", "json"], default="markdown")
 
     finalize_cmd = subparsers.add_parser("finalize", help="Finalize a ready run")
@@ -64,9 +75,10 @@ def main() -> None:
                 goal=args.goal,
                 workspace_id_or_uri=args.workspace,
                 risk_level=args.risk_level,
+                task_graph_path=args.task_graph,
             )
         elif args.command == "status":
-            payload = orchestrator.get_status(conn, args.run_id)
+            payload = orchestrator.get_status(conn, args.run_id, manifest_base_dir=args.base_dir)
         elif args.command == "dispatch":
             if args.mode == "claim":
                 payload = orchestrator.dispatch_claim(
@@ -89,7 +101,11 @@ def main() -> None:
                     manifest_base_dir=args.base_dir,
                 )
         elif args.command == "resume":
-            payload = orchestrator.resume_run(conn, args.run_id)
+            payload = orchestrator.resume_run(
+                conn,
+                args.run_id,
+                manifest_base_dir=args.base_dir,
+            )
         elif args.command == "finalize":
             payload = orchestrator.finalize_run(
                 conn,

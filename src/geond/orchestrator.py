@@ -6,9 +6,10 @@ from typing import Any
 
 from psycopg import Connection
 
-from geond import orchestrator_spawn
+from geond import degraded_ledger, orchestrator_spawn
 from geond.orchestration_manifest import write_run_manifest
 from geond.storage import orchestration as orchestration_store
+from geond.task_graph import parse_task_graph_file
 
 ORCHESTRATOR_STATUS_SCHEMA = "geond.orchestrator_status.v1"
 ORCHESTRATOR_RUN_SCHEMA = "geond.orchestrator_run.v1"
@@ -25,6 +26,7 @@ def start_run(
     workspace_id_or_uri: str,
     risk_level: str = "medium",
     created_by_agent: str = "geond-orchestrator",
+    task_graph_path: Path | None = None,
 ) -> dict[str, Any]:
     goal_result = orchestration_store.create_goal(
         conn,
@@ -54,10 +56,22 @@ def start_run(
             "and submit handoff/evidence through geond CLI."
         ),
         priority=100,
+        status="done" if task_graph_path else "ready",
         created_by_agent=created_by_agent,
     )
     if task_result.get("status") != "ok":
         return task_result
+    task_graph_result = None
+    if task_graph_path:
+        graph_payload = parse_task_graph_file(task_graph_path)
+        task_graph_result = orchestration_store.create_task_graph(
+            conn,
+            run_result["run"]["run_id"],
+            graph_payload.get("tasks") or [],
+            created_by_agent=created_by_agent,
+        )
+        if task_graph_result.get("status") != "ok":
+            return task_graph_result
     status_payload = get_status(conn, run_result["run"]["run_id"])
     result = {
         "schema": ORCHESTRATOR_RUN_SCHEMA,
@@ -66,6 +80,7 @@ def start_run(
         "goal": goal_result["goal"],
         "run": run_result["run"],
         "planning_task": task_result["task"],
+        "task_graph": task_graph_result,
         "orchestrator_status": status_payload,
     }
     result["markdown"] = format_start_markdown(result)
@@ -92,6 +107,7 @@ def get_status(
     approvals = package.get("approval_requests") or []
     decisions = package.get("decisions") or []
     run = package["run"]
+    ledger = degraded_ledger.ledger_summary(run_id, manifest_base_dir)
     status_payload = {
         "schema": ORCHESTRATOR_STATUS_SCHEMA,
         "status": "ok",
@@ -115,6 +131,10 @@ def get_status(
         "latest_decisions": decisions[:5],
         "next_worker_commands": build_claim_mode_commands(run_id, claimable_tasks, agent_name),
         "manifest_dir": str(manifest_base_dir / run_id),
+        "degraded_ledger": ledger,
+        "degraded_warning": "pending local ledger events require reconcile"
+        if ledger.get("pending_count")
+        else None,
         "next_action": next_action_for_status(readiness, claimable_tasks),
     }
     status_payload["markdown"] = format_status_markdown(status_payload)
@@ -174,13 +194,13 @@ def dispatch_spawn(
     run_summary = orchestration_store.summarize_run(conn, run_id)
     base_payload = spawn_base_payload(status_payload, run_summary, agent_name)
 
-    if agent_name != orchestrator_spawn.CODEX_AGENT_NAME:
+    if agent_name not in orchestrator_spawn.SUPPORTED_SPAWN_AGENTS:
         return finish_spawn_payload(
             base_payload,
             status="error",
             code="UNSUPPORTED_AGENT",
             execution_status="failed",
-            message="Spawn mode currently supports only the codex agent.",
+            message="Spawn mode supports codex and claude agents.",
         )
 
     selection = select_spawn_task(status_payload, task_id)
@@ -220,14 +240,15 @@ def dispatch_spawn(
             workspace=workspace,
         )
 
-    codex_bin = orchestrator_spawn.find_codex_binary()
-    if not codex_bin:
+    agent_bin = orchestrator_spawn.find_agent_binary(agent_name)
+    if not agent_bin:
+        code = orchestrator_spawn.missing_binary_code(agent_name)
         return finish_spawn_payload(
             base_payload,
             status="error",
-            code="CODEX_CLI_NOT_FOUND",
+            code=code,
             execution_status="failed",
-            message="Codex CLI was not found. Set GEOND_CODEX_BIN or add codex to PATH.",
+            message=missing_agent_binary_message(agent_name),
             selected_task=selected_task,
             workspace=workspace,
         )
@@ -238,9 +259,11 @@ def dispatch_spawn(
         run_summary=run_summary,
         selected_task=selected_task,
         workspace_path=workspace["workspace_path"],
+        agent_name=agent_name,
     )
-    command = orchestrator_spawn.build_codex_command(
-        codex_bin=codex_bin,
+    command = orchestrator_spawn.build_agent_command(
+        agent_name=agent_name,
+        agent_bin=agent_bin,
         workspace_path=workspace["workspace_path"],
         invocation=invocation,
         model=model,
@@ -262,6 +285,22 @@ def dispatch_spawn(
             worker_prompt=prompt,
             expected_output_schema=orchestrator_spawn.output_schema(),
         )
+
+    source_command = spawn_source_command(agent_name, run_id)
+    degraded_ledger.append_event(
+        run_id=run_id,
+        base_dir=manifest_base_dir,
+        event_type="spawn_started",
+        payload={
+            "agent_name": agent_name,
+            "task_id": selected_task["task_id"],
+            "invocation_id": invocation.invocation_id,
+            "command": command,
+        },
+        idempotency_key=f"geond-orchestrator:{invocation.invocation_id}:spawn-started",
+        db_status="recorded",
+        source_command=source_command,
+    )
 
     register = orchestration_store.register_worker_session(
         conn,
@@ -333,12 +372,13 @@ def dispatch_spawn(
     )
 
     if run_result.timed_out or run_result.exit_code != 0:
-        code = "CODEX_TIMEOUT" if run_result.timed_out else "CODEX_RUN_FAILED"
+        code = agent_execution_code(agent_name, "TIMEOUT" if run_result.timed_out else "RUN_FAILED")
         return finish_blocked_spawn(
             conn,
             base_payload=base_payload,
+            run_id=run_id,
             code=code,
-            message="Codex did not complete successfully.",
+            message=f"{agent_name} did not complete successfully.",
             selected_task=selected_task,
             workspace=workspace,
             invocation=bundle,
@@ -346,11 +386,13 @@ def dispatch_spawn(
             claim_result=claim,
             lease_id=claim["lease"]["lease_id"],
             summary=(
-                "Codex spawn failed before returning a valid task result. "
+                f"{agent_name} spawn failed before returning a valid task result. "
                 f"See {invocation.output_dir}."
             ),
             blocked_on=[code],
             next_action="Inspect spawn logs and retry or claim the task manually.",
+            manifest_base_dir=manifest_base_dir,
+            source_command=source_command,
         )
 
     parsed = orchestrator_spawn.parse_worker_result(invocation)
@@ -358,6 +400,7 @@ def dispatch_spawn(
         return finish_blocked_spawn(
             conn,
             base_payload=base_payload,
+            run_id=run_id,
             code=parsed.get("code"),
             message=parsed.get("message"),
             selected_task=selected_task,
@@ -366,13 +409,31 @@ def dispatch_spawn(
             worker_session=worker_session,
             claim_result=claim,
             lease_id=claim["lease"]["lease_id"],
-            summary=f"Codex spawn returned an invalid result. See {invocation.output_dir}.",
+            summary=f"{agent_name} spawn returned an invalid result. See {invocation.output_dir}.",
             blocked_on=[str(parsed.get("code") or "WORKER_RESULT_INVALID")],
             next_action="Inspect LAST_MESSAGE.json and retry or finish the task manually.",
             worker_result_error=parsed,
+            manifest_base_dir=manifest_base_dir,
+            source_command=source_command,
         )
 
     worker_result = parsed["result"]
+    degraded_ledger.append_event(
+        run_id=run_id,
+        base_dir=manifest_base_dir,
+        event_type="worker_result",
+        payload={
+            "agent_name": agent_name,
+            "task_id": selected_task["task_id"],
+            "worker_session_id": worker_session["worker_session_id"],
+            "lease_id": claim["lease"]["lease_id"],
+            "invocation_id": invocation.invocation_id,
+            "worker_result": worker_result,
+        },
+        idempotency_key=f"geond-orchestrator:{invocation.invocation_id}:worker-result",
+        db_status="recorded",
+        source_command=source_command,
+    )
     evidence_results = record_spawn_evidence(
         conn,
         run_id=run_id,
@@ -381,26 +442,73 @@ def dispatch_spawn(
         invocation_id=invocation.invocation_id,
         log_path=str(invocation.events_path),
         worker_result=worker_result,
+        manifest_base_dir=manifest_base_dir,
+        source_command=source_command,
     )
-    finish = orchestration_store.finish_task_with_handoff(
-        conn,
-        claim["lease"]["lease_id"],
-        summary=worker_result["summary"],
-        task_status=worker_result["task_status"],
-        tested_commands=[
+    finish_payload = {
+        "lease_id": claim["lease"]["lease_id"],
+        "summary": worker_result["summary"],
+        "task_status": worker_result["task_status"],
+        "tested_commands": [
             item["command"] for item in orchestrator_spawn.normalized_tested_commands(worker_result)
         ],
-        remaining_risks=[str(item) for item in worker_result.get("risks") or []],
-        next_action=worker_result.get("next_action") or None,
-        worker_session_id=worker_session["worker_session_id"],
-        idempotency_key=f"geond-orchestrator:{invocation.invocation_id}:finish",
+        "remaining_risks": [str(item) for item in worker_result.get("risks") or []],
+        "next_action": worker_result.get("next_action") or None,
+        "blocked_on": [],
+        "worker_session_id": worker_session["worker_session_id"],
+    }
+    finish = apply_handoff_with_ledger(
+        conn,
+        run_id=run_id,
+        invocation_id=invocation.invocation_id,
+        payload=finish_payload,
+        manifest_base_dir=manifest_base_dir,
+        source_command=source_command,
+        idempotency_suffix="finish",
     )
-    if finish.get("status") != "ok":
+    pending_evidence = any(
+        result.get("code") == "DEGRADED_LEDGER_PENDING" for result in evidence_results
+    )
+    failed_evidence = any(result.get("status") != "ok" for result in evidence_results)
+    if pending_evidence:
+        return finish_spawn_payload(
+            base_payload,
+            status="degraded",
+            code="DEGRADED_LEDGER_PENDING",
+            execution_status="blocked",
+            message="One or more command evidence writes were preserved in the degraded ledger.",
+            selected_task=selected_task,
+            workspace=workspace,
+            invocation=bundle,
+            worker_session=worker_session,
+            claim_result=claim,
+            evidence_results=evidence_results,
+            handoff_result=finish,
+            worker_result=worker_result,
+        )
+    if failed_evidence:
         return finish_spawn_payload(
             base_payload,
             status="error",
-            code=finish.get("code"),
+            code="COMMAND_EVIDENCE_FAILED",
             execution_status="failed",
+            message="One or more command evidence writes failed.",
+            selected_task=selected_task,
+            workspace=workspace,
+            invocation=bundle,
+            worker_session=worker_session,
+            claim_result=claim,
+            evidence_results=evidence_results,
+            handoff_result=finish,
+            worker_result=worker_result,
+        )
+    if finish.get("status") != "ok":
+        degraded = finish.get("code") == "DEGRADED_LEDGER_PENDING"
+        return finish_spawn_payload(
+            base_payload,
+            status="degraded" if degraded else "error",
+            code=finish.get("code"),
+            execution_status="blocked" if degraded else "failed",
             message=finish.get("message"),
             selected_task=selected_task,
             workspace=workspace,
@@ -426,6 +534,71 @@ def dispatch_spawn(
         handoff_result=finish,
         worker_result=worker_result,
     )
+
+
+def missing_agent_binary_message(agent_name: str) -> str:
+    if agent_name == orchestrator_spawn.CLAUDE_AGENT_NAME:
+        return "Claude CLI was not found. Set GEOND_CLAUDE_BIN or add claude to PATH."
+    return "Codex CLI was not found. Set GEOND_CODEX_BIN or add codex to PATH."
+
+
+def agent_execution_code(agent_name: str, suffix: str) -> str:
+    return f"{agent_name.upper()}_{suffix}"
+
+
+def spawn_source_command(agent_name: str, run_id: str) -> str:
+    return f"geond-orchestrator dispatch --run {run_id} --mode spawn --agent {agent_name} --execute"
+
+
+def apply_handoff_with_ledger(
+    conn: Connection,
+    *,
+    run_id: str,
+    invocation_id: str,
+    payload: dict[str, Any],
+    manifest_base_dir: Path,
+    source_command: str,
+    idempotency_suffix: str,
+) -> dict[str, Any]:
+    idempotency_key = f"geond-orchestrator:{invocation_id}:{idempotency_suffix}"
+    try:
+        result = orchestration_store.finish_task_with_handoff(
+            conn,
+            payload["lease_id"],
+            summary=payload["summary"],
+            task_status=payload.get("task_status") or "done",
+            tested_commands=payload.get("tested_commands") or [],
+            remaining_risks=payload.get("remaining_risks") or [],
+            next_action=payload.get("next_action"),
+            blocked_on=payload.get("blocked_on") or [],
+            worker_session_id=payload.get("worker_session_id"),
+            idempotency_key=idempotency_key,
+        )
+    except Exception as exc:  # pragma: no cover - exercised through monkeypatch tests
+        rollback_quietly(conn)
+        degraded_ledger.append_event(
+            run_id=run_id,
+            base_dir=manifest_base_dir,
+            event_type="handoff",
+            payload=payload,
+            idempotency_key=idempotency_key,
+            db_status="pending",
+            source_command=source_command,
+        )
+        return {
+            "status": "error",
+            "code": "DEGRADED_LEDGER_PENDING",
+            "message": str(exc),
+            "ledger_event_type": "handoff",
+        }
+    return result
+
+
+def rollback_quietly(conn: Connection) -> None:
+    try:
+        conn.rollback()
+    except Exception:
+        pass
 
 
 def resume_run(
@@ -605,6 +778,7 @@ def finish_blocked_spawn(
     conn: Connection,
     *,
     base_payload: dict[str, Any],
+    run_id: str,
     code: str | None,
     message: str | None,
     selected_task: dict[str, Any],
@@ -617,26 +791,35 @@ def finish_blocked_spawn(
     blocked_on: list[str],
     next_action: str,
     worker_result_error: dict[str, Any] | None = None,
+    manifest_base_dir: Path = DEFAULT_MANIFEST_BASE_DIR,
+    source_command: str = "",
 ) -> dict[str, Any]:
-    handoff = orchestration_store.finish_task_with_handoff(
+    handoff_payload = {
+        "lease_id": lease_id,
+        "summary": summary,
+        "task_status": "blocked",
+        "tested_commands": [],
+        "remaining_risks": blocked_on,
+        "next_action": next_action,
+        "blocked_on": blocked_on,
+        "worker_session_id": worker_session["worker_session_id"],
+    }
+    handoff = apply_handoff_with_ledger(
         conn,
-        lease_id,
-        summary=summary,
-        task_status="blocked",
-        tested_commands=[],
-        remaining_risks=blocked_on,
-        next_action=next_action,
-        blocked_on=blocked_on,
-        worker_session_id=worker_session["worker_session_id"],
-        idempotency_key=f"geond-orchestrator:{invocation['invocation_id']}:blocked",
+        run_id=run_id,
+        invocation_id=invocation["invocation_id"],
+        payload=handoff_payload,
+        manifest_base_dir=manifest_base_dir,
+        source_command=source_command,
+        idempotency_suffix="blocked",
     )
-    status = "ok" if handoff.get("status") == "ok" else "error"
+    status = "ok" if handoff.get("status") == "ok" else "degraded"
     return finish_spawn_payload(
         base_payload,
         status=status,
-        code=code,
+        code=code if status == "ok" else handoff.get("code"),
         execution_status="blocked" if status == "ok" else "failed",
-        message=message,
+        message=message if status == "ok" else handoff.get("message"),
         selected_task=selected_task,
         workspace=workspace,
         invocation=invocation,
@@ -716,24 +899,58 @@ def record_spawn_evidence(
     invocation_id: str,
     log_path: str,
     worker_result: dict[str, Any],
+    manifest_base_dir: Path,
+    source_command: str,
 ) -> list[dict[str, Any]]:
     evidence_results: list[dict[str, Any]] = []
     for index, item in enumerate(orchestrator_spawn.normalized_tested_commands(worker_result)):
-        result = orchestration_store.record_command_evidence(
-            conn,
-            run_id,
-            item["command"],
-            task_id=task_id,
-            worker_session_id=worker_session_id,
-            purpose=item["purpose"],
-            status=item["status"],
-            exit_code=item["exit_code"],
-            stdout_summary=item["stdout_summary"],
-            stderr_summary=item["stderr_summary"],
-            log_path=log_path,
-            metadata={"source": "geond-orchestrator-spawn", "invocation_id": invocation_id},
-            idempotency_key=f"geond-orchestrator:{invocation_id}:evidence:{index}",
-        )
+        payload = {
+            "run_id": run_id,
+            "command": item["command"],
+            "task_id": task_id,
+            "worker_session_id": worker_session_id,
+            "purpose": item["purpose"],
+            "status": item["status"],
+            "exit_code": item["exit_code"],
+            "stdout_summary": item["stdout_summary"],
+            "stderr_summary": item["stderr_summary"],
+            "log_path": log_path,
+            "metadata": {"source": "geond-orchestrator-spawn", "invocation_id": invocation_id},
+        }
+        idempotency_key = f"geond-orchestrator:{invocation_id}:evidence:{index}"
+        try:
+            result = orchestration_store.record_command_evidence(
+                conn,
+                run_id,
+                item["command"],
+                task_id=task_id,
+                worker_session_id=worker_session_id,
+                purpose=item["purpose"],
+                status=item["status"],
+                exit_code=item["exit_code"],
+                stdout_summary=item["stdout_summary"],
+                stderr_summary=item["stderr_summary"],
+                log_path=log_path,
+                metadata=payload["metadata"],
+                idempotency_key=idempotency_key,
+            )
+        except Exception as exc:  # pragma: no cover - exercised through monkeypatch tests
+            rollback_quietly(conn)
+            degraded_ledger.append_event(
+                run_id=run_id,
+                base_dir=manifest_base_dir,
+                event_type="command_evidence",
+                payload=payload,
+                idempotency_key=idempotency_key,
+                db_status="pending",
+                source_command=source_command,
+            )
+            result = {
+                "status": "error",
+                "code": "DEGRADED_LEDGER_PENDING",
+                "message": str(exc),
+                "ledger_event_type": "command_evidence",
+            }
         evidence_results.append(result)
     return evidence_results
 
@@ -766,6 +983,7 @@ def format_start_markdown(payload: dict[str, Any]) -> str:
 def format_status_markdown(payload: dict[str, Any]) -> str:
     run = payload.get("run") or {}
     readiness = payload.get("readiness") or {}
+    ledger_pending_count = (payload.get("degraded_ledger") or {}).get("pending_count", 0)
     lines = [
         f"# {run.get('title') or 'Geond Orchestrator Status'}",
         "",
@@ -774,9 +992,11 @@ def format_status_markdown(payload: dict[str, Any]) -> str:
         f"- Readiness: `{readiness.get('status')}`",
         f"- Next action: `{payload.get('next_action')}`",
         f"- Manifest: `{payload.get('manifest_dir')}`",
-        "",
-        "## Blockers",
+        f"- Degraded ledger pending: `{ledger_pending_count}`",
     ]
+    if payload.get("degraded_warning"):
+        lines.extend(["", "## Degraded Warning", f"- {payload['degraded_warning']}"])
+    lines.extend(["", "## Blockers"])
     lines.extend(markdown_list(readiness.get("blocking_reasons") or []))
     lines.extend(["", "## Claimable Tasks"])
     lines.extend(
