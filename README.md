@@ -67,6 +67,40 @@ uv run geond dashboard serve
 Open the printed localhost URL. More MCP client examples are in
 [docs/mcp_client_config.md](docs/mcp_client_config.md).
 
+## MCP Server And Glama Release
+
+[![geond-agent-protocol MCP server](https://glama.ai/mcp/servers/geondongkim/geond-agent-protocol/badges/score.svg)](https://glama.ai/mcp/servers/geondongkim/geond-agent-protocol)
+
+Run the stdio MCP server directly:
+
+```bash
+uv run geond-mcp
+```
+
+Run it from a Docker image:
+
+```bash
+docker build -t geond-agent-protocol:local .
+docker run --rm -i \
+  -e GEOND_DATABASE_URL=postgresql://geond:geond_dev_password@host.docker.internal:55432/geond \
+  geond-agent-protocol:local
+```
+
+`GEOND_DATABASE_URL` points Geond at PostgreSQL. Local development usually uses
+the Compose database from the quick start. Team mode can use
+`GEOND_DATABASE_PROFILE=azure` plus `AZURE_GEOND_DATABASE_URL` to share memory
+across machines while keeping each MCP process local.
+
+For registry validation, Glama should deploy this repository's Dockerfile,
+create a Glama release, and call `get_geond_server_info` first. That tool does
+not require a database connection, so it is safe for browser-based smoke tests.
+
+Three representative MCP workflows:
+
+1. **Start coordinated work:** `review_workspace_context` -> `reserve_files` -> edit -> `record_changeset`.
+1. **Explain prior context:** `search_dev_memory` -> `explain_change` -> `get_changeset_detail`.
+1. **Leave a handoff:** `record_agent_action` -> `record_handoff_summary` -> `list_handoff_summaries`.
+
 ## What Geond Makes Possible
 
 | Scenario | What you can do | Proof and entrypoint |

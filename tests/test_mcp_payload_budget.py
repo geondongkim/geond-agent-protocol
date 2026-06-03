@@ -28,6 +28,27 @@ def test_search_dev_memory_mcp_schema_defaults_to_keyword() -> None:
     assert tool.parameters["properties"]["mode"]["default"] == "keyword"
 
 
+def test_mcp_tool_metadata_is_glama_ready() -> None:
+    tools = mcp_server.mcp._tool_manager._tools
+
+    assert "get_geond_server_info" in tools
+    for name, tool in tools.items():
+        assert "Purpose:" in tool.description, name
+        assert "When to use:" in tool.description, name
+        for param_name, param_schema in tool.parameters.get("properties", {}).items():
+            assert param_schema.get("description"), f"{name}.{param_name}"
+
+
+def test_get_geond_server_info_does_not_require_database() -> None:
+    info = mcp_server.get_geond_server_info()
+
+    assert info["name"] == "Geond Agent Protocol"
+    assert info["database_required"] is False
+    assert info["safe_for_browser_try"] is True
+    assert "GEOND_DATABASE_URL" in info["environment_variables"]["optional"]
+    assert any(group["name"] == "coordination" for group in info["tool_groups"])
+
+
 def test_common_mcp_payloads_stay_compact_by_default() -> None:
     settings = get_settings()
     workspace_uri = f"file:///tmp/geond-mcp-budget-test-{uuid4()}"

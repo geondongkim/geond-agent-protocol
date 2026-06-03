@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as package_version
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
@@ -63,6 +65,723 @@ from geond.storage.resources import (
 )
 
 mcp = FastMCP("geond-agent-protocol")
+
+
+def _installed_version() -> str:
+    try:
+        return package_version("geond-agent-protocol")
+    except PackageNotFoundError:
+        return "0.1.0-alpha.0"
+
+
+TOOL_DESCRIPTION_HEADINGS = (
+    "When to use:",
+    "Inputs:",
+    "Side effects:",
+    "Output:",
+    "Failure modes:",
+)
+
+
+TOOL_METADATA: dict[str, dict[str, Any]] = {
+    "get_geond_server_info": {
+        "title": "Get Geond server info",
+        "description": """
+Purpose: Return a safe, read-only summary of the Geond Agent Protocol MCP server.
+When to use: Call this first when an MCP host, Glama browser session, or new agent
+needs to understand what Geond does before connecting it to PostgreSQL. Inputs:
+none. Side effects: none; this tool never opens a database connection and does not
+read local transcripts. Output: server purpose, version, environment variables,
+tool groups, setup hints, and example workflows. Failure modes: only package
+metadata lookup fallback is expected, in which case the declared alpha version is
+returned.
+""".strip(),
+        "params": {},
+    },
+    "search_dev_memory": {
+        "title": "Search development memory",
+        "description": """
+Purpose: Search imported agent transcripts, changesets, and shared development
+memory for evidence relevant to a question. When to use: use this before editing,
+reviewing, or explaining repo behavior so the agent can reuse prior context.
+Inputs: query is the natural-language search text; mode selects keyword, vector,
+or hybrid retrieval; filters scope the search by workspace or source; rerank can
+improve ranking. Side effects: records an MCP audit event. Output: compact search
+hits with snippets, scores, sources, and evidence references. Failure modes:
+invalid mode raises an error; vector or hybrid search requires an embedding
+provider and database connectivity.
+""".strip(),
+        "params": {
+            "query": (
+                "Natural-language question or keywords to search for in shared memory."
+            ),
+            "limit": "Maximum number of search results to return.",
+            "mode": (
+                "Retrieval mode: keyword for lexical search, vector for embeddings, "
+                "hybrid for both."
+            ),
+            "workspace_uri": (
+                "Optional workspace root URI used to restrict results to one repo."
+            ),
+            "source": (
+                "Optional imported source filter such as codex, vscode, claude-code, "
+                "or manus."
+            ),
+            "rerank": "Reranking strategy: none, local, or api depending on configured providers.",
+            "candidate_limit": (
+                "Optional number of pre-rerank candidates to retrieve before trimming "
+                "to limit."
+            ),
+        },
+    },
+    "explain_change": {
+        "title": "Explain file change",
+        "description": """
+Purpose: Explain why a file may have changed using stored changesets, code graph
+entries, snapshots, and related messages. When to use: call during code review,
+bug triage, or handoff recovery when a file path needs historical context.
+Inputs: file_path identifies the repo-relative file; limit caps evidence volume;
+include_narrative adds a deterministic cited summary. Side effects: none beyond
+database reads. Output: changesets, touched entities, snapshots, related messages,
+and optional geond.evidence.v1 narrative citations. Failure modes: returns sparse
+evidence when the file was not indexed or imported.
+""".strip(),
+        "params": {
+            "file_path": "Repo-relative path to the file whose history should be explained.",
+            "limit": "Maximum number of evidence rows to include per evidence category.",
+            "include_narrative": "Whether to include a concise cited narrative summary.",
+        },
+    },
+    "get_changeset_detail": {
+        "title": "Get changeset detail",
+        "description": """
+Purpose: Retrieve full stored detail for one changeset. When to use: call after a
+search or file explanation returns a changeset id or git commit that needs closer
+inspection. Inputs: changeset_ref accepts a UUID, full git SHA, or unambiguous SHA
+prefix; include_narrative controls cited prose. Side effects: none beyond database
+reads. Output: files, touched code entities, evidence references, ambiguity status,
+and optional narrative. Failure modes: returns found=false for missing refs or
+ambiguous=true when a prefix matches multiple changesets.
+""".strip(),
+        "params": {
+            "changeset_ref": "Changeset UUID, full git commit SHA, or unambiguous commit prefix.",
+            "include_narrative": "Whether to include a concise cited narrative summary.",
+        },
+    },
+    "get_symbol_context": {
+        "title": "Get symbol context",
+        "description": """
+Purpose: Find known code graph entities that match a symbol name. When to use:
+call before modifying a function, class, method, or variable so the agent can see
+definitions and related changesets. Inputs: symbol is the name to match; limit
+caps returned entities. Side effects: none beyond database reads. Output: matching
+entities with file locations, workspace data, related changesets, and evidence
+refs. Failure modes: returns an empty list when the code graph has not indexed
+the symbol.
+""".strip(),
+        "params": {
+            "symbol": "Function, class, method, or other code symbol name to look up.",
+            "limit": "Maximum number of matching code entities to return.",
+        },
+    },
+    "register_workspace_alias": {
+        "title": "Register workspace alias",
+        "description": """
+Purpose: Link a moved or renamed workspace URI to an existing workspace record.
+When to use: call when the same repository appears under a new local path, mount
+point, or machine-specific URI. Inputs: workspace_id_or_uri selects the existing
+workspace; alias_uri is the new URI; reason and metadata document why it changed.
+Side effects: writes an alias row. Output: alias record details. Failure modes:
+fails if the referenced workspace cannot be resolved or the alias conflicts.
+""".strip(),
+        "params": {
+            "workspace_id_or_uri": (
+                "Existing workspace UUID, root URI, or alias URI to attach the alias to."
+            ),
+            "alias_uri": "New root URI or path alias that should resolve to the workspace.",
+            "reason": "Short reason such as moved, renamed, cloned, or mounted.",
+            "metadata": (
+                "Optional JSON metadata explaining source machine, remote, or "
+                "migration context."
+            ),
+        },
+    },
+    "list_workspace_aliases": {
+        "title": "List workspace aliases",
+        "description": """
+Purpose: Inspect workspace alias mappings. When to use: call when an agent is
+unsure whether two filesystem roots point to the same repository memory. Inputs:
+workspace_id_or_uri optionally scopes the list. Side effects: none beyond
+database reads. Output: alias rows including canonical workspace identifiers and
+reasons. Failure modes: returns an empty list when no aliases exist or the filter
+matches nothing.
+""".strip(),
+        "params": {
+            "workspace_id_or_uri": (
+                "Optional workspace UUID, root URI, or alias URI used to filter aliases."
+            ),
+        },
+    },
+    "record_workspace_fingerprints": {
+        "title": "Record workspace fingerprints",
+        "description": """
+Purpose: Store durable repository identity fingerprints for alias detection.
+When to use: call after discovering git remotes, first commits, or other stable
+repo identifiers on a workspace. Inputs: workspace_id_or_uri selects the
+workspace; fingerprints is a list of typed identity facts. Side effects: writes
+fingerprint rows. Output: stored fingerprint records. Failure modes: fails when
+the workspace cannot be resolved or fingerprint payloads are malformed.
+""".strip(),
+        "params": {
+            "workspace_id_or_uri": "Workspace UUID, root URI, or alias URI receiving fingerprints.",
+            "fingerprints": (
+                "List of fingerprint objects such as git remote URLs or first commit IDs."
+            ),
+        },
+    },
+    "suggest_workspace_aliases": {
+        "title": "Suggest workspace aliases",
+        "description": """
+Purpose: Suggest existing workspaces that may match a new alias URI based on
+identity fingerprints. When to use: call before creating a new workspace for a
+repo that may have moved. Inputs: alias_uri is the new path; fingerprints are
+observed durable identifiers. Side effects: none beyond database reads. Output:
+candidate workspace matches with confidence evidence. Failure modes: returns an
+empty list when no fingerprints overlap.
+""".strip(),
+        "params": {
+            "alias_uri": "New workspace URI or local path being evaluated.",
+            "fingerprints": "Observed identity fingerprints for the candidate workspace.",
+        },
+    },
+    "get_workspace_coordination_policy": {
+        "title": "Get workspace coordination policy",
+        "description": """
+Purpose: Read reservation and conflict policy for a workspace. When to use: call
+before reserving files or symbols in a multi-agent workflow. Inputs:
+workspace_id_or_uri identifies the workspace. Side effects: none beyond database
+reads. Output: current conflict policy and related coordination settings. Failure
+modes: fails when the workspace cannot be resolved.
+""".strip(),
+        "params": {
+            "workspace_id_or_uri": (
+                "Workspace UUID, root URI, or alias URI whose policy should be read."
+            ),
+        },
+    },
+    "set_workspace_coordination_policy": {
+        "title": "Set workspace coordination policy",
+        "description": """
+Purpose: Configure how the workspace handles reservation conflicts. When to use:
+call during setup or team policy changes before multiple agents edit in parallel.
+Inputs: workspace_id_or_uri identifies the workspace; reservation_conflict_policy
+chooses advisory, strict, or override-with-reason. Side effects: updates workspace
+policy. Output: updated policy record. Failure modes: invalid policy names are
+rejected.
+""".strip(),
+        "params": {
+            "workspace_id_or_uri": (
+                "Workspace UUID, root URI, or alias URI whose policy should change."
+            ),
+            "reservation_conflict_policy": (
+                "Conflict mode: advisory, strict, or override-with-reason."
+            ),
+        },
+    },
+    "record_changeset": {
+        "title": "Record changeset",
+        "description": """
+Purpose: Persist a code changeset with files, optional patches, git metadata, and
+session links. When to use: call after an agent edits or reviews files so future
+agents can understand what changed and why. Inputs: files contains changed file
+objects; workspace_id or workspace_uri is required; metadata links commits,
+branches, intent, and sessions. Side effects: writes changeset and file rows.
+Output: changeset identifiers and summary fields. Failure modes: raises when no
+workspace identifier is supplied or payloads are invalid.
+""".strip(),
+        "params": {
+            "files": "List of changed file objects with file_path, status, and optional patch.",
+            "workspace_id": "Existing workspace UUID; required if workspace_uri is omitted.",
+            "workspace_uri": "Workspace root URI used to create or resolve a workspace.",
+            "workspace_name": "Optional display name when creating a workspace from workspace_uri.",
+            "git_commit": "Optional git commit SHA associated with the changeset.",
+            "branch": "Optional branch name associated with the changeset.",
+            "intent": "Short explanation of why the changes were made.",
+            "summary": "Human-readable summary of the changeset.",
+            "metadata": "Optional JSON metadata for tools, test evidence, or external refs.",
+            "session_id": "Optional internal session UUID to link to this changeset.",
+            "session_external_id": (
+                "Optional external transcript/session id to link to this changeset."
+            ),
+        },
+    },
+    "record_agent_action": {
+        "title": "Record agent action",
+        "description": """
+Purpose: Log what an agent is doing in a workspace. When to use: call at the
+start or end of meaningful work so other agents can see active intent and
+progress. Inputs: workspace_id, agent_name, action_type, summary, optional
+intent/status/session ids. Side effects: writes an activity row. Output: action_id
+for future references. Failure modes: fails when the workspace id is invalid.
+""".strip(),
+        "params": {
+            "workspace_id": "Workspace UUID where the action occurred.",
+            "agent_name": "Name of the agent or tool performing the action.",
+            "action_type": "Short action category such as edit, review, plan, test, or handoff.",
+            "summary": "Concise human-readable activity summary.",
+            "intent": "Optional reason or objective behind the action.",
+            "status": "Action status such as recorded, in_progress, completed, or blocked.",
+            "session_id": "Optional internal session UUID associated with the action.",
+            "session_external_id": (
+                "Optional external transcript/session id associated with the action."
+            ),
+        },
+    },
+    "reserve_files": {
+        "title": "Reserve files",
+        "description": """
+Purpose: Reserve files so agents can coordinate parallel edits. When to use: call
+before modifying files that another agent might also touch. Inputs: workspace_id,
+agent_name, file_paths, purpose, TTL, and optional override reason. Side effects:
+creates reservation rows and audit events. Output: reservation status and any
+conflicts. Failure modes: strict policies may reject conflicts unless an override
+reason is allowed.
+""".strip(),
+        "params": {
+            "workspace_id": "Workspace UUID where files are being reserved.",
+            "agent_name": "Name of the agent reserving the files.",
+            "file_paths": "Repo-relative file paths to reserve.",
+            "purpose": "Short reason for the reservation.",
+            "ttl_minutes": "Reservation lifetime in minutes; null means use storage defaults.",
+            "override_reason": "Reason for overriding a conflict when policy permits overrides.",
+        },
+    },
+    "release_reservation": {
+        "title": "Release file reservation",
+        "description": """
+Purpose: Release active file reservations after work is done or abandoned. When
+to use: call at handoff, task completion, or when a stale reservation should be
+cleared. Inputs: workspace_id plus reservation_id or file_path, optionally scoped
+by agent_name. Side effects: updates reservation state and audit events. Output:
+count of released reservations. Failure modes: returns zero when no matching
+active reservation exists.
+""".strip(),
+        "params": {
+            "workspace_id": "Workspace UUID containing the reservation.",
+            "reservation_id": "Optional reservation UUID to release.",
+            "file_path": "Optional repo-relative file path to release.",
+            "agent_name": "Optional agent name used to scope the release.",
+        },
+    },
+    "renew_reservation": {
+        "title": "Renew file reservation",
+        "description": """
+Purpose: Extend active file reservations while work continues. When to use: call
+before TTL expiry if an agent still owns the edit. Inputs: workspace_id plus
+reservation_id or file_path, optional agent_name, and new TTL. Side effects:
+updates reservation expiry and audit rows. Output: count of renewed reservations.
+Failure modes: returns zero when no matching active reservation exists.
+""".strip(),
+        "params": {
+            "workspace_id": "Workspace UUID containing the reservation.",
+            "reservation_id": "Optional reservation UUID to renew.",
+            "file_path": "Optional repo-relative file path to renew.",
+            "agent_name": "Optional agent name used to scope renewal.",
+            "ttl_minutes": "New reservation lifetime in minutes.",
+        },
+    },
+    "get_active_reservations": {
+        "title": "Get active file reservations",
+        "description": """
+Purpose: Read current file reservations for a workspace. When to use: call before
+editing or reviewing files to detect coordination conflicts. Inputs: workspace_id
+and optional file_paths filter. Side effects: none beyond database reads. Output:
+active reservations with agents, purpose, TTL, and file paths. Failure modes:
+returns an empty list when no active reservations match.
+""".strip(),
+        "params": {
+            "workspace_id": "Workspace UUID whose file reservations should be listed.",
+            "file_paths": "Optional repo-relative file paths used to filter reservations.",
+        },
+    },
+    "reserve_symbols": {
+        "title": "Reserve symbols",
+        "description": """
+Purpose: Reserve functions, classes, or other symbols for finer-grained parallel
+coordination. When to use: call before editing shared APIs where file-level
+reservation is too broad. Inputs: workspace_id, agent_name, symbols, purpose,
+TTL, and optional override reason. Side effects: creates symbol reservation and
+audit rows. Output: reservation status and conflicts. Failure modes: strict
+policy may reject conflicting symbols.
+""".strip(),
+        "params": {
+            "workspace_id": "Workspace UUID where symbols are being reserved.",
+            "agent_name": "Name of the agent reserving the symbols.",
+            "symbols": "Symbol names or qualified identifiers to reserve.",
+            "purpose": "Short reason for the symbol reservation.",
+            "ttl_minutes": "Reservation lifetime in minutes; null means use storage defaults.",
+            "override_reason": "Reason for overriding a conflict when policy permits overrides.",
+        },
+    },
+    "release_symbol_reservation": {
+        "title": "Release symbol reservation",
+        "description": """
+Purpose: Release active symbol reservations. When to use: call after finishing
+work on a function, class, API, or other reserved symbol. Inputs: workspace_id
+plus reservation_id or symbol, optionally scoped by agent_name. Side effects:
+updates reservation state and audit rows. Output: count of released symbol
+reservations. Failure modes: returns zero when no matching reservation exists.
+""".strip(),
+        "params": {
+            "workspace_id": "Workspace UUID containing the symbol reservation.",
+            "reservation_id": "Optional symbol reservation UUID to release.",
+            "symbol": "Optional symbol name or qualified identifier to release.",
+            "agent_name": "Optional agent name used to scope the release.",
+        },
+    },
+    "renew_symbol_reservation": {
+        "title": "Renew symbol reservation",
+        "description": """
+Purpose: Extend active symbol reservations while an agent is still editing.
+When to use: call before TTL expiry for ongoing API or function work. Inputs:
+workspace_id plus reservation_id or symbol, optional agent_name, and TTL. Side
+effects: updates reservation expiry and audit rows. Output: count of renewed
+symbol reservations. Failure modes: returns zero when no matching active
+reservation exists.
+""".strip(),
+        "params": {
+            "workspace_id": "Workspace UUID containing the symbol reservation.",
+            "reservation_id": "Optional symbol reservation UUID to renew.",
+            "symbol": "Optional symbol name or qualified identifier to renew.",
+            "agent_name": "Optional agent name used to scope renewal.",
+            "ttl_minutes": "New reservation lifetime in minutes.",
+        },
+    },
+    "get_symbol_conflicts": {
+        "title": "Get symbol conflicts",
+        "description": """
+Purpose: Read active symbol reservations that could conflict with planned work.
+When to use: call before changing shared APIs or named entities. Inputs:
+workspace_id and optional symbols filter. Side effects: none beyond database
+reads. Output: active symbol reservations with owners, purposes, and expiry.
+Failure modes: returns an empty list when there are no active conflicts.
+""".strip(),
+        "params": {
+            "workspace_id": "Workspace UUID whose symbol reservations should be checked.",
+            "symbols": "Optional symbol names or qualified identifiers to filter conflicts.",
+        },
+    },
+    "record_lsp_references": {
+        "title": "Record LSP references",
+        "description": """
+Purpose: Import language-server reference edges into the code graph. When to use:
+call after collecting definitions or references from an external LSP client.
+Inputs: workspace_id, reference payloads, and replace flag. Side effects: writes
+or replaces code graph reference rows. Output: import counts and status. Failure
+modes: malformed reference payloads or invalid workspace ids are rejected.
+""".strip(),
+        "params": {
+            "workspace_id": "Workspace UUID receiving LSP reference edges.",
+            "references": "List of LSP-style reference objects with source and target locations.",
+            "replace": "Whether to replace existing reference edges for the imported scope.",
+        },
+    },
+    "review_workspace_context": {
+        "title": "Review workspace context",
+        "description": """
+Purpose: Summarize relevant reservations, handoffs, lineage, and recent activity
+before work starts. When to use: call at the beginning of a task to avoid
+duplicating or conflicting with other agents. Inputs: workspace, intent, optional
+file paths, symbols, agent name, and limit. Side effects: records an MCP audit
+event. Output: compact review context with risks, reservations, handoffs, and
+lineage. Failure modes: returns limited context when workspace history is sparse.
+""".strip(),
+        "params": {
+            "workspace_id_or_uri": "Workspace UUID, root URI, or alias URI to review.",
+            "intent": "Natural-language description of the planned work.",
+            "file_paths": "Optional repo-relative files relevant to the planned work.",
+            "symbols": "Optional symbol names relevant to the planned work.",
+            "agent_name": "Optional requesting agent name for coordination context.",
+            "limit": "Maximum number of context items per category.",
+        },
+    },
+    "record_handoff_summary": {
+        "title": "Record handoff summary",
+        "description": """
+Purpose: Store a structured handoff packet for the next agent or human reviewer.
+When to use: call when pausing, finishing, or transferring a task. Inputs:
+workspace_id, from/to agents, summary, next steps, blockers, tested commands,
+remaining risks, next action, and template. Side effects: writes a handoff row.
+Output: handoff_id for future retrieval. Failure modes: invalid workspace or
+malformed list fields are rejected.
+""".strip(),
+        "params": {
+            "workspace_id": "Workspace UUID where the handoff belongs.",
+            "from_agent_name": "Agent that is leaving the handoff.",
+            "summary": "Concise summary of completed work and current state.",
+            "to_agent_name": "Optional intended receiving agent or role.",
+            "next_steps": "Optional ordered next steps for the receiver.",
+            "blocked_on": "Optional blockers that prevent progress.",
+            "status": "Handoff status such as open, closed, or blocked.",
+            "tested_commands": "Commands already run to validate the work.",
+            "remaining_risks": "Known risks, caveats, or areas needing follow-up.",
+            "next_action": "Single most important next action.",
+            "template": "Handoff template name, usually standard.",
+        },
+    },
+    "list_handoff_summaries": {
+        "title": "List handoff summaries",
+        "description": """
+Purpose: Retrieve handoff packets for a workspace or across workspaces. When to
+use: call when resuming a task, auditing pending work, or preparing context for
+another agent. Inputs: optional workspace filter, status filter, and limit. Side
+effects: none beyond database reads. Output: handoff summaries with status,
+agents, next steps, blockers, and risks. Failure modes: returns an empty list
+when no handoffs match.
+""".strip(),
+        "params": {
+            "workspace_id_or_uri": (
+                "Optional workspace UUID, root URI, or alias URI to filter handoffs."
+            ),
+            "status": "Optional handoff status filter such as open, closed, or blocked.",
+            "limit": "Maximum number of handoffs to return.",
+        },
+    },
+    "list_reservation_events": {
+        "title": "List reservation events",
+        "description": """
+Purpose: Inspect audit history for reservation lifecycle events. When to use:
+call during conflict analysis, stale reservation cleanup, or team coordination
+review. Inputs: optional workspace, reservation kind, action filter, and limit.
+Side effects: none beyond database reads. Output: created, renewed, released, and
+expired reservation events. Failure modes: returns an empty list when no events
+match.
+""".strip(),
+        "params": {
+            "workspace_id_or_uri": (
+                "Optional workspace UUID, root URI, or alias URI to filter events."
+            ),
+            "reservation_kind": "Optional kind filter such as file or symbol.",
+            "action": (
+                "Optional lifecycle action filter such as created, renewed, released, "
+                "or expired."
+            ),
+            "limit": "Maximum number of audit events to return.",
+        },
+    },
+    "close_handoff_summary": {
+        "title": "Close handoff summary",
+        "description": """
+Purpose: Mark a handoff as consumed or no longer active. When to use: call after
+the receiving agent has acted on the handoff or a human has reviewed it. Inputs:
+handoff_id and final status. Side effects: updates handoff status. Output: count
+of closed records. Failure modes: returns zero when the handoff id does not
+match an active row.
+""".strip(),
+        "params": {
+            "handoff_id": "Handoff UUID to close.",
+            "status": "Final status to set, usually closed.",
+        },
+    },
+    "get_workspace_lineage_graph": {
+        "title": "Get workspace lineage graph",
+        "description": """
+Purpose: Return a graph of major collaboration artifacts for a workspace. When
+to use: call when an agent needs a high-level map of sessions, changesets,
+handoffs, reservations, and activity. Inputs: workspace_id and limit. Side
+effects: none beyond database reads. Output: nodes and edges suitable for
+dashboard or orchestration analysis. Failure modes: returns a sparse graph for
+new or unindexed workspaces.
+""".strip(),
+        "params": {
+            "workspace_id": "Workspace UUID whose lineage graph should be returned.",
+            "limit": "Maximum number of lineage nodes or rows to include.",
+        },
+    },
+    "get_agent_activity_events": {
+        "title": "Get agent activity events",
+        "description": """
+Purpose: Return normalized activity events for dashboards and orchestrators.
+When to use: call to inspect recent agent runs, reservations, handoffs,
+changesets, or status transitions. Inputs: workspace_id plus optional limit,
+kind, agent, and status filters. Side effects: none beyond database reads.
+Output: event records normalized for UI or agent consumption. Failure modes:
+returns an empty event list when no activity matches.
+""".strip(),
+        "params": {
+            "workspace_id": "Workspace UUID whose activity should be read.",
+            "limit": "Maximum number of events to return.",
+            "kind": "Optional event kind filter.",
+            "agent": "Optional agent name filter.",
+            "status": "Optional event status filter.",
+        },
+    },
+    "get_dashboard_overview": {
+        "title": "Get dashboard overview",
+        "description": """
+Purpose: Return a compact read-only dashboard summary for one workspace. When to
+use: call when a human reviewer, PM agent, or orchestrator needs current state
+without reading raw transcripts. Inputs: workspace_id and limit. Side effects:
+none beyond database reads. Output: summary cards, recent activity, handoffs,
+reservations, and risk signals. Failure modes: returns sparse sections for a new
+workspace.
+""".strip(),
+        "params": {
+            "workspace_id": "Workspace UUID whose dashboard overview should be returned.",
+            "limit": "Maximum number of recent rows to include in overview sections.",
+        },
+    },
+}
+
+
+def _format_tool_description(description: str) -> str:
+    text = " ".join(description.strip().split())
+    for heading in TOOL_DESCRIPTION_HEADINGS:
+        text = text.replace(f" {heading}", f"\n{heading}")
+    return text
+
+
+def _apply_tool_metadata() -> None:
+    for tool_name, metadata in TOOL_METADATA.items():
+        tool = mcp._tool_manager.get_tool(tool_name)
+        if tool is None:
+            continue
+        tool.title = metadata.get("title")
+        description = _format_tool_description(str(metadata["description"]))
+        tool.description = description
+        tool.fn.__doc__ = description
+        properties = tool.parameters.setdefault("properties", {})
+        for param_name, param_description in metadata.get("params", {}).items():
+            param_schema = properties.get(param_name)
+            if isinstance(param_schema, dict):
+                param_schema["description"] = param_description
+
+
+@mcp.tool()
+def get_geond_server_info() -> dict[str, Any]:
+    """Return safe server metadata without opening the Geond database."""
+    return {
+        "name": "Geond Agent Protocol",
+        "package": "geond-agent-protocol",
+        "version": _installed_version(),
+        "purpose": (
+            "Local-first shared memory and coordination for AI coding agents "
+            "working on the same repository."
+        ),
+        "safe_for_browser_try": True,
+        "database_required": False,
+        "recommended_first_call": True,
+        "environment_variables": {
+            "required": [],
+            "optional": {
+                "GEOND_DATABASE_URL": (
+                    "PostgreSQL connection string for the default local or team database."
+                ),
+                "GEOND_DATABASE_PROFILE": (
+                    "Profile selector for alternate database URLs, for example azure."
+                ),
+                "AZURE_GEOND_DATABASE_URL": (
+                    "Shared Azure PostgreSQL connection string used when "
+                    "GEOND_DATABASE_PROFILE=azure."
+                ),
+            },
+        },
+        "tool_groups": [
+            {
+                "name": "memory_search",
+                "tools": [
+                    "search_dev_memory",
+                    "explain_change",
+                    "get_changeset_detail",
+                    "get_symbol_context",
+                ],
+                "use_when": (
+                    "An agent needs prior context, evidence, or code history before "
+                    "editing."
+                ),
+            },
+            {
+                "name": "workspace_identity",
+                "tools": [
+                    "register_workspace_alias",
+                    "list_workspace_aliases",
+                    "record_workspace_fingerprints",
+                    "suggest_workspace_aliases",
+                ],
+                "use_when": "A repository moves between local paths, machines, or shared profiles.",
+            },
+            {
+                "name": "coordination",
+                "tools": [
+                    "review_workspace_context",
+                    "reserve_files",
+                    "release_reservation",
+                    "renew_reservation",
+                    "get_active_reservations",
+                    "reserve_symbols",
+                    "release_symbol_reservation",
+                    "renew_symbol_reservation",
+                    "get_symbol_conflicts",
+                ],
+                "use_when": "Multiple agents may edit the same files or symbols.",
+            },
+            {
+                "name": "handoffs_and_audit",
+                "tools": [
+                    "record_agent_action",
+                    "record_changeset",
+                    "record_handoff_summary",
+                    "list_handoff_summaries",
+                    "close_handoff_summary",
+                    "list_reservation_events",
+                ],
+                "use_when": (
+                    "Work should be recorded for the next agent, reviewer, or PM "
+                    "dashboard."
+                ),
+            },
+            {
+                "name": "code_graph_and_dashboard",
+                "tools": [
+                    "record_lsp_references",
+                    "get_workspace_lineage_graph",
+                    "get_agent_activity_events",
+                    "get_dashboard_overview",
+                ],
+                "use_when": (
+                    "An agent or dashboard needs graph, activity, or overview read "
+                    "models."
+                ),
+            },
+        ],
+        "example_workflows": [
+            [
+                "review_workspace_context",
+                "reserve_files",
+                "record_changeset",
+                "record_handoff_summary",
+            ],
+            ["search_dev_memory", "explain_change", "get_changeset_detail"],
+            ["record_workspace_fingerprints", "suggest_workspace_aliases"],
+        ],
+        "setup_hints": [
+            "Run `docker compose up -d postgres` for local PostgreSQL.",
+            "Run `uv run geond migrate` before writing shared memory.",
+            (
+                "Run `uv run geond mcp-smoke --format text --allow-empty-search` "
+                "to verify MCP transport."
+            ),
+            (
+                "Use this tool first in Glama Try in Browser because it does not "
+                "require database access."
+            ),
+        ],
+        "related_servers": [
+            "dl4rce/flaiwheel",
+            "et-do/myelin",
+            "bacharyehya/claude-memory-architecture",
+        ],
+    }
 
 
 @mcp.tool()
@@ -691,6 +1410,9 @@ def workspace_handoffs_resource(workspace_id: str) -> dict[str, Any]:
     """Read handoff summaries for a workspace."""
     with connect(get_settings()) as conn:
         return get_workspace_handoffs(conn, workspace_id)
+
+
+_apply_tool_metadata()
 
 
 def main() -> None:
