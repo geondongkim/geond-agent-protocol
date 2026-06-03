@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+from pathlib import Path
 
 from geond import orchestrator_cli
 
@@ -104,7 +105,16 @@ def test_orchestrator_status_dispatch_resume_finalize_cli(monkeypatch, capsys) -
     monkeypatch.setattr(
         sys,
         "argv",
-        ["geond-orchestrator", "dispatch", "--run", "run-1", "--mode", "claim", "--agent", "claude"],
+        [
+            "geond-orchestrator",
+            "dispatch",
+            "--run",
+            "run-1",
+            "--mode",
+            "claim",
+            "--agent",
+            "claude",
+        ],
     )
     orchestrator_cli.main()
     assert capsys.readouterr().out == "# Dispatch\n"
@@ -126,3 +136,65 @@ def test_orchestrator_status_dispatch_resume_finalize_cli(monkeypatch, capsys) -
     assert captured["dispatch"]["agent_name"] == "claude"
     assert captured["resume"] == "run-1"
     assert captured["finalize"]["write_manifest"] is True
+
+
+def test_orchestrator_spawn_dispatch_cli_wires_service(monkeypatch, capsys, tmp_path: Path) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_connect(settings) -> FakeConnection:  # noqa: ANN001
+        return FakeConnection()
+
+    def fake_spawn(conn, **kwargs):  # noqa: ANN001, ANN202
+        captured.update(kwargs)
+        return {
+            "schema": "geond.orchestrator_dispatch.v1",
+            "status": "ok",
+            "dispatch_mode": "spawn",
+        }
+
+    monkeypatch.setattr(orchestrator_cli, "connect", fake_connect)
+    monkeypatch.setattr(orchestrator_cli.orchestrator, "dispatch_spawn", fake_spawn)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "geond-orchestrator",
+            "dispatch",
+            "--run",
+            "run-1",
+            "--mode",
+            "spawn",
+            "--agent",
+            "codex",
+            "--execute",
+            "--task",
+            "task-1",
+            "--model",
+            "gpt-5",
+            "--sandbox",
+            "workspace-write",
+            "--timeout-seconds",
+            "12",
+            "--write-bundle",
+            "--base-dir",
+            str(tmp_path),
+            "--format",
+            "json",
+        ],
+    )
+
+    orchestrator_cli.main()
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["dispatch_mode"] == "spawn"
+    assert captured == {
+        "run_id": "run-1",
+        "agent_name": "codex",
+        "execute": True,
+        "task_id": "task-1",
+        "model": "gpt-5",
+        "sandbox": "workspace-write",
+        "timeout_seconds": 12,
+        "write_bundle": True,
+        "manifest_base_dir": tmp_path,
+    }

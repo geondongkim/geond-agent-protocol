@@ -109,8 +109,14 @@ def test_status_and_dispatch_return_claim_mode_commands(monkeypatch) -> None:
     assert status["schema"] == "geond.orchestrator_status.v1"
     assert status["active_workers"][0]["worker_session_id"] == "worker-1"
     assert status["open_findings"][0]["finding_id"] == "finding-1"
-    assert "geond worker register run-1 --agent claude" in status["next_worker_commands"][0]["command"]
-    assert any("geond worker claim --task-id task-1" in item["command"] for item in dispatch["next_worker_commands"])
+    assert (
+        "geond worker register run-1 --agent claude"
+        in status["next_worker_commands"][0]["command"]
+    )
+    assert any(
+        "geond worker claim --task-id task-1" in item["command"]
+        for item in dispatch["next_worker_commands"]
+    )
 
 
 def test_status_without_claimable_tasks_suggests_create_task(monkeypatch) -> None:
@@ -139,7 +145,11 @@ def test_status_without_claimable_tasks_suggests_create_task(monkeypatch) -> Non
 
 def test_finalize_gates_manifest_on_readiness(monkeypatch, tmp_path: Path) -> None:
     writes: list[dict[str, object]] = []
-    readiness = {"schema": "geond.readiness_report.v1", "status": "not_ready", "blocking_reasons": ["test"]}
+    readiness = {
+        "schema": "geond.readiness_report.v1",
+        "status": "not_ready",
+        "blocking_reasons": ["test"],
+    }
 
     monkeypatch.setattr(
         orchestrator.orchestration_store,
@@ -168,12 +178,22 @@ def test_finalize_gates_manifest_on_readiness(monkeypatch, tmp_path: Path) -> No
 
     monkeypatch.setattr(orchestrator, "write_run_manifest", fake_write_manifest)
 
-    blocked = orchestrator.finalize_run(object(), "run-1", write_manifest=True, manifest_base_dir=tmp_path)
+    blocked = orchestrator.finalize_run(
+        object(),
+        "run-1",
+        write_manifest=True,
+        manifest_base_dir=tmp_path,
+    )
     assert blocked["status"] == "not_ready"
     assert writes == []
 
     readiness["status"] = "ready"
     readiness["blocking_reasons"] = []
-    ready = orchestrator.finalize_run(object(), "run-1", write_manifest=True, manifest_base_dir=tmp_path)
+    ready = orchestrator.finalize_run(
+        object(),
+        "run-1",
+        write_manifest=True,
+        manifest_base_dir=tmp_path,
+    )
     assert ready["status"] == "ok"
     assert writes[0]["base_dir"] == tmp_path
