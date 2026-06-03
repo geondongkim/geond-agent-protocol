@@ -71,7 +71,7 @@ def _installed_version() -> str:
     try:
         return package_version("geond-agent-protocol")
     except PackageNotFoundError:
-        return "0.1.0-alpha.0"
+        return "0.1.0"
 
 
 TOOL_DESCRIPTION_HEADINGS = (
