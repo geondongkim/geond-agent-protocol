@@ -27,10 +27,10 @@ GitHub Actions identity. For example, replace the version and filename below:
 
 ```bash
 sigstore verify identity \
-    --cert-identity "https://github.com/geondongkim/geond-agent-protocol/.github/workflows/ci.yml@refs/tags/v0.1.0" \
+    --cert-identity "https://github.com/geondongkim/geond-agent-protocol/.github/workflows/ci.yml@refs/tags/v0.1.1" \
     --cert-oidc-issuer "https://token.actions.githubusercontent.com" \
-    --bundle geond_agent_protocol-0.1.0-py3-none-any.whl.sigstore.json \
-    geond_agent_protocol-0.1.0-py3-none-any.whl
+    --bundle geond_agent_protocol-0.1.1-py3-none-any.whl.sigstore.json \
+    geond_agent_protocol-0.1.1-py3-none-any.whl
 ```
 
 PyPI publishing is available as a manual trusted publishing workflow. Run the
@@ -98,8 +98,8 @@ For release tags, validate the notes range locally with:
 ```bash
 uv run python scripts/generate_release_notes.py \
     --since-previous-tag \
-    --until v0.1.0 \
-    --title "Release v0.1.0" \
+    --until v0.1.1 \
+    --title "Release v0.1.1" \
     --output release-notes-draft.md
 ```
 

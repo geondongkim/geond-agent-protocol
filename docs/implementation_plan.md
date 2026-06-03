@@ -296,7 +296,7 @@ Azure validation notes:
 - APIM Consumption successfully created an API and three backends for the gateway scaffold. Full policy REST application is opt-in because the first policy smoke exceeded the terminal timeout.
 - A temporary `Standard_B2s` Ubuntu VM ran `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` on Korean/English retrieval probes with MRR `0.8333`.
 - All `rg-geond-validate-*` resource groups were deleted and the final Azure group query returned an empty list.
-- Public GitHub release `v0.1.0`.
+- Public GitHub release `v0.1.1`.
 
 Current status:
 
