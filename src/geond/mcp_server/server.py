@@ -15,6 +15,7 @@ from geond.retrieval.simple import get_symbol_context as get_symbol_context_quer
 from geond.retrieval.simple import hybrid_search_dev_memory as hybrid_search_dev_memory_query
 from geond.retrieval.simple import search_dev_memory as search_dev_memory_query
 from geond.retrieval.simple import vector_search_dev_memory as vector_search_dev_memory_query
+from geond.storage import orchestration as orchestration_store
 from geond.storage.code_graph import store_lsp_references as store_lsp_references_row
 from geond.storage.context_review import review_workspace_context as review_workspace_context_row
 from geond.storage.dashboard import get_agent_activity_events as get_agent_activity_events_row
@@ -742,6 +743,24 @@ def get_geond_server_info() -> dict[str, Any]:
                     "An agent or dashboard needs graph, activity, or overview read models."
                 ),
             },
+            {
+                "name": "orchestration",
+                "tools": [
+                    "create_goal",
+                    "create_run",
+                    "create_task",
+                    "register_worker_session",
+                    "claim_task",
+                    "renew_task_lease",
+                    "release_task_lease",
+                    "finish_task_with_handoff",
+                    "record_command_evidence",
+                    "get_readiness_report",
+                ],
+                "use_when": (
+                    "A conductor or multiple worker agents need shared run/task/lease state."
+                ),
+            },
         ],
         "example_workflows": [
             [
@@ -1291,6 +1310,433 @@ def close_handoff_summary(handoff_id: str, status: str = "closed") -> dict[str, 
     return {"closed": closed}
 
 
+@mcp.tool()
+def create_goal(
+    workspace_id_or_uri: str,
+    title: str,
+    summary: str = "",
+    status: str = "accepted",
+    created_by_agent: str | None = None,
+    metadata: dict[str, Any] | None = None,
+    idempotency_key: str | None = None,
+) -> dict[str, Any]:
+    """Create an orchestration goal for a workspace."""
+    with connect(get_settings()) as conn:
+        return orchestration_store.create_goal(
+            conn,
+            workspace_id_or_uri=workspace_id_or_uri,
+            title=title,
+            summary=summary,
+            status=status,
+            created_by_agent=created_by_agent,
+            metadata=metadata,
+            idempotency_key=idempotency_key,
+        )
+
+
+@mcp.tool()
+def create_run(
+    workspace_id_or_uri: str,
+    title: str,
+    goal_id: str | None = None,
+    risk_level: str = "medium",
+    status: str = "active",
+    created_by_agent: str | None = None,
+    metadata: dict[str, Any] | None = None,
+    idempotency_key: str | None = None,
+) -> dict[str, Any]:
+    """Create an orchestration run under an optional goal."""
+    with connect(get_settings()) as conn:
+        return orchestration_store.create_run(
+            conn,
+            workspace_id_or_uri=workspace_id_or_uri,
+            title=title,
+            goal_id=goal_id,
+            risk_level=risk_level,
+            status=status,
+            created_by_agent=created_by_agent,
+            metadata=metadata,
+            idempotency_key=idempotency_key,
+        )
+
+
+@mcp.tool()
+def create_task(
+    run_id: str,
+    title: str,
+    description: str = "",
+    status: str = "ready",
+    priority: int = 0,
+    required_evidence: list[dict[str, Any]] | None = None,
+    created_by_agent: str | None = None,
+    metadata: dict[str, Any] | None = None,
+    idempotency_key: str | None = None,
+) -> dict[str, Any]:
+    """Create a claimable orchestration task in a run."""
+    with connect(get_settings()) as conn:
+        return orchestration_store.create_task(
+            conn,
+            run_id=run_id,
+            title=title,
+            description=description,
+            status=status,
+            priority=priority,
+            required_evidence=required_evidence,
+            created_by_agent=created_by_agent,
+            metadata=metadata,
+            idempotency_key=idempotency_key,
+        )
+
+
+@mcp.tool()
+def update_task_state(
+    task_id: str,
+    status: str,
+    metadata: dict[str, Any] | None = None,
+    idempotency_key: str | None = None,
+) -> dict[str, Any]:
+    """Update orchestration task status."""
+    with connect(get_settings()) as conn:
+        return orchestration_store.update_task_state(
+            conn,
+            task_id=task_id,
+            status=status,
+            metadata=metadata,
+            idempotency_key=idempotency_key,
+        )
+
+
+@mcp.tool()
+def register_worker_session(
+    run_id: str,
+    agent_name: str,
+    status: str = "active",
+    session_external_id: str | None = None,
+    metadata: dict[str, Any] | None = None,
+    idempotency_key: str | None = None,
+) -> dict[str, Any]:
+    """Register a worker agent session for an orchestration run."""
+    with connect(get_settings()) as conn:
+        return orchestration_store.register_worker_session(
+            conn,
+            run_id=run_id,
+            agent_name=agent_name,
+            status=status,
+            session_external_id=session_external_id,
+            metadata=metadata,
+            idempotency_key=idempotency_key,
+        )
+
+
+@mcp.tool()
+def claim_task(
+    task_id: str,
+    agent_name: str,
+    worker_session_id: str | None = None,
+    ttl_minutes: int | None = 120,
+    metadata: dict[str, Any] | None = None,
+    idempotency_key: str | None = None,
+) -> dict[str, Any]:
+    """Claim a ready task with a worker lease."""
+    with connect(get_settings()) as conn:
+        return orchestration_store.claim_task(
+            conn,
+            task_id=task_id,
+            agent_name=agent_name,
+            worker_session_id=worker_session_id,
+            ttl_minutes=ttl_minutes,
+            metadata=metadata,
+            idempotency_key=idempotency_key,
+        )
+
+
+@mcp.tool()
+def renew_task_lease(
+    lease_id: str,
+    worker_session_id: str | None = None,
+    ttl_minutes: int | None = 120,
+    idempotency_key: str | None = None,
+) -> dict[str, Any]:
+    """Renew an active orchestration task lease."""
+    with connect(get_settings()) as conn:
+        return orchestration_store.renew_task_lease(
+            conn,
+            lease_id=lease_id,
+            worker_session_id=worker_session_id,
+            ttl_minutes=ttl_minutes,
+            idempotency_key=idempotency_key,
+        )
+
+
+@mcp.tool()
+def release_task_lease(
+    lease_id: str,
+    reason: str = "released",
+    worker_session_id: str | None = None,
+    idempotency_key: str | None = None,
+) -> dict[str, Any]:
+    """Release an active orchestration task lease without completing the task."""
+    with connect(get_settings()) as conn:
+        return orchestration_store.release_task_lease(
+            conn,
+            lease_id=lease_id,
+            reason=reason,
+            worker_session_id=worker_session_id,
+            idempotency_key=idempotency_key,
+        )
+
+
+@mcp.tool()
+def finish_task_with_handoff(
+    lease_id: str,
+    summary: str,
+    task_status: str = "done",
+    tested_commands: list[str] | None = None,
+    remaining_risks: list[str] | None = None,
+    next_action: str | None = None,
+    blocked_on: list[str] | None = None,
+    worker_session_id: str | None = None,
+    idempotency_key: str | None = None,
+) -> dict[str, Any]:
+    """Finish a leased task and record a structured handoff."""
+    with connect(get_settings()) as conn:
+        return orchestration_store.finish_task_with_handoff(
+            conn,
+            lease_id=lease_id,
+            summary=summary,
+            task_status=task_status,
+            tested_commands=tested_commands,
+            remaining_risks=remaining_risks,
+            next_action=next_action,
+            blocked_on=blocked_on,
+            worker_session_id=worker_session_id,
+            idempotency_key=idempotency_key,
+        )
+
+
+@mcp.tool()
+def record_command_evidence(
+    run_id: str,
+    command: str,
+    task_id: str | None = None,
+    worker_session_id: str | None = None,
+    purpose: str = "",
+    status: str | None = None,
+    exit_code: int | None = None,
+    stdout_summary: str = "",
+    stderr_summary: str = "",
+    log_path: str | None = None,
+    metadata: dict[str, Any] | None = None,
+    idempotency_key: str | None = None,
+) -> dict[str, Any]:
+    """Record command/test evidence for an orchestration run."""
+    with connect(get_settings()) as conn:
+        return orchestration_store.record_command_evidence(
+            conn,
+            run_id=run_id,
+            command=command,
+            task_id=task_id,
+            worker_session_id=worker_session_id,
+            purpose=purpose,
+            status=status,
+            exit_code=exit_code,
+            stdout_summary=stdout_summary,
+            stderr_summary=stderr_summary,
+            log_path=log_path,
+            metadata=metadata,
+            idempotency_key=idempotency_key,
+        )
+
+
+@mcp.tool()
+def record_review_finding(
+    run_id: str,
+    summary: str,
+    severity: str = "P2",
+    status: str = "open",
+    reviewer: str | None = None,
+    task_id: str | None = None,
+    affected_refs: list[dict[str, Any]] | None = None,
+    metadata: dict[str, Any] | None = None,
+    idempotency_key: str | None = None,
+) -> dict[str, Any]:
+    """Record a review finding for readiness gating."""
+    with connect(get_settings()) as conn:
+        return orchestration_store.record_review_finding(
+            conn,
+            run_id=run_id,
+            summary=summary,
+            severity=severity,
+            status=status,
+            reviewer=reviewer,
+            task_id=task_id,
+            affected_refs=affected_refs,
+            metadata=metadata,
+            idempotency_key=idempotency_key,
+        )
+
+
+@mcp.tool()
+def resolve_review_finding(
+    finding_id: str,
+    status: str,
+    reason: str = "",
+    resolved_by: str | None = None,
+    metadata: dict[str, Any] | None = None,
+    idempotency_key: str | None = None,
+) -> dict[str, Any]:
+    """Resolve a review finding so readiness can be recalculated."""
+    with connect(get_settings()) as conn:
+        return orchestration_store.resolve_review_finding(
+            conn,
+            finding_id=finding_id,
+            status=status,
+            reason=reason,
+            resolved_by=resolved_by,
+            metadata=metadata,
+            idempotency_key=idempotency_key,
+        )
+
+
+@mcp.tool()
+def record_decision(
+    run_id: str,
+    decision: str,
+    task_id: str | None = None,
+    status: str = "accepted",
+    reason: str = "",
+    decided_by: str | None = None,
+    evidence_refs: list[dict[str, Any]] | None = None,
+    metadata: dict[str, Any] | None = None,
+    idempotency_key: str | None = None,
+) -> dict[str, Any]:
+    """Record an orchestration decision with optional evidence refs."""
+    with connect(get_settings()) as conn:
+        return orchestration_store.record_decision(
+            conn,
+            run_id=run_id,
+            decision=decision,
+            task_id=task_id,
+            status=status,
+            reason=reason,
+            decided_by=decided_by,
+            evidence_refs=evidence_refs,
+            metadata=metadata,
+            idempotency_key=idempotency_key,
+        )
+
+
+@mcp.tool()
+def request_approval(
+    run_id: str,
+    reason: str,
+    task_id: str | None = None,
+    risk_level: str = "high",
+    requested_by_agent: str | None = None,
+    metadata: dict[str, Any] | None = None,
+    idempotency_key: str | None = None,
+) -> dict[str, Any]:
+    """Request human approval for a high-risk orchestration action."""
+    with connect(get_settings()) as conn:
+        return orchestration_store.request_approval(
+            conn,
+            run_id=run_id,
+            reason=reason,
+            task_id=task_id,
+            risk_level=risk_level,
+            requested_by_agent=requested_by_agent,
+            metadata=metadata,
+            idempotency_key=idempotency_key,
+        )
+
+
+@mcp.tool()
+def resolve_approval(
+    approval_id: str,
+    status: str,
+    resolved_by: str | None = None,
+    metadata: dict[str, Any] | None = None,
+    idempotency_key: str | None = None,
+) -> dict[str, Any]:
+    """Resolve an approval request as approved or denied."""
+    with connect(get_settings()) as conn:
+        return orchestration_store.resolve_approval(
+            conn,
+            approval_id=approval_id,
+            status=status,
+            resolved_by=resolved_by,
+            metadata=metadata,
+            idempotency_key=idempotency_key,
+        )
+
+
+@mcp.tool()
+def get_run(run_id: str) -> dict[str, Any]:
+    """Read a run with tasks, workers, leases, evidence, findings, and approvals."""
+    with connect(get_settings()) as conn:
+        return orchestration_store.get_run(conn, run_id)
+
+
+@mcp.tool()
+def list_runs(
+    workspace_id_or_uri: str,
+    status: str | None = None,
+    limit: int = 50,
+) -> dict[str, Any]:
+    """List orchestration runs for one workspace."""
+    with connect(get_settings()) as conn:
+        return orchestration_store.list_runs(
+            conn,
+            workspace_id_or_uri=workspace_id_or_uri,
+            status=status,
+            limit=limit,
+        )
+
+
+@mcp.tool()
+def get_claimable_tasks(
+    run_id: str | None = None,
+    workspace_id_or_uri: str | None = None,
+    limit: int = 50,
+) -> dict[str, Any]:
+    """List ready tasks that do not have an active lease."""
+    with connect(get_settings()) as conn:
+        return orchestration_store.get_claimable_tasks(
+            conn,
+            run_id=run_id,
+            workspace_id_or_uri=workspace_id_or_uri,
+            limit=limit,
+        )
+
+
+@mcp.tool()
+def get_readiness_report(run_id: str) -> dict[str, Any]:
+    """Return an evidence-linked readiness report for one run."""
+    with connect(get_settings()) as conn:
+        return orchestration_store.get_readiness_report(conn, run_id)
+
+
+@mcp.tool()
+def get_orchestrator_brief(workspace_id_or_uri: str, limit: int = 25) -> dict[str, Any]:
+    """Return active runs, claimable tasks, and blocker counts for one workspace."""
+    with connect(get_settings()) as conn:
+        return orchestration_store.get_orchestrator_brief(conn, workspace_id_or_uri, limit=limit)
+
+
+@mcp.tool()
+def get_run_handoff_package(run_id: str, limit: int = 100) -> dict[str, Any]:
+    """Return a complete run handoff package for recovery or external orchestration."""
+    with connect(get_settings()) as conn:
+        return orchestration_store.get_run_handoff_package(conn, run_id, limit=limit)
+
+
+@mcp.tool()
+def summarize_run(run_id: str) -> dict[str, Any]:
+    """Return a deterministic Markdown and JSON summary for one run."""
+    with connect(get_settings()) as conn:
+        return orchestration_store.summarize_run(conn, run_id)
+
+
 @mcp.resource("geond://sessions", mime_type="application/json")
 def sessions_resource() -> list[dict[str, Any]]:
     """List recent imported sessions."""
@@ -1399,6 +1845,373 @@ def workspace_handoffs_resource(workspace_id: str) -> dict[str, Any]:
     """Read handoff summaries for a workspace."""
     with connect(get_settings()) as conn:
         return get_workspace_handoffs(conn, workspace_id)
+
+
+@mcp.resource("geond://workspaces/{workspace_id}/orchestrator-brief", mime_type="application/json")
+def workspace_orchestrator_brief_resource(workspace_id: str) -> dict[str, Any]:
+    """Read a compact orchestration brief for a workspace."""
+    with connect(get_settings()) as conn:
+        return orchestration_store.get_orchestrator_brief(conn, workspace_id)
+
+
+@mcp.resource("geond://runs/{run_id}", mime_type="application/json")
+def run_resource(run_id: str) -> dict[str, Any]:
+    """Read a complete orchestration run state."""
+    with connect(get_settings()) as conn:
+        return orchestration_store.get_run(conn, run_id)
+
+
+@mcp.resource("geond://runs/{run_id}/tasks", mime_type="application/json")
+def run_tasks_resource(run_id: str) -> dict[str, Any]:
+    """Read tasks for an orchestration run."""
+    with connect(get_settings()) as conn:
+        run = orchestration_store.get_run(conn, run_id)
+        return {
+            "schema": "geond.task.v1.list",
+            "status": run.get("status"),
+            "code": run.get("code"),
+            "run_id": run_id,
+            "tasks": run.get("tasks", []),
+        }
+
+
+@mcp.resource("geond://runs/{run_id}/workers", mime_type="application/json")
+def run_workers_resource(run_id: str) -> dict[str, Any]:
+    """Read worker sessions for an orchestration run."""
+    with connect(get_settings()) as conn:
+        run = orchestration_store.get_run(conn, run_id)
+        return {
+            "schema": "geond.worker_session.v1.list",
+            "status": run.get("status"),
+            "code": run.get("code"),
+            "run_id": run_id,
+            "workers": run.get("workers", []),
+        }
+
+
+@mcp.resource("geond://runs/{run_id}/leases", mime_type="application/json")
+def run_leases_resource(run_id: str) -> dict[str, Any]:
+    """Read task leases for an orchestration run."""
+    with connect(get_settings()) as conn:
+        run = orchestration_store.get_run(conn, run_id)
+        return {
+            "schema": "geond.task_lease.v1.list",
+            "status": run.get("status"),
+            "code": run.get("code"),
+            "run_id": run_id,
+            "leases": run.get("leases", []),
+        }
+
+
+@mcp.resource("geond://runs/{run_id}/readiness", mime_type="application/json")
+def run_readiness_resource(run_id: str) -> dict[str, Any]:
+    """Read readiness status for an orchestration run."""
+    with connect(get_settings()) as conn:
+        return orchestration_store.get_readiness_report(conn, run_id)
+
+
+_ORCH_PARAM_DESCRIPTIONS = {
+    "workspace_id_or_uri": "Workspace UUID, root URI, or alias URI for orchestration state.",
+    "title": "Human-readable goal, run, or task title.",
+    "summary": "Concise human-readable summary.",
+    "status": "Lifecycle status for the object being created or updated.",
+    "created_by_agent": "Optional agent name that created the object.",
+    "metadata": "Optional JSON metadata for client-specific context.",
+    "idempotency_key": "Optional stable key that makes write retries safe.",
+    "goal_id": "Optional orchestration goal UUID that owns the run.",
+    "risk_level": "Run or approval risk level: low, medium, high, or critical.",
+    "run_id": "Orchestration run UUID.",
+    "task_id": "Orchestration task UUID.",
+    "description": "Longer task description or implementation note.",
+    "priority": "Task ordering priority; larger values are listed first.",
+    "required_evidence": "Evidence requirements the worker should satisfy.",
+    "agent_name": "Worker agent name such as codex or claude.",
+    "session_external_id": "Optional external transcript or session id.",
+    "worker_session_id": "Worker session UUID that owns or updates the lease.",
+    "ttl_minutes": "Lease lifetime in minutes; null means no expiry.",
+    "lease_id": "Task lease UUID.",
+    "reason": "Reason for a decision, approval, release, or status change.",
+    "task_status": "Final task status, usually done or blocked.",
+    "tested_commands": "Commands already run to validate the task.",
+    "remaining_risks": "Known risks that remain after worker handoff.",
+    "next_action": "Single next action for the receiver or orchestrator.",
+    "blocked_on": "Blockers that prevented completion.",
+    "command": "Command, query, or validation action that produced evidence.",
+    "purpose": "Why the command or evidence was recorded.",
+    "exit_code": "Process exit code when command evidence came from a command.",
+    "stdout_summary": "Short redacted stdout summary.",
+    "stderr_summary": "Short redacted stderr summary.",
+    "log_path": "Path to a local full log file, if retained.",
+    "severity": "Review finding severity such as P0, P1, P2, or P3.",
+    "finding_id": "Review finding UUID.",
+    "reviewer": "Human or model reviewer that raised the finding.",
+    "affected_refs": "Files, resources, or evidence refs affected by the finding.",
+    "decision": "Decision statement to record in the run ledger.",
+    "decided_by": "Human or agent that made the decision.",
+    "evidence_refs": "Evidence references supporting the decision.",
+    "requested_by_agent": "Agent requesting approval.",
+    "approval_id": "Approval request UUID.",
+    "resolved_by": "Human or agent that resolved the approval.",
+    "limit": "Maximum number of records to return.",
+}
+
+
+def _orchestration_metadata(
+    *,
+    title: str,
+    purpose: str,
+    params: list[str],
+    output: str,
+) -> dict[str, Any]:
+    return {
+        "title": title,
+        "description": (
+            f"Purpose: {purpose} When to use: use this in MCP-first orchestration "
+            "flows before building a higher-level Geond Orchestrator. Inputs: "
+            "parameters identify the workspace, run, task, worker, or evidence record. "
+            f"Side effects: {'writes orchestration state' if not title.startswith(('Get', 'List')) else 'none beyond database reads'}. "
+            f"Output: {output}. Failure modes: returns a stable status/code payload such as "
+            "RUN_NOT_FOUND, TASK_NOT_CLAIMABLE, LEASE_CONFLICT, or IDEMPOTENCY_CONFLICT."
+        ),
+        "params": {name: _ORCH_PARAM_DESCRIPTIONS[name] for name in params},
+    }
+
+
+TOOL_METADATA.update(
+    {
+        "create_goal": _orchestration_metadata(
+            title="Create orchestration goal",
+            purpose="Create a top-level goal for a workspace.",
+            params=[
+                "workspace_id_or_uri",
+                "title",
+                "summary",
+                "status",
+                "created_by_agent",
+                "metadata",
+                "idempotency_key",
+            ],
+            output="a geond.goal.v1 payload",
+        ),
+        "create_run": _orchestration_metadata(
+            title="Create orchestration run",
+            purpose="Create a run under a goal or directly in a workspace.",
+            params=[
+                "workspace_id_or_uri",
+                "title",
+                "goal_id",
+                "risk_level",
+                "status",
+                "created_by_agent",
+                "metadata",
+                "idempotency_key",
+            ],
+            output="a geond.run.v1 payload",
+        ),
+        "create_task": _orchestration_metadata(
+            title="Create orchestration task",
+            purpose="Create a ready task that a worker can claim.",
+            params=[
+                "run_id",
+                "title",
+                "description",
+                "status",
+                "priority",
+                "required_evidence",
+                "created_by_agent",
+                "metadata",
+                "idempotency_key",
+            ],
+            output="a geond.task.v1 payload",
+        ),
+        "update_task_state": _orchestration_metadata(
+            title="Update orchestration task",
+            purpose="Update the lifecycle status of a task.",
+            params=["task_id", "status", "metadata", "idempotency_key"],
+            output="an updated geond.task.v1 payload",
+        ),
+        "register_worker_session": _orchestration_metadata(
+            title="Register worker session",
+            purpose="Register a Codex, Claude, or other worker for a run.",
+            params=[
+                "run_id",
+                "agent_name",
+                "status",
+                "session_external_id",
+                "metadata",
+                "idempotency_key",
+            ],
+            output="a geond.worker_session.v1 payload",
+        ),
+        "claim_task": _orchestration_metadata(
+            title="Claim orchestration task",
+            purpose="Claim a ready task and create a task lease.",
+            params=[
+                "task_id",
+                "agent_name",
+                "worker_session_id",
+                "ttl_minutes",
+                "metadata",
+                "idempotency_key",
+            ],
+            output="a geond.task_lease.v1 payload with task and worker details",
+        ),
+        "renew_task_lease": _orchestration_metadata(
+            title="Renew task lease",
+            purpose="Renew an active task lease heartbeat.",
+            params=["lease_id", "worker_session_id", "ttl_minutes", "idempotency_key"],
+            output="an updated geond.task_lease.v1 payload",
+        ),
+        "release_task_lease": _orchestration_metadata(
+            title="Release task lease",
+            purpose="Release a task lease without marking the task done.",
+            params=["lease_id", "reason", "worker_session_id", "idempotency_key"],
+            output="an updated geond.task_lease.v1 payload",
+        ),
+        "finish_task_with_handoff": _orchestration_metadata(
+            title="Finish task with handoff",
+            purpose="Finish a leased task and record worker handoff data.",
+            params=[
+                "lease_id",
+                "summary",
+                "task_status",
+                "tested_commands",
+                "remaining_risks",
+                "next_action",
+                "blocked_on",
+                "worker_session_id",
+                "idempotency_key",
+            ],
+            output="a completed geond.task.v1 payload plus handoff id",
+        ),
+        "record_command_evidence": _orchestration_metadata(
+            title="Record command evidence",
+            purpose="Record validation command evidence for a run.",
+            params=[
+                "run_id",
+                "command",
+                "task_id",
+                "worker_session_id",
+                "purpose",
+                "status",
+                "exit_code",
+                "stdout_summary",
+                "stderr_summary",
+                "log_path",
+                "metadata",
+                "idempotency_key",
+            ],
+            output="a geond.command_run.v1 payload",
+        ),
+        "record_review_finding": _orchestration_metadata(
+            title="Record review finding",
+            purpose="Record a readiness-gating review finding.",
+            params=[
+                "run_id",
+                "summary",
+                "severity",
+                "status",
+                "reviewer",
+                "task_id",
+                "affected_refs",
+                "metadata",
+                "idempotency_key",
+            ],
+            output="a geond.review_finding.v1 payload",
+        ),
+        "resolve_review_finding": _orchestration_metadata(
+            title="Resolve review finding",
+            purpose="Resolve or waive a readiness-gating review finding.",
+            params=[
+                "finding_id",
+                "status",
+                "reason",
+                "resolved_by",
+                "metadata",
+                "idempotency_key",
+            ],
+            output="an updated geond.review_finding.v1 payload",
+        ),
+        "record_decision": _orchestration_metadata(
+            title="Record orchestration decision",
+            purpose="Record a decision and optional evidence refs.",
+            params=[
+                "run_id",
+                "decision",
+                "task_id",
+                "status",
+                "reason",
+                "decided_by",
+                "evidence_refs",
+                "metadata",
+                "idempotency_key",
+            ],
+            output="a geond.decision.v1 payload",
+        ),
+        "request_approval": _orchestration_metadata(
+            title="Request approval",
+            purpose="Request approval for a high-risk action.",
+            params=[
+                "run_id",
+                "reason",
+                "task_id",
+                "risk_level",
+                "requested_by_agent",
+                "metadata",
+                "idempotency_key",
+            ],
+            output="a geond.approval_request.v1 payload",
+        ),
+        "resolve_approval": _orchestration_metadata(
+            title="Resolve approval",
+            purpose="Approve or deny a pending approval request.",
+            params=["approval_id", "status", "resolved_by", "metadata", "idempotency_key"],
+            output="an updated geond.approval_request.v1 payload",
+        ),
+        "get_run": _orchestration_metadata(
+            title="Get orchestration run",
+            purpose="Read a complete run state.",
+            params=["run_id"],
+            output="run, task, worker, lease, evidence, finding, and approval sections",
+        ),
+        "list_runs": _orchestration_metadata(
+            title="List orchestration runs",
+            purpose="List runs for a workspace.",
+            params=["workspace_id_or_uri", "status", "limit"],
+            output="a compact geond.run.v1 list payload",
+        ),
+        "get_claimable_tasks": _orchestration_metadata(
+            title="Get claimable tasks",
+            purpose="List ready tasks without active leases.",
+            params=["run_id", "workspace_id_or_uri", "limit"],
+            output="a geond.task.v1 claimable list payload",
+        ),
+        "get_readiness_report": _orchestration_metadata(
+            title="Get readiness report",
+            purpose="Evaluate whether a run is ready, blocked, or awaiting approval.",
+            params=["run_id"],
+            output="a geond.readiness_report.v1 payload",
+        ),
+        "get_orchestrator_brief": _orchestration_metadata(
+            title="Get orchestrator brief",
+            purpose="Read active runs, claimable tasks, and blocker counts.",
+            params=["workspace_id_or_uri", "limit"],
+            output="a geond.orchestrator_brief.v1 payload",
+        ),
+        "get_run_handoff_package": _orchestration_metadata(
+            title="Get run handoff package",
+            purpose="Read all state needed to recover or hand off a run.",
+            params=["run_id", "limit"],
+            output="a geond.run_handoff_package.v1 payload",
+        ),
+        "summarize_run": _orchestration_metadata(
+            title="Get run summary",
+            purpose="Build a deterministic run summary without LLM calls.",
+            params=["run_id"],
+            output="a geond.run_summary.v1 payload with Markdown and JSON summary",
+        ),
+    }
+)
 
 
 _apply_tool_metadata()

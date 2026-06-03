@@ -50,6 +50,7 @@ from geond.install import (
     install_clients,
 )
 from geond.mcp_smoke import format_smoke_report, run_stdio_smoke
+from geond.orchestration_manifest import write_run_manifest
 from geond.retrieval.simple import (
     explain_change,
     get_changeset_detail,
@@ -82,6 +83,24 @@ from geond.storage.dashboard import (
 )
 from geond.storage.embeddings import embed_pending_messages, embedding_stats
 from geond.storage.maintenance import purge_workspace, seed_sample_workspace
+from geond.storage.orchestration import claim_task as orchestration_claim_task
+from geond.storage.orchestration import create_goal as orchestration_create_goal
+from geond.storage.orchestration import create_run as orchestration_create_run
+from geond.storage.orchestration import create_task as orchestration_create_task
+from geond.storage.orchestration import finish_task_with_handoff as orchestration_finish_task
+from geond.storage.orchestration import get_claimable_tasks as orchestration_claimable_tasks
+from geond.storage.orchestration import get_readiness_report as orchestration_readiness
+from geond.storage.orchestration import get_run_handoff_package as orchestration_handoff_package
+from geond.storage.orchestration import record_command_evidence as orchestration_record_command_evidence
+from geond.storage.orchestration import record_decision as orchestration_record_decision
+from geond.storage.orchestration import record_review_finding as orchestration_record_review_finding
+from geond.storage.orchestration import register_worker_session as orchestration_register_worker
+from geond.storage.orchestration import release_task_lease as orchestration_release_lease
+from geond.storage.orchestration import request_approval as orchestration_request_approval
+from geond.storage.orchestration import resolve_approval as orchestration_resolve_approval
+from geond.storage.orchestration import resolve_review_finding as orchestration_resolve_review_finding
+from geond.storage.orchestration import renew_task_lease as orchestration_renew_lease
+from geond.storage.orchestration import summarize_run as orchestration_summarize_run
 from geond.storage.repository import (
     cleanup_expired_reservations_for_workspace,
     close_handoff_summary,
@@ -147,6 +166,16 @@ def workspace_name_from_uri(workspace_uri: str) -> str:
         normalized = normalized.removeprefix("file://")
     name = normalized.rsplit("/", 1)[-1]
     return name or "claude-code-workspace"
+
+
+def parse_evidence_refs(values: list[str] | None) -> list[dict[str, str]]:
+    refs: list[dict[str, str]] = []
+    for value in values or []:
+        ref_type, sep, ref_id = value.partition(":")
+        if not sep or not ref_type or not ref_id:
+            raise SystemExit("--evidence-ref must use TYPE:ID format")
+        refs.append({"type": ref_type, "id": ref_id})
+    return refs
 
 
 def changed_files_from_args(
@@ -1604,6 +1633,149 @@ def main() -> None:
     review_context.add_argument("--agent-name")
     review_context.add_argument("--limit", type=int, default=5)
     review_context.add_argument("--format", choices=["json", "markdown"], default="json")
+
+    goal_cmd = subparsers.add_parser("goal", help="Manage orchestration goals")
+    goal_subparsers = goal_cmd.add_subparsers(dest="goal_command", required=True)
+    goal_start = goal_subparsers.add_parser("start", help="Create an orchestration goal")
+    goal_start.add_argument("workspace_id_or_uri")
+    goal_start.add_argument("--title", required=True)
+    goal_start.add_argument("--summary", "--description", default="")
+    goal_start.add_argument("--status", default="accepted")
+    goal_start.add_argument("--agent-name", dest="created_by_agent")
+    goal_start.add_argument("--idempotency-key")
+
+    run_cmd = subparsers.add_parser("run", help="Manage orchestration runs")
+    run_subparsers = run_cmd.add_subparsers(dest="run_command", required=True)
+    run_start = run_subparsers.add_parser("start", help="Create an orchestration run")
+    run_start.add_argument("workspace_id_or_uri")
+    run_start.add_argument("--title", required=True)
+    run_start.add_argument("--goal-id")
+    run_start.add_argument("--risk-level", default="medium")
+    run_start.add_argument("--status", default="active")
+    run_start.add_argument("--agent-name", dest="created_by_agent")
+    run_start.add_argument("--idempotency-key")
+    run_summarize = run_subparsers.add_parser("summarize", help="Summarize an orchestration run")
+    run_summarize.add_argument("run_id")
+    run_summarize.add_argument("--format", choices=["markdown", "json"], default="markdown")
+    run_summarize.add_argument("--output", type=Path)
+    run_manifest = run_subparsers.add_parser("manifest", help="Write a local run evidence manifest")
+    run_manifest.add_argument("run_id")
+    run_manifest.add_argument("--base-dir", type=Path, default=Path("tmp/geond-runs"))
+    run_manifest.add_argument("--write-result", action="store_true")
+
+    task_cmd = subparsers.add_parser("task", help="Manage orchestration tasks")
+    task_subparsers = task_cmd.add_subparsers(dest="task_command", required=True)
+    task_create = task_subparsers.add_parser("create", help="Create a claimable task")
+    task_create.add_argument("run_id")
+    task_create.add_argument("--title", required=True)
+    task_create.add_argument("--description", default="")
+    task_create.add_argument("--status", default="ready")
+    task_create.add_argument("--priority", type=int, default=0)
+    task_create.add_argument("--agent-name", dest="created_by_agent")
+    task_create.add_argument("--idempotency-key")
+
+    worker_cmd = subparsers.add_parser("worker", help="Manage orchestration worker leases")
+    worker_subparsers = worker_cmd.add_subparsers(dest="worker_command", required=True)
+    worker_register = worker_subparsers.add_parser("register", help="Register a worker session")
+    worker_register.add_argument("run_id")
+    worker_register.add_argument("--agent", dest="agent_name", required=True)
+    worker_register.add_argument("--model")
+    worker_register.add_argument("--capability", dest="capabilities", action="append")
+    worker_register.add_argument("--status", default="active")
+    worker_register.add_argument("--session-external-id")
+    worker_register.add_argument("--idempotency-key")
+
+    worker_claim = worker_subparsers.add_parser("claim", help="Claim a ready task")
+    worker_claim.add_argument("--task-id")
+    worker_claim.add_argument("--run", dest="run_id")
+    worker_claim.add_argument("--agent", dest="agent_name", required=True)
+    worker_claim.add_argument("--worker-session-id")
+    worker_claim.add_argument("--ttl-minutes", type=int, default=120)
+    worker_claim.add_argument("--idempotency-key")
+
+    worker_renew = worker_subparsers.add_parser("renew", help="Renew a task lease")
+    worker_renew.add_argument("lease_id")
+    worker_renew.add_argument("--worker-session-id")
+    worker_renew.add_argument("--ttl-minutes", type=int, default=120)
+    worker_renew.add_argument("--idempotency-key")
+
+    worker_release = worker_subparsers.add_parser("release", help="Release a task lease")
+    worker_release.add_argument("lease_id")
+    worker_release.add_argument("--reason", default="released")
+    worker_release.add_argument("--worker-session-id")
+    worker_release.add_argument("--idempotency-key")
+
+    worker_finish = worker_subparsers.add_parser("finish", help="Finish a task lease with handoff")
+    worker_finish.add_argument("lease_id")
+    worker_finish.add_argument("--summary", required=True)
+    worker_finish.add_argument("--task-status", choices=["done", "blocked"], default="done")
+    worker_finish.add_argument("--tested-command", dest="tested_commands", action="append")
+    worker_finish.add_argument("--remaining-risk", dest="remaining_risks", action="append")
+    worker_finish.add_argument("--next-action")
+    worker_finish.add_argument("--blocked-on", action="append")
+    worker_finish.add_argument("--worker-session-id")
+    worker_finish.add_argument("--idempotency-key")
+
+    readiness_cmd = subparsers.add_parser("readiness", help="Read orchestration readiness")
+    readiness_cmd.add_argument("run_id")
+
+    evidence_cmd = subparsers.add_parser("evidence", help="Record orchestration evidence")
+    evidence_subparsers = evidence_cmd.add_subparsers(dest="evidence_command", required=True)
+    evidence_command = evidence_subparsers.add_parser("command", help="Record command evidence")
+    evidence_command.add_argument("--run", dest="run_id", required=True)
+    evidence_command.add_argument("--task", dest="task_id")
+    evidence_command.add_argument("--worker-session-id")
+    evidence_command.add_argument("--command", dest="recorded_command", required=True)
+    evidence_command.add_argument("--purpose", default="")
+    evidence_command.add_argument("--status")
+    evidence_command.add_argument("--exit-code", type=int)
+    evidence_command.add_argument("--stdout-summary", default="")
+    evidence_command.add_argument("--stderr-summary", default="")
+    evidence_command.add_argument("--log-path")
+    evidence_command.add_argument("--idempotency-key")
+
+    approval_cmd = subparsers.add_parser("approval", help="Manage orchestration approvals")
+    approval_subparsers = approval_cmd.add_subparsers(dest="approval_command", required=True)
+    approval_request = approval_subparsers.add_parser("request", help="Request run approval")
+    approval_request.add_argument("--run", dest="run_id", required=True)
+    approval_request.add_argument("--task", dest="task_id")
+    approval_request.add_argument("--reason", required=True)
+    approval_request.add_argument("--risk-level", default="high")
+    approval_request.add_argument("--requested-by-agent")
+    approval_request.add_argument("--idempotency-key")
+    approval_resolve = approval_subparsers.add_parser("resolve", help="Resolve an approval")
+    approval_resolve.add_argument("approval_id")
+    approval_resolve.add_argument("--status", choices=["approved", "denied"], required=True)
+    approval_resolve.add_argument("--resolved-by")
+    approval_resolve.add_argument("--idempotency-key")
+
+    review_cmd = subparsers.add_parser("review", help="Manage orchestration review findings")
+    review_subparsers = review_cmd.add_subparsers(dest="review_command", required=True)
+    review_finding = review_subparsers.add_parser("finding", help="Record a review finding")
+    review_finding.add_argument("--run", dest="run_id", required=True)
+    review_finding.add_argument("--task", dest="task_id")
+    review_finding.add_argument("--summary", required=True)
+    review_finding.add_argument("--severity", choices=["P0", "P1", "P2", "P3"], required=True)
+    review_finding.add_argument("--reviewer")
+    review_finding.add_argument("--idempotency-key")
+    review_resolve = review_subparsers.add_parser("resolve", help="Resolve a review finding")
+    review_resolve.add_argument("finding_id")
+    review_resolve.add_argument("--status", choices=["fixed", "waived", "rejected"], required=True)
+    review_resolve.add_argument("--reason", required=True)
+    review_resolve.add_argument("--resolved-by")
+    review_resolve.add_argument("--idempotency-key")
+
+    decision_cmd = subparsers.add_parser("decision", help="Record orchestration decisions")
+    decision_subparsers = decision_cmd.add_subparsers(dest="decision_command", required=True)
+    decision_record = decision_subparsers.add_parser("record", help="Record a run decision")
+    decision_record.add_argument("--run", dest="run_id", required=True)
+    decision_record.add_argument("--task", dest="task_id")
+    decision_record.add_argument("--decision", required=True)
+    decision_record.add_argument("--status", default="accepted")
+    decision_record.add_argument("--reason", default="")
+    decision_record.add_argument("--decided-by")
+    decision_record.add_argument("--evidence-ref", dest="evidence_refs", action="append")
+    decision_record.add_argument("--idempotency-key")
 
     start_task_cmd = subparsers.add_parser(
         "start-task",
@@ -3359,6 +3531,271 @@ def main() -> None:
             print(format_context_review_markdown(result))
         else:
             print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "goal" and args.goal_command == "start":
+        with connect(get_settings()) as conn:
+            result = orchestration_create_goal(
+                conn,
+                workspace_id_or_uri=args.workspace_id_or_uri,
+                title=args.title,
+                summary=args.summary,
+                status=args.status,
+                created_by_agent=args.created_by_agent,
+                idempotency_key=args.idempotency_key,
+            )
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        return
+
+    if args.command == "run" and args.run_command == "start":
+        with connect(get_settings()) as conn:
+            result = orchestration_create_run(
+                conn,
+                workspace_id_or_uri=args.workspace_id_or_uri,
+                title=args.title,
+                goal_id=args.goal_id,
+                risk_level=args.risk_level,
+                status=args.status,
+                created_by_agent=args.created_by_agent,
+                idempotency_key=args.idempotency_key,
+            )
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        return
+
+    if args.command == "run" and args.run_command == "summarize":
+        with connect(get_settings()) as conn:
+            result = orchestration_summarize_run(conn, args.run_id)
+        if args.format == "markdown" and result.get("status") == "ok":
+            output = result.get("markdown", "")
+            if args.output:
+                args.output.parent.mkdir(parents=True, exist_ok=True)
+                args.output.write_text(output, encoding="utf-8")
+            else:
+                print(output, end="")
+        else:
+            if args.output:
+                args.output.parent.mkdir(parents=True, exist_ok=True)
+                args.output.write_text(
+                    json.dumps(result, ensure_ascii=False, indent=2, default=str) + "\n",
+                    encoding="utf-8",
+                )
+            else:
+                print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        return
+
+    if args.command == "run" and args.run_command == "manifest":
+        with connect(get_settings()) as conn:
+            package = orchestration_handoff_package(conn, args.run_id)
+            summary = orchestration_summarize_run(conn, args.run_id)
+        result = write_run_manifest(
+            package,
+            summary.get("markdown", "") if isinstance(summary, dict) else "",
+            base_dir=args.base_dir,
+            write_result=args.write_result,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        return
+
+    if args.command == "task" and args.task_command == "create":
+        with connect(get_settings()) as conn:
+            result = orchestration_create_task(
+                conn,
+                run_id=args.run_id,
+                title=args.title,
+                description=args.description,
+                status=args.status,
+                priority=args.priority,
+                created_by_agent=args.created_by_agent,
+                idempotency_key=args.idempotency_key,
+            )
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        return
+
+    if args.command == "worker" and args.worker_command == "register":
+        worker_metadata = {
+            key: value
+            for key, value in {
+                "model": args.model,
+                "capabilities": args.capabilities or [],
+            }.items()
+            if value
+        }
+        with connect(get_settings()) as conn:
+            result = orchestration_register_worker(
+                conn,
+                run_id=args.run_id,
+                agent_name=args.agent_name,
+                status=args.status,
+                session_external_id=args.session_external_id,
+                metadata=worker_metadata,
+                idempotency_key=args.idempotency_key,
+            )
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        return
+
+    if args.command == "worker" and args.worker_command == "claim":
+        with connect(get_settings()) as conn:
+            task_id = args.task_id
+            if not task_id and args.run_id:
+                claimable = orchestration_claimable_tasks(conn, run_id=args.run_id, limit=1)
+                tasks = claimable.get("tasks") if isinstance(claimable, dict) else []
+                if tasks:
+                    task_id = tasks[0].get("task_id")
+                else:
+                    result = {
+                        "status": "error",
+                        "code": claimable.get("code") or "TASK_NOT_CLAIMABLE",
+                        "message": "No claimable task was found for this run.",
+                        "related_ids": {"run_id": args.run_id},
+                    }
+                    print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+                    return
+            if not task_id:
+                raise SystemExit("worker claim requires --task-id or --run")
+            result = orchestration_claim_task(
+                conn,
+                task_id=task_id,
+                agent_name=args.agent_name,
+                worker_session_id=args.worker_session_id,
+                ttl_minutes=args.ttl_minutes,
+                idempotency_key=args.idempotency_key,
+            )
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        return
+
+    if args.command == "worker" and args.worker_command == "renew":
+        with connect(get_settings()) as conn:
+            result = orchestration_renew_lease(
+                conn,
+                lease_id=args.lease_id,
+                worker_session_id=args.worker_session_id,
+                ttl_minutes=args.ttl_minutes,
+                idempotency_key=args.idempotency_key,
+            )
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        return
+
+    if args.command == "worker" and args.worker_command == "release":
+        with connect(get_settings()) as conn:
+            result = orchestration_release_lease(
+                conn,
+                lease_id=args.lease_id,
+                reason=args.reason,
+                worker_session_id=args.worker_session_id,
+                idempotency_key=args.idempotency_key,
+            )
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        return
+
+    if args.command == "worker" and args.worker_command == "finish":
+        with connect(get_settings()) as conn:
+            result = orchestration_finish_task(
+                conn,
+                lease_id=args.lease_id,
+                summary=args.summary,
+                task_status=args.task_status,
+                tested_commands=args.tested_commands,
+                remaining_risks=args.remaining_risks,
+                next_action=args.next_action,
+                blocked_on=args.blocked_on,
+                worker_session_id=args.worker_session_id,
+                idempotency_key=args.idempotency_key,
+            )
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        return
+
+    if args.command == "readiness":
+        with connect(get_settings()) as conn:
+            result = orchestration_readiness(conn, args.run_id)
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        return
+
+    if args.command == "evidence" and args.evidence_command == "command":
+        with connect(get_settings()) as conn:
+            result = orchestration_record_command_evidence(
+                conn,
+                run_id=args.run_id,
+                command=args.recorded_command,
+                task_id=args.task_id,
+                worker_session_id=args.worker_session_id,
+                purpose=args.purpose,
+                status=args.status,
+                exit_code=args.exit_code,
+                stdout_summary=args.stdout_summary,
+                stderr_summary=args.stderr_summary,
+                log_path=args.log_path,
+                idempotency_key=args.idempotency_key,
+            )
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        return
+
+    if args.command == "approval" and args.approval_command == "request":
+        with connect(get_settings()) as conn:
+            result = orchestration_request_approval(
+                conn,
+                run_id=args.run_id,
+                task_id=args.task_id,
+                reason=args.reason,
+                risk_level=args.risk_level,
+                requested_by_agent=args.requested_by_agent,
+                idempotency_key=args.idempotency_key,
+            )
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        return
+
+    if args.command == "approval" and args.approval_command == "resolve":
+        with connect(get_settings()) as conn:
+            result = orchestration_resolve_approval(
+                conn,
+                approval_id=args.approval_id,
+                status=args.status,
+                resolved_by=args.resolved_by,
+                idempotency_key=args.idempotency_key,
+            )
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        return
+
+    if args.command == "review" and args.review_command == "finding":
+        with connect(get_settings()) as conn:
+            result = orchestration_record_review_finding(
+                conn,
+                run_id=args.run_id,
+                task_id=args.task_id,
+                summary=args.summary,
+                severity=args.severity,
+                reviewer=args.reviewer,
+                idempotency_key=args.idempotency_key,
+            )
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        return
+
+    if args.command == "review" and args.review_command == "resolve":
+        with connect(get_settings()) as conn:
+            result = orchestration_resolve_review_finding(
+                conn,
+                finding_id=args.finding_id,
+                status=args.status,
+                reason=args.reason,
+                resolved_by=args.resolved_by,
+                idempotency_key=args.idempotency_key,
+            )
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        return
+
+    if args.command == "decision" and args.decision_command == "record":
+        with connect(get_settings()) as conn:
+            result = orchestration_record_decision(
+                conn,
+                run_id=args.run_id,
+                task_id=args.task_id,
+                decision=args.decision,
+                status=args.status,
+                reason=args.reason,
+                decided_by=args.decided_by,
+                evidence_refs=parse_evidence_refs(args.evidence_refs),
+                idempotency_key=args.idempotency_key,
+            )
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
         return
 
     if args.command == "start-task":

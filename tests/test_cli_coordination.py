@@ -152,6 +152,414 @@ def test_finish_task_cli_wires_wrapper(monkeypatch, capsys) -> None:
     assert captured["reservation_mode"] == "release"
 
 
+def test_orchestration_goal_start_cli_wires_storage(monkeypatch, capsys) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_connect(settings) -> FakeConnection:  # noqa: ANN001
+        return FakeConnection()
+
+    def fake_create_goal(conn, **kwargs):  # noqa: ANN001, ANN202
+        captured.update(kwargs)
+        return {"status": "ok", "goal": {"goal_id": "goal-1"}}
+
+    monkeypatch.setattr(cli, "connect", fake_connect)
+    monkeypatch.setattr(cli, "orchestration_create_goal", fake_create_goal)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "geond",
+            "goal",
+            "start",
+            "file:///repo",
+            "--title",
+            "Prepare MCP orchestration",
+            "--description",
+            "MCP-first foundation",
+            "--agent-name",
+            "codex",
+            "--idempotency-key",
+            "goal-key",
+        ],
+    )
+
+    cli.main()
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["goal"]["goal_id"] == "goal-1"
+    assert captured == {
+        "workspace_id_or_uri": "file:///repo",
+        "title": "Prepare MCP orchestration",
+        "summary": "MCP-first foundation",
+        "status": "accepted",
+        "created_by_agent": "codex",
+        "idempotency_key": "goal-key",
+    }
+
+
+def test_orchestration_worker_register_cli_wires_metadata(monkeypatch, capsys) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_connect(settings) -> FakeConnection:  # noqa: ANN001
+        return FakeConnection()
+
+    def fake_register_worker(conn, **kwargs):  # noqa: ANN001, ANN202
+        captured.update(kwargs)
+        return {"status": "ok", "worker_session": {"worker_session_id": "worker-1"}}
+
+    monkeypatch.setattr(cli, "connect", fake_connect)
+    monkeypatch.setattr(cli, "orchestration_register_worker", fake_register_worker)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "geond",
+            "worker",
+            "register",
+            "run-1",
+            "--agent",
+            "codex",
+            "--model",
+            "gpt-5",
+            "--capability",
+            "cli",
+            "--capability",
+            "mcp",
+            "--session-external-id",
+            "session-1",
+        ],
+    )
+
+    cli.main()
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["worker_session"]["worker_session_id"] == "worker-1"
+    assert captured == {
+        "run_id": "run-1",
+        "agent_name": "codex",
+        "status": "active",
+        "session_external_id": "session-1",
+        "metadata": {"model": "gpt-5", "capabilities": ["cli", "mcp"]},
+        "idempotency_key": None,
+    }
+
+
+def test_orchestration_worker_claim_cli_can_pick_first_claimable_task(
+    monkeypatch,
+    capsys,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_connect(settings) -> FakeConnection:  # noqa: ANN001
+        return FakeConnection()
+
+    def fake_claimable(conn, **kwargs):  # noqa: ANN001, ANN202
+        captured["claimable"] = kwargs
+        return {"status": "ok", "tasks": [{"task_id": "task-1"}]}
+
+    def fake_claim(conn, **kwargs):  # noqa: ANN001, ANN202
+        captured["claim"] = kwargs
+        return {"status": "ok", "lease": {"lease_id": "lease-1"}}
+
+    monkeypatch.setattr(cli, "connect", fake_connect)
+    monkeypatch.setattr(cli, "orchestration_claimable_tasks", fake_claimable)
+    monkeypatch.setattr(cli, "orchestration_claim_task", fake_claim)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "geond",
+            "worker",
+            "claim",
+            "--run",
+            "run-1",
+            "--agent",
+            "codex",
+            "--ttl-minutes",
+            "30",
+        ],
+    )
+
+    cli.main()
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["lease"]["lease_id"] == "lease-1"
+    assert captured["claimable"] == {"run_id": "run-1", "limit": 1}
+    assert captured["claim"] == {
+        "task_id": "task-1",
+        "agent_name": "codex",
+        "worker_session_id": None,
+        "ttl_minutes": 30,
+        "idempotency_key": None,
+    }
+
+
+def test_orchestration_worker_finish_and_readiness_cli_wire_storage(
+    monkeypatch,
+    capsys,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_connect(settings) -> FakeConnection:  # noqa: ANN001
+        return FakeConnection()
+
+    def fake_finish(conn, **kwargs):  # noqa: ANN001, ANN202
+        captured["finish"] = kwargs
+        return {"status": "ok", "handoff_id": "handoff-1"}
+
+    def fake_readiness(conn, run_id: str):  # noqa: ANN001
+        captured["readiness"] = run_id
+        return {"schema": "geond.readiness_report.v1", "status": "ready", "run_id": run_id}
+
+    monkeypatch.setattr(cli, "connect", fake_connect)
+    monkeypatch.setattr(cli, "orchestration_finish_task", fake_finish)
+    monkeypatch.setattr(cli, "orchestration_readiness", fake_readiness)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "geond",
+            "worker",
+            "finish",
+            "lease-1",
+            "--summary",
+            "Done",
+            "--tested-command",
+            "uv run pytest",
+            "--next-action",
+            "review",
+        ],
+    )
+
+    cli.main()
+    finish_output = json.loads(capsys.readouterr().out)
+
+    monkeypatch.setattr(sys, "argv", ["geond", "readiness", "run-1"])
+    cli.main()
+    readiness_output = json.loads(capsys.readouterr().out)
+
+    assert finish_output["handoff_id"] == "handoff-1"
+    assert captured["finish"] == {
+        "lease_id": "lease-1",
+        "summary": "Done",
+        "task_status": "done",
+        "tested_commands": ["uv run pytest"],
+        "remaining_risks": None,
+        "next_action": "review",
+        "blocked_on": None,
+        "worker_session_id": None,
+        "idempotency_key": None,
+    }
+    assert readiness_output["status"] == "ready"
+    assert captured["readiness"] == "run-1"
+
+
+def test_orchestration_evidence_command_cli_wires_storage(monkeypatch, capsys) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_connect(settings) -> FakeConnection:  # noqa: ANN001
+        return FakeConnection()
+
+    def fake_record_command(conn, **kwargs):  # noqa: ANN001, ANN202
+        captured.update(kwargs)
+        return {"status": "ok", "command_evidence": {"command_evidence_id": "cmd-1"}}
+
+    monkeypatch.setattr(cli, "connect", fake_connect)
+    monkeypatch.setattr(cli, "orchestration_record_command_evidence", fake_record_command)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "geond",
+            "evidence",
+            "command",
+            "--run",
+            "run-1",
+            "--task",
+            "task-1",
+            "--worker-session-id",
+            "worker-1",
+            "--command",
+            "uv run pytest",
+            "--purpose",
+            "validation",
+            "--exit-code",
+            "0",
+            "--stdout-summary",
+            "passed",
+            "--idempotency-key",
+            "cmd-key",
+        ],
+    )
+
+    cli.main()
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["command_evidence"]["command_evidence_id"] == "cmd-1"
+    assert captured == {
+        "run_id": "run-1",
+        "command": "uv run pytest",
+        "task_id": "task-1",
+        "worker_session_id": "worker-1",
+        "purpose": "validation",
+        "status": None,
+        "exit_code": 0,
+        "stdout_summary": "passed",
+        "stderr_summary": "",
+        "log_path": None,
+        "idempotency_key": "cmd-key",
+    }
+
+
+def test_orchestration_approval_review_decision_cli_wire_storage(monkeypatch, capsys) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_connect(settings) -> FakeConnection:  # noqa: ANN001
+        return FakeConnection()
+
+    def fake_request_approval(conn, **kwargs):  # noqa: ANN001, ANN202
+        captured["approval_request"] = kwargs
+        return {"status": "ok", "approval": {"approval_id": "approval-1"}}
+
+    def fake_resolve_approval(conn, **kwargs):  # noqa: ANN001, ANN202
+        captured["approval_resolve"] = kwargs
+        return {"status": "ok", "approval": {"approval_id": "approval-1"}}
+
+    def fake_record_finding(conn, **kwargs):  # noqa: ANN001, ANN202
+        captured["finding"] = kwargs
+        return {"status": "ok", "finding": {"finding_id": "finding-1"}}
+
+    def fake_resolve_finding(conn, **kwargs):  # noqa: ANN001, ANN202
+        captured["finding_resolve"] = kwargs
+        return {"status": "ok", "finding": {"finding_id": "finding-1"}}
+
+    def fake_record_decision(conn, **kwargs):  # noqa: ANN001, ANN202
+        captured["decision"] = kwargs
+        return {"status": "ok", "decision": {"decision_id": "decision-1"}}
+
+    monkeypatch.setattr(cli, "connect", fake_connect)
+    monkeypatch.setattr(cli, "orchestration_request_approval", fake_request_approval)
+    monkeypatch.setattr(cli, "orchestration_resolve_approval", fake_resolve_approval)
+    monkeypatch.setattr(cli, "orchestration_record_review_finding", fake_record_finding)
+    monkeypatch.setattr(cli, "orchestration_resolve_review_finding", fake_resolve_finding)
+    monkeypatch.setattr(cli, "orchestration_record_decision", fake_record_decision)
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["geond", "approval", "request", "--run", "run-1", "--reason", "deploy", "--risk-level", "high"],
+    )
+    cli.main()
+    assert json.loads(capsys.readouterr().out)["approval"]["approval_id"] == "approval-1"
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["geond", "approval", "resolve", "approval-1", "--status", "approved", "--resolved-by", "human"],
+    )
+    cli.main()
+    assert json.loads(capsys.readouterr().out)["approval"]["approval_id"] == "approval-1"
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["geond", "review", "finding", "--run", "run-1", "--summary", "Missing test", "--severity", "P1"],
+    )
+    cli.main()
+    assert json.loads(capsys.readouterr().out)["finding"]["finding_id"] == "finding-1"
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["geond", "review", "resolve", "finding-1", "--status", "fixed", "--reason", "test added"],
+    )
+    cli.main()
+    assert json.loads(capsys.readouterr().out)["finding"]["finding_id"] == "finding-1"
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "geond",
+            "decision",
+            "record",
+            "--run",
+            "run-1",
+            "--decision",
+            "ship",
+            "--evidence-ref",
+            "command:cmd-1",
+        ],
+    )
+    cli.main()
+    assert json.loads(capsys.readouterr().out)["decision"]["decision_id"] == "decision-1"
+
+    assert captured["approval_request"]["run_id"] == "run-1"
+    assert captured["approval_resolve"]["status"] == "approved"
+    assert captured["finding"]["severity"] == "P1"
+    assert captured["finding_resolve"]["reason"] == "test added"
+    assert captured["decision"]["evidence_refs"] == [{"type": "command", "id": "cmd-1"}]
+
+
+def test_orchestration_run_summarize_and_manifest_cli(monkeypatch, capsys, tmp_path) -> None:
+    captured: dict[str, object] = {}
+    package = {"schema": "geond.run_handoff_package.v1", "status": "ok", "run": {"run_id": "run-1"}}
+    summary = {"schema": "geond.run_summary.v1", "status": "ok", "markdown": "# Run\n"}
+
+    def fake_connect(settings) -> FakeConnection:  # noqa: ANN001
+        return FakeConnection()
+
+    def fake_summarize(conn, run_id: str):  # noqa: ANN001
+        captured["summarize"] = run_id
+        return summary
+
+    def fake_package(conn, run_id: str):  # noqa: ANN001
+        captured["package"] = run_id
+        return package
+
+    def fake_manifest(package_payload, summary_markdown, **kwargs):  # noqa: ANN001, ANN202
+        captured["manifest"] = {
+            "package": package_payload,
+            "summary_markdown": summary_markdown,
+            **kwargs,
+        }
+        return {"status": "ok", "run_dir": str(tmp_path / "run-1")}
+
+    monkeypatch.setattr(cli, "connect", fake_connect)
+    monkeypatch.setattr(cli, "orchestration_summarize_run", fake_summarize)
+    monkeypatch.setattr(cli, "orchestration_handoff_package", fake_package)
+    monkeypatch.setattr(cli, "write_run_manifest", fake_manifest)
+
+    output_path = tmp_path / "summary.md"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["geond", "run", "summarize", "run-1", "--output", str(output_path)],
+    )
+    cli.main()
+    assert capsys.readouterr().out == ""
+    assert output_path.read_text(encoding="utf-8") == "# Run\n"
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "geond",
+            "run",
+            "manifest",
+            "run-1",
+            "--base-dir",
+            str(tmp_path),
+            "--write-result",
+        ],
+    )
+    cli.main()
+    output = json.loads(capsys.readouterr().out)
+    assert output["status"] == "ok"
+    assert captured["manifest"]["base_dir"] == tmp_path
+    assert captured["manifest"]["write_result"] is True
+
+
 def test_usage_summary_cli_wires_storage(monkeypatch, capsys) -> None:
     captured: dict[str, object] = {}
 

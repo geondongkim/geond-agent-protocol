@@ -10,6 +10,7 @@ from geond.config import get_settings
 from geond.db import connect, discover_schema_files, run_schema_file, run_schema_migrations
 
 SCHEMA = Path(__file__).parents[1] / "schemas" / "001_initial.sql"
+ORCHESTRATION_SCHEMA = Path(__file__).parents[1] / "schemas" / "007_orchestration.sql"
 
 
 def test_discover_schema_files_sorts_sql_files(tmp_path: Path) -> None:
@@ -61,3 +62,29 @@ def test_run_schema_migrations_skips_applied_files(tmp_path: Path) -> None:
                     (migration.stem,),
                 )
             conn.commit()
+
+
+def test_orchestration_schema_adds_worker_lease_contract() -> None:
+    settings = get_settings()
+    try:
+        conn = connect(settings)
+    except psycopg.OperationalError as exc:
+        pytest.skip(f"Postgres integration database is not available: {exc}")
+
+    with conn:
+        try:
+            run_schema_file(conn, SCHEMA)
+            run_schema_file(conn, ORCHESTRATION_SCHEMA)
+            run_schema_file(conn, ORCHESTRATION_SCHEMA)
+        except psycopg.Error as exc:
+            pytest.skip(f"Postgres integration schema is not available: {exc}")
+
+        with conn.cursor() as cur:
+            cur.execute("SELECT to_regclass('public.orchestration_runs')::text")
+            assert cur.fetchone()[0] == "orchestration_runs"
+            cur.execute("SELECT to_regclass('public.task_leases')::text")
+            assert cur.fetchone()[0] == "task_leases"
+            cur.execute("SELECT to_regclass('public.idx_task_leases_one_active_per_task')::text")
+            assert cur.fetchone()[0] == "idx_task_leases_one_active_per_task"
+            cur.execute("SELECT to_regclass('public.idempotency_records')::text")
+            assert cur.fetchone()[0] == "idempotency_records"
