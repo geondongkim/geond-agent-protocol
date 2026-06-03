@@ -93,8 +93,8 @@ needs to understand what Geond does before connecting it to PostgreSQL. Inputs:
 none. Side effects: none; this tool never opens a database connection and does not
 read local transcripts. Output: server purpose, version, environment variables,
 tool groups, setup hints, and example workflows. Failure modes: only package
-metadata lookup fallback is expected, in which case the declared alpha version is
-returned.
+metadata lookup fallback is expected, in which case the package fallback version
+is returned.
 """.strip(),
         "params": {},
     },
