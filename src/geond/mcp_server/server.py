@@ -112,25 +112,19 @@ invalid mode raises an error; vector or hybrid search requires an embedding
 provider and database connectivity.
 """.strip(),
         "params": {
-            "query": (
-                "Natural-language question or keywords to search for in shared memory."
-            ),
+            "query": ("Natural-language question or keywords to search for in shared memory."),
             "limit": "Maximum number of search results to return.",
             "mode": (
                 "Retrieval mode: keyword for lexical search, vector for embeddings, "
                 "hybrid for both."
             ),
-            "workspace_uri": (
-                "Optional workspace root URI used to restrict results to one repo."
-            ),
+            "workspace_uri": ("Optional workspace root URI used to restrict results to one repo."),
             "source": (
-                "Optional imported source filter such as codex, vscode, claude-code, "
-                "or manus."
+                "Optional imported source filter such as codex, vscode, claude-code, or manus."
             ),
             "rerank": "Reranking strategy: none, local, or api depending on configured providers.",
             "candidate_limit": (
-                "Optional number of pre-rerank candidates to retrieve before trimming "
-                "to limit."
+                "Optional number of pre-rerank candidates to retrieve before trimming to limit."
             ),
         },
     },
@@ -201,8 +195,7 @@ fails if the referenced workspace cannot be resolved or the alias conflicts.
             "alias_uri": "New root URI or path alias that should resolve to the workspace.",
             "reason": "Short reason such as moved, renamed, cloned, or mounted.",
             "metadata": (
-                "Optional JSON metadata explaining source machine, remote, or "
-                "migration context."
+                "Optional JSON metadata explaining source machine, remote, or migration context."
             ),
         },
     },
@@ -563,8 +556,7 @@ match.
             ),
             "reservation_kind": "Optional kind filter such as file or symbol.",
             "action": (
-                "Optional lifecycle action filter such as created, renewed, released, "
-                "or expired."
+                "Optional lifecycle action filter such as created, renewed, released, or expired."
             ),
             "limit": "Maximum number of audit events to return.",
         },
@@ -696,8 +688,7 @@ def get_geond_server_info() -> dict[str, Any]:
                     "get_symbol_context",
                 ],
                 "use_when": (
-                    "An agent needs prior context, evidence, or code history before "
-                    "editing."
+                    "An agent needs prior context, evidence, or code history before editing."
                 ),
             },
             {
@@ -736,8 +727,7 @@ def get_geond_server_info() -> dict[str, Any]:
                     "list_reservation_events",
                 ],
                 "use_when": (
-                    "Work should be recorded for the next agent, reviewer, or PM "
-                    "dashboard."
+                    "Work should be recorded for the next agent, reviewer, or PM dashboard."
                 ),
             },
             {
@@ -749,8 +739,7 @@ def get_geond_server_info() -> dict[str, Any]:
                     "get_dashboard_overview",
                 ],
                 "use_when": (
-                    "An agent or dashboard needs graph, activity, or overview read "
-                    "models."
+                    "An agent or dashboard needs graph, activity, or overview read models."
                 ),
             },
         ],
