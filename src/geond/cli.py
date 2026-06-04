@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter, time
 
-from geond import degraded_ledger
+from geond import agent_hooks, degraded_ledger
 from geond.adapters.antigravity import infer_session_id as infer_antigravity_session_id
 from geond.adapters.antigravity import latest_transcript_path as latest_antigravity_transcript_path
 from geond.adapters.antigravity import parse_storage as parse_antigravity_storage
@@ -184,6 +184,18 @@ def parse_evidence_refs(values: list[str] | None) -> list[dict[str, str]]:
             raise SystemExit("--evidence-ref must use TYPE:ID format")
         refs.append({"type": ref_type, "id": ref_id})
     return refs
+
+
+def parse_json_object_arg(value: str | None, option_name: str) -> dict[str, object]:
+    if not value:
+        return {}
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"{option_name} must be a JSON object: {exc}") from exc
+    if not isinstance(parsed, dict):
+        raise SystemExit(f"{option_name} must be a JSON object")
+    return parsed
 
 
 def format_task_graph_markdown(result: dict[str, object]) -> str:
@@ -1774,6 +1786,40 @@ def main() -> None:
     evidence_command.add_argument("--stderr-summary", default="")
     evidence_command.add_argument("--log-path")
     evidence_command.add_argument("--idempotency-key")
+
+    hook_cmd = subparsers.add_parser("hook", help="Record agent lifecycle hook events")
+    hook_subparsers = hook_cmd.add_subparsers(dest="hook_command", required=True)
+    hook_record = hook_subparsers.add_parser(
+        "record",
+        help="Record a Codex/Claude lifecycle hook event",
+    )
+    hook_record.add_argument("--payload", type=Path)
+    hook_record.add_argument("--workspace", dest="workspace_id_or_uri")
+    hook_record.add_argument("--agent", dest="agent_name")
+    hook_record.add_argument("--event", dest="event_type")
+    hook_record.add_argument("--session-external-id")
+    hook_record.add_argument("--summary", default="")
+    hook_record.add_argument("--run", dest="run_id")
+    hook_record.add_argument("--task", dest="task_id")
+    hook_record.add_argument("--worker-session-id")
+    hook_record.add_argument("--lease-id")
+    hook_record.add_argument("--command", dest="recorded_command")
+    hook_record.add_argument("--exit-code", type=int)
+    hook_record.add_argument("--status")
+    hook_record.add_argument("--purpose")
+    hook_record.add_argument("--stdout-summary", default="")
+    hook_record.add_argument("--stderr-summary", default="")
+    hook_record.add_argument("--log-path")
+    hook_record.add_argument("--metadata-json")
+    hook_record.add_argument("--idempotency-key")
+    hook_record.add_argument("--ttl-minutes", type=int, default=120)
+    hook_template = hook_subparsers.add_parser(
+        "template",
+        help="Write Codex/Claude hook adapter templates",
+    )
+    hook_template.add_argument("--agent", dest="agent_name", required=True)
+    hook_template.add_argument("--output-dir", type=Path, default=Path("tmp/geond-hooks"))
+    hook_template.add_argument("--format", choices=["shell", "json"], default="shell")
 
     approval_cmd = subparsers.add_parser("approval", help="Manage orchestration approvals")
     approval_subparsers = approval_cmd.add_subparsers(dest="approval_command", required=True)
@@ -3803,6 +3849,48 @@ def main() -> None:
                 log_path=args.log_path,
                 idempotency_key=args.idempotency_key,
             )
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        return
+
+    if args.command == "hook" and args.hook_command == "record":
+        if args.payload:
+            payload = agent_hooks.load_hook_payload(args.payload)
+        else:
+            payload = {
+                "workspace_id_or_uri": args.workspace_id_or_uri,
+                "agent_name": args.agent_name,
+                "event_type": args.event_type,
+                "session_external_id": args.session_external_id,
+                "summary": args.summary,
+                "run_id": args.run_id,
+                "task_id": args.task_id,
+                "worker_session_id": args.worker_session_id,
+                "lease_id": args.lease_id,
+                "command": args.recorded_command,
+                "exit_code": args.exit_code,
+                "status": args.status,
+                "purpose": args.purpose,
+                "stdout_summary": args.stdout_summary,
+                "stderr_summary": args.stderr_summary,
+                "log_path": args.log_path,
+                "metadata": parse_json_object_arg(args.metadata_json, "--metadata-json"),
+            }
+        with connect(get_settings()) as conn:
+            result = agent_hooks.record_hook_event_payload(
+                conn,
+                payload,
+                idempotency_key=args.idempotency_key,
+                ttl_minutes=args.ttl_minutes,
+            )
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        return
+
+    if args.command == "hook" and args.hook_command == "template":
+        result = agent_hooks.write_hook_template(
+            agent_name=args.agent_name,
+            output_dir=args.output_dir,
+            template_format=args.format,
+        )
         print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
         return
 

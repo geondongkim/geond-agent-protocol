@@ -706,6 +706,156 @@ def test_degraded_ledger_reconcile_cli_wires_service(monkeypatch, capsys, tmp_pa
     assert captured == {"run_id": "run-1", "base_dir": tmp_path, "dry_run": True}
 
 
+def test_hook_record_cli_wires_service(monkeypatch, capsys) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_connect(settings) -> FakeConnection:  # noqa: ANN001
+        return FakeConnection()
+
+    def fake_record(conn, payload, **kwargs):  # noqa: ANN001, ANN202
+        captured["payload"] = payload
+        captured["kwargs"] = kwargs
+        return {
+            "schema": "geond.agent_hook_event.v1",
+            "status": "ok",
+            "hook_event": {"event_type": payload["event_type"]},
+        }
+
+    monkeypatch.setattr(cli, "connect", fake_connect)
+    monkeypatch.setattr(cli.agent_hooks, "record_hook_event_payload", fake_record)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "geond",
+            "hook",
+            "record",
+            "--workspace",
+            "file:///repo",
+            "--agent",
+            "codex",
+            "--event",
+            "validation",
+            "--session-external-id",
+            "codex-session-1",
+            "--run",
+            "run-1",
+            "--task",
+            "task-1",
+            "--worker-session-id",
+            "worker-1",
+            "--lease-id",
+            "lease-1",
+            "--command",
+            "uv run pytest",
+            "--exit-code",
+            "0",
+            "--metadata-json",
+            '{"source_detail":"pytest"}',
+            "--idempotency-key",
+            "hook-key",
+            "--ttl-minutes",
+            "30",
+        ],
+    )
+
+    cli.main()
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["schema"] == "geond.agent_hook_event.v1"
+    assert captured["payload"]["workspace_id_or_uri"] == "file:///repo"
+    assert captured["payload"]["event_type"] == "validation"
+    assert captured["payload"]["command"] == "uv run pytest"
+    assert captured["payload"]["exit_code"] == 0
+    assert captured["payload"]["metadata"] == {"source_detail": "pytest"}
+    assert captured["kwargs"] == {"idempotency_key": "hook-key", "ttl_minutes": 30}
+
+
+def test_hook_record_cli_accepts_payload_file(monkeypatch, capsys, tmp_path) -> None:
+    captured: dict[str, object] = {}
+    payload_path = tmp_path / "hook.json"
+    payload_path.write_text(
+        json.dumps(
+            {
+                "workspace_id_or_uri": "file:///repo",
+                "agent_name": "claude",
+                "event_type": "session_start",
+                "session_external_id": "claude-session-1",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_connect(settings) -> FakeConnection:  # noqa: ANN001
+        return FakeConnection()
+
+    def fake_record(conn, payload, **kwargs):  # noqa: ANN001, ANN202
+        captured["payload"] = payload
+        captured["kwargs"] = kwargs
+        return {"schema": "geond.agent_hook_event.v1", "status": "ok"}
+
+    monkeypatch.setattr(cli, "connect", fake_connect)
+    monkeypatch.setattr(cli.agent_hooks, "record_hook_event_payload", fake_record)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "geond",
+            "hook",
+            "record",
+            "--payload",
+            str(payload_path),
+            "--idempotency-key",
+            "payload-key",
+        ],
+    )
+
+    cli.main()
+
+    assert json.loads(capsys.readouterr().out)["status"] == "ok"
+    assert captured["payload"]["agent_name"] == "claude"
+    assert captured["kwargs"]["idempotency_key"] == "payload-key"
+
+
+def test_hook_template_cli_writes_templates(monkeypatch, capsys, tmp_path) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_template(**kwargs):  # noqa: ANN202
+        captured.update(kwargs)
+        return {
+            "schema": "geond.agent_hook_template.v1",
+            "status": "ok",
+            "files": [{"path": str(tmp_path / "codex" / "record-hook.sh")}],
+        }
+
+    monkeypatch.setattr(cli.agent_hooks, "write_hook_template", fake_template)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "geond",
+            "hook",
+            "template",
+            "--agent",
+            "codex",
+            "--output-dir",
+            str(tmp_path),
+            "--format",
+            "shell",
+        ],
+    )
+
+    cli.main()
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["schema"] == "geond.agent_hook_template.v1"
+    assert captured == {
+        "agent_name": "codex",
+        "output_dir": tmp_path,
+        "template_format": "shell",
+    }
+
+
 def test_usage_summary_cli_wires_storage(monkeypatch, capsys) -> None:
     captured: dict[str, object] = {}
 

@@ -343,7 +343,7 @@ Tasks:
 - [ ] Add focused review filters to dashboard review feeds.
 - [x] Add a normalized activity projection so PM agents and orchestrators can
   consume one ordered event stream instead of many tables.
-- [ ] Add optional Codex and Claude Code hook examples that record activity
+- [x] Add optional Codex and Claude Code hook examples that record activity
   events without exposing secrets.
 - [x] Add dashboard GIFs to the public demo once the read-only path exists.
 
@@ -414,9 +414,9 @@ partial implementations until completed:
   edges into automatic reservation scopes. Today Geond stores the graph and
   supports explicit file/symbol reservations; automatic expansion is still a
   next implementation slice.
-- Hook adapters for Codex and Claude Code that automatically record lifecycle
-  events. The schema and operating loop are present, but hook examples remain
-  backlog work.
+- Hook adapters for Codex and Claude Code now have CLI/template examples for
+  recording lightweight lifecycle events. Automatic client installation remains
+  a later optional slice.
 - Focused dashboard review filters beyond the implemented timeline filters,
   related detail panes, and review feeds.
 - Enterprise IAM, row-level security, and dedicated MCP call audit streams.
