@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from geond import orchestrator
+from geond import orchestrator, orchestrator_planner
 from geond.config import get_settings
 from geond.db import connect
 
@@ -29,6 +29,30 @@ def main() -> None:
         default=orchestrator.DEFAULT_MANIFEST_BASE_DIR,
     )
     status_cmd.add_argument("--format", choices=["markdown", "json"], default="markdown")
+
+    plan_cmd = subparsers.add_parser("plan", help="Recommend safe next orchestrator actions")
+    plan_cmd.add_argument("--workspace", required=True)
+    plan_cmd.add_argument("--run", dest="run_id")
+    plan_cmd.add_argument("--agents")
+    plan_cmd.add_argument("--write-bundle", action="store_true")
+    plan_cmd.add_argument(
+        "--base-dir",
+        type=Path,
+        default=orchestrator.DEFAULT_MANIFEST_BASE_DIR,
+    )
+    plan_cmd.add_argument("--limit", type=int, default=50)
+    plan_cmd.add_argument("--format", choices=["markdown", "json"], default="markdown")
+
+    doctor_cmd = subparsers.add_parser("doctor", help="Diagnose one orchestrator run")
+    doctor_cmd.add_argument("run_id")
+    doctor_cmd.add_argument("--agents")
+    doctor_cmd.add_argument(
+        "--base-dir",
+        type=Path,
+        default=orchestrator.DEFAULT_MANIFEST_BASE_DIR,
+    )
+    doctor_cmd.add_argument("--limit", type=int, default=50)
+    doctor_cmd.add_argument("--format", choices=["markdown", "json"], default="markdown")
 
     dispatch_cmd = subparsers.add_parser("dispatch", help="Dispatch claim-mode or spawn-mode work")
     dispatch_cmd.add_argument("--run", dest="run_id", required=True)
@@ -93,6 +117,24 @@ def main() -> None:
             )
         elif args.command == "status":
             payload = orchestrator.get_status(conn, args.run_id, manifest_base_dir=args.base_dir)
+        elif args.command == "plan":
+            payload = orchestrator_planner.create_plan(
+                conn,
+                workspace_id_or_uri=args.workspace,
+                run_id=args.run_id,
+                agents=parse_agents(args.agents),
+                limit=args.limit,
+                base_dir=args.base_dir,
+                write_bundle=args.write_bundle,
+            )
+        elif args.command == "doctor":
+            payload = orchestrator_planner.doctor_run(
+                conn,
+                args.run_id,
+                agents=parse_agents(args.agents),
+                limit=args.limit,
+                base_dir=args.base_dir,
+            )
         elif args.command == "dispatch":
             if args.mode == "claim":
                 payload = orchestrator.dispatch_claim(

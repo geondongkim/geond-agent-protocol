@@ -97,15 +97,59 @@ def test_orchestrator_status_dispatch_resume_finalize_cli(monkeypatch, capsys) -
             "markdown": "# Finalize\n",
         }
 
+    def fake_plan(conn, **kwargs):  # noqa: ANN001, ANN202
+        captured["plan"] = kwargs
+        return {
+            "schema": "geond.orchestrator_plan.v1",
+            "status": "ok",
+            "markdown": "# Plan\n",
+        }
+
+    def fake_doctor(conn, run_id, **kwargs):  # noqa: ANN001, ANN202
+        captured["doctor"] = {"run_id": run_id, **kwargs}
+        return {
+            "schema": "geond.orchestrator_plan.v1",
+            "status": "ok",
+            "markdown": "# Doctor\n",
+        }
+
     monkeypatch.setattr(orchestrator_cli, "connect", fake_connect)
     monkeypatch.setattr(orchestrator_cli.orchestrator, "get_status", fake_status)
     monkeypatch.setattr(orchestrator_cli.orchestrator, "dispatch_claim", fake_dispatch)
     monkeypatch.setattr(orchestrator_cli.orchestrator, "resume_run", fake_resume)
     monkeypatch.setattr(orchestrator_cli.orchestrator, "finalize_run", fake_finalize)
+    monkeypatch.setattr(orchestrator_cli.orchestrator_planner, "create_plan", fake_plan)
+    monkeypatch.setattr(orchestrator_cli.orchestrator_planner, "doctor_run", fake_doctor)
 
     monkeypatch.setattr(sys, "argv", ["geond-orchestrator", "status", "run-1"])
     orchestrator_cli.main()
     assert capsys.readouterr().out == "# Status\n"
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "geond-orchestrator",
+            "plan",
+            "--workspace",
+            "file:///repo",
+            "--run",
+            "run-1",
+            "--agents",
+            "codex,claude",
+            "--write-bundle",
+        ],
+    )
+    orchestrator_cli.main()
+    assert capsys.readouterr().out == "# Plan\n"
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["geond-orchestrator", "doctor", "run-1", "--agents", "claude"],
+    )
+    orchestrator_cli.main()
+    assert capsys.readouterr().out == "# Doctor\n"
 
     monkeypatch.setattr(
         sys,
@@ -144,6 +188,12 @@ def test_orchestrator_status_dispatch_resume_finalize_cli(monkeypatch, capsys) -
     assert capsys.readouterr().out == "# Finalize\n"
 
     assert captured["status"]["run_id"] == "run-1"
+    assert captured["plan"]["workspace_id_or_uri"] == "file:///repo"
+    assert captured["plan"]["run_id"] == "run-1"
+    assert captured["plan"]["agents"] == ["codex", "claude"]
+    assert captured["plan"]["write_bundle"] is True
+    assert captured["doctor"]["run_id"] == "run-1"
+    assert captured["doctor"]["agents"] == ["claude"]
     assert captured["dispatch"]["run_id"] == "run-1"
     assert captured["dispatch"]["agent_name"] == "claude"
     assert captured["resume"]["run_id"] == "run-1"

@@ -7,6 +7,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
+from geond import orchestrator_planner
 from geond.config import Settings
 from geond.db import connect
 from geond.storage.dashboard import (
@@ -253,6 +254,13 @@ def dashboard_payload(settings: Settings, path: str) -> tuple[int, dict[str, Any
         if endpoint == "orchestration":
             payload = get_dashboard_orchestration(conn, workspace_id, limit=limit)
             return status_for_payload(payload), payload
+        if endpoint == "orchestration-plan":
+            payload = orchestrator_planner.create_plan(
+                conn,
+                workspace_id_or_uri=workspace_id,
+                limit=limit,
+            )
+            return status_for_payload(payload), payload
 
     return 404, {"status": "not_found", "workspace_id": workspace_id, "endpoint": endpoint}
 
@@ -278,6 +286,7 @@ def dashboard_index(settings: Settings | None = None) -> dict[str, Any]:
             "/api/workspaces/{workspace_id}/changesets",
             "/api/workspaces/{workspace_id}/usage",
             "/api/workspaces/{workspace_id}/orchestration",
+            "/api/workspaces/{workspace_id}/orchestration-plan",
         ],
     }
 
@@ -1231,6 +1240,8 @@ def mission_control_html() -> str:
     <section class="view" data-view-panel="orchestration">
       <div class="session-workspace">
         <div class="session-summary" id="orchestration-summary"></div>
+        <div class="session-summary" id="orchestration-plan-summary"></div>
+        <div class="session-board" id="orchestration-plan-board"></div>
         <div class="session-board" id="orchestration-board"></div>
       </div>
     </section>
@@ -1361,6 +1372,7 @@ def mission_control_html() -> str:
       codeRisk: null,
       changesets: [],
       orchestration: null,
+      orchestrationPlan: null,
       lineage: null,
       workspaces: [],
     };
@@ -1388,6 +1400,8 @@ def mission_control_html() -> str:
     const changesetBoard = document.querySelector("#changeset-board");
     const orchestrationSummary = document.querySelector("#orchestration-summary");
     const orchestrationBoard = document.querySelector("#orchestration-board");
+    const orchestrationPlanSummary = document.querySelector("#orchestration-plan-summary");
+    const orchestrationPlanBoard = document.querySelector("#orchestration-plan-board");
     const graphSummary = document.querySelector("#graph-summary");
     const graphNodes = document.querySelector("#graph-nodes");
     const graphEdges = document.querySelector("#graph-edges");
@@ -1607,7 +1621,9 @@ def mission_control_html() -> str:
     function badgeClass(status) {
       if (["active", "ok", "open", "recorded", "created"].includes(status)) return "ok";
       if (["expired", "warning", "medium"].includes(status)) return "warn";
-      if (["released", "closed", "error", "failed", "high"].includes(status)) return "danger";
+      if (["released", "closed", "error", "failed", "high", "critical"].includes(status)) {
+        return "danger";
+      }
       if (["low"].includes(status)) return "ok";
       return "";
     }
@@ -2726,6 +2742,55 @@ def mission_control_html() -> str:
       }
     }
 
+    function renderOrchestrationPlan(payload) {
+      const summary = payload?.summary || {};
+      const actions = payload?.recommended_actions || [];
+      renderStatCards(orchestrationPlanSummary, [
+        ["Plan Actions", formatNumber(actions.length)],
+        ["Blocking", formatNumber(summary.blocking_action_count)],
+        ["Dispatch", formatNumber(summary.dispatch_action_count)],
+        ["Recovery", formatNumber(summary.recovery_command_count)],
+      ]);
+      orchestrationPlanBoard.replaceChildren();
+      const lane = laneShell("Recommended Actions", `${actions.length} actions`);
+      const body = lane.querySelector(".lane-body");
+      if (!actions.length) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = "No recommended actions.";
+        body.append(empty);
+      }
+      for (const action of actions.slice(0, 20)) {
+        const card = document.createElement("article");
+        card.className = "session-card";
+        card.innerHTML = `
+          <div class="card-head">
+            <h3></h3>
+            <span class="badge"></span>
+          </div>
+          <div class="meta"></div>
+          <div class="mini-list"></div>`;
+        card.querySelector("h3").textContent = action.action_type || "action";
+        card.querySelector(".badge").textContent = action.severity || "info";
+        const severityClass = badgeClass(action.severity);
+        if (severityClass) card.querySelector(".badge").classList.add(severityClass);
+        card.querySelector(".meta").textContent = [
+          action.reason,
+          action.blocks_execution ? "blocks execution" : "runnable",
+        ].filter(Boolean).join(" | ");
+        const list = card.querySelector(".mini-list");
+        if (action.suggested_cli_command) {
+          list.append(row(action.suggested_cli_command, action.run_id || "", "ok", "command"));
+        }
+        const related = action.related_ids || {};
+        for (const [key, value] of Object.entries(related)) {
+          list.append(row(key, value, "active", "related"));
+        }
+        body.append(card);
+      }
+      orchestrationPlanBoard.append(lane);
+    }
+
     function graphCounts(items, key) {
       return items.reduce((counts, item) => {
         const value = item[key] || "unknown";
@@ -2913,6 +2978,9 @@ def mission_control_html() -> str:
       const orchestrationUrl = [
         `/api/workspaces/${encoded}/orchestration?limit=${encodeURIComponent(limit)}`
       ].join("");
+      const orchestrationPlanUrl = [
+        `/api/workspaces/${encoded}/orchestration-plan?limit=${encodeURIComponent(limit)}`
+      ].join("");
       const handoffsUrl = `/api/workspaces/${encoded}/handoffs?limit=${encodeURIComponent(limit)}`;
       const sessionsUrl = [
         `/api/workspaces/${encoded}/sessions?limit=${encodeURIComponent(limit)}`,
@@ -2927,6 +2995,7 @@ def mission_control_html() -> str:
       let changesetsResponse;
       let usageResponse;
       let orchestrationResponse;
+      let orchestrationPlanResponse;
       let handoffResponse;
       try {
         [
@@ -2939,6 +3008,7 @@ def mission_control_html() -> str:
           changesetsResponse,
           usageResponse,
           orchestrationResponse,
+          orchestrationPlanResponse,
           handoffResponse,
         ] = await Promise.all([
           fetch(overviewUrl),
@@ -2950,6 +3020,7 @@ def mission_control_html() -> str:
           fetch(changesetsUrl),
           fetch(usageUrl),
           fetch(orchestrationUrl),
+          fetch(orchestrationPlanUrl),
           fetch(handoffsUrl),
         ]);
         const overview = await overviewResponse.json();
@@ -2961,6 +3032,7 @@ def mission_control_html() -> str:
         const changesetsPayload = await changesetsResponse.json();
         const usagePayload = await usageResponse.json();
         const orchestrationPayload = await orchestrationResponse.json();
+        const orchestrationPlanPayload = await orchestrationPlanResponse.json();
         const handoffPayload = await handoffResponse.json();
         if (!overviewResponse.ok || overview.status === "not_found") {
           setStatus(`Workspace not found: ${workspace}`, true);
@@ -3001,6 +3073,7 @@ def mission_control_html() -> str:
       state.changesets = changesetsPayload.changesets || [];
       state.usage = usagePayload;
       state.orchestration = orchestrationPayload;
+      state.orchestrationPlan = orchestrationPlanPayload;
       state.handoffs = handoffPayload.handoffs || [];
       renderMetrics(overview.counts || {}, collectAgentKeys(events, sessions, overview).length);
       renderProjectTree(projectPayload);
@@ -3009,6 +3082,7 @@ def mission_control_html() -> str:
       renderChangesetBoard(changesetsPayload);
       renderUsageBoard(usagePayload);
       renderOrchestrationBoard(orchestrationPayload);
+      renderOrchestrationPlan(orchestrationPlanPayload);
       renderHandoffBoard(handoffPayload);
       renderAgentBoard(events, sessions, overview);
       renderSessionBoard(sessions);
@@ -3056,6 +3130,7 @@ def match_workspace_route(path: str) -> tuple[str, str] | None:
         "changesets",
         "usage",
         "orchestration",
+        "orchestration-plan",
     }:
         return None
     return parts[2], endpoint
