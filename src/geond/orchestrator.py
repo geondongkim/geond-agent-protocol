@@ -1400,9 +1400,7 @@ def finish_spawn_many_payload(
         "claim_result": None,
         "handoff_result": None,
         "evidence_results": [
-            evidence
-            for item in items
-            for evidence in (item.get("evidence_results") or [])
+            evidence for item in items for evidence in (item.get("evidence_results") or [])
         ],
         "worker_result": None,
     }

@@ -226,8 +226,12 @@ def update_task_state(
         task = get_task_row_cursor(cur, task_id)
         if not task:
             conn.commit()
-            return error_result("TASK_NOT_FOUND", "Task was not found.", related_ids={"task_id": task_id})
-        hit = idempotency_result(cur, "update_task_state", task["workspace_id"], idempotency_key, payload)
+            return error_result(
+                "TASK_NOT_FOUND", "Task was not found.", related_ids={"task_id": task_id}
+            )
+        hit = idempotency_result(
+            cur, "update_task_state", task["workspace_id"], idempotency_key, payload
+        )
         if hit is not None:
             conn.commit()
             return hit
@@ -245,7 +249,9 @@ def update_task_state(
             (status, Jsonb(metadata or {}), task_id),
         )
         result = ok_result("task", task_row(cur.fetchone()))
-        remember_idempotency(cur, "update_task_state", task["workspace_id"], idempotency_key, payload, result)
+        remember_idempotency(
+            cur, "update_task_state", task["workspace_id"], idempotency_key, payload, result
+        )
     conn.commit()
     return result
 
@@ -435,8 +441,7 @@ def get_blocked_task_reasons(conn: Connection, run_id: str) -> dict[str, Any]:
             (run_id,),
         )
         blocked = [
-            {"task_id": row[0], "title": row[1], "blockers": row[2] or []}
-            for row in cur.fetchall()
+            {"task_id": row[0], "title": row[1], "blockers": row[2] or []} for row in cur.fetchall()
         ]
     return {
         "schema": TASK_GRAPH_SCHEMA + ".blocked_reasons",
@@ -467,9 +472,13 @@ def register_worker_session(
         run = get_run_row_cursor(cur, run_id)
         if not run:
             conn.commit()
-            return error_result("RUN_NOT_FOUND", "Run was not found.", related_ids={"run_id": run_id})
+            return error_result(
+                "RUN_NOT_FOUND", "Run was not found.", related_ids={"run_id": run_id}
+            )
         workspace_id = run["workspace_id"]
-        hit = idempotency_result(cur, "register_worker_session", workspace_id, idempotency_key, payload)
+        hit = idempotency_result(
+            cur, "register_worker_session", workspace_id, idempotency_key, payload
+        )
         if hit is not None:
             conn.commit()
             return hit
@@ -483,7 +492,9 @@ def register_worker_session(
             metadata=metadata,
         )
         result = ok_result("worker_session", worker)
-        remember_idempotency(cur, "register_worker_session", workspace_id, idempotency_key, payload, result)
+        remember_idempotency(
+            cur, "register_worker_session", workspace_id, idempotency_key, payload, result
+        )
     conn.commit()
     return result
 
@@ -508,7 +519,9 @@ def claim_task(
         task = get_task_row_cursor(cur, task_id)
         if not task:
             conn.commit()
-            return error_result("TASK_NOT_FOUND", "Task was not found.", related_ids={"task_id": task_id})
+            return error_result(
+                "TASK_NOT_FOUND", "Task was not found.", related_ids={"task_id": task_id}
+            )
         workspace_id = task["workspace_id"]
         hit = idempotency_result(cur, "claim_task", workspace_id, idempotency_key, payload)
         if hit is not None:
@@ -518,11 +531,12 @@ def claim_task(
         task = get_task_row_cursor(cur, task_id)
         active_lease = get_active_task_lease_cursor(cur, task_id)
         if active_lease:
+            suggested_command = f"geond worker claim --run {task['run_id']} --agent {agent_name}"
             result = error_result(
                 "LEASE_CONFLICT",
                 "Task already has an active lease.",
                 retryable=True,
-                suggested_cli_command=f"geond worker claim --run {task['run_id']} --agent {agent_name}",
+                suggested_cli_command=suggested_command,
                 related_ids={"task_id": task_id, "lease_id": active_lease["lease_id"]},
             )
             remember_idempotency(cur, "claim_task", workspace_id, idempotency_key, payload, result)
@@ -552,10 +566,11 @@ def claim_task(
             )
         )
         if not worker or worker["run_id"] != task["run_id"]:
+            suggested_command = f"geond worker register {task['run_id']} --agent {agent_name}"
             result = error_result(
                 "WORKER_NOT_FOUND",
                 "Worker session was not found for this run.",
-                suggested_cli_command=f"geond worker register {task['run_id']} --agent {agent_name}",
+                suggested_cli_command=suggested_command,
                 related_ids={"worker_session_id": worker_session_id, "run_id": task["run_id"]},
             )
             remember_idempotency(cur, "claim_task", workspace_id, idempotency_key, payload, result)
@@ -595,11 +610,12 @@ def claim_task(
             )
         except psycopg.errors.UniqueViolation:
             conn.rollback()
+            suggested_command = f"geond worker claim --run {task['run_id']} --agent {agent_name}"
             return error_result(
                 "LEASE_CONFLICT",
                 "Task already has an active lease.",
                 retryable=True,
-                suggested_cli_command=f"geond worker claim --run {task['run_id']} --agent {agent_name}",
+                suggested_cli_command=suggested_command,
                 related_ids={"task_id": task_id},
             )
         lease = lease_row(cur.fetchone())
@@ -664,8 +680,12 @@ def renew_task_lease(
             conn.commit()
             return hit
         if not lease or not lease_is_active(lease):
-            result = error_result("LEASE_EXPIRED", "Lease is not active.", related_ids={"lease_id": lease_id})
-            remember_idempotency(cur, "renew_task_lease", workspace_id, idempotency_key, payload, result)
+            result = error_result(
+                "LEASE_EXPIRED", "Lease is not active.", related_ids={"lease_id": lease_id}
+            )
+            remember_idempotency(
+                cur, "renew_task_lease", workspace_id, idempotency_key, payload, result
+            )
             conn.commit()
             return result
         if worker_session_id and lease["worker_session_id"] != worker_session_id:
@@ -674,7 +694,9 @@ def renew_task_lease(
                 "Lease belongs to another worker session.",
                 related_ids={"lease_id": lease_id, "worker_session_id": worker_session_id},
             )
-            remember_idempotency(cur, "renew_task_lease", workspace_id, idempotency_key, payload, result)
+            remember_idempotency(
+                cur, "renew_task_lease", workspace_id, idempotency_key, payload, result
+            )
             conn.commit()
             return result
         cur.execute(
@@ -705,7 +727,9 @@ def renew_task_lease(
             (renewed["worker_session_id"],),
         )
         result = ok_result("lease", renewed)
-        remember_idempotency(cur, "renew_task_lease", workspace_id, idempotency_key, payload, result)
+        remember_idempotency(
+            cur, "renew_task_lease", workspace_id, idempotency_key, payload, result
+        )
     conn.commit()
     return result
 
@@ -726,13 +750,19 @@ def release_task_lease(
             conn.commit()
             return hit
         if not lease or not lease_is_active(lease):
-            result = error_result("LEASE_EXPIRED", "Lease is not active.", related_ids={"lease_id": lease_id})
-            remember_idempotency(cur, "release_task_lease", workspace_id, idempotency_key, payload, result)
+            result = error_result(
+                "LEASE_EXPIRED", "Lease is not active.", related_ids={"lease_id": lease_id}
+            )
+            remember_idempotency(
+                cur, "release_task_lease", workspace_id, idempotency_key, payload, result
+            )
             conn.commit()
             return result
         if worker_session_id and lease["worker_session_id"] != worker_session_id:
             result = error_result("LEASE_CONFLICT", "Lease belongs to another worker session.")
-            remember_idempotency(cur, "release_task_lease", workspace_id, idempotency_key, payload, result)
+            remember_idempotency(
+                cur, "release_task_lease", workspace_id, idempotency_key, payload, result
+            )
             conn.commit()
             return result
         cur.execute(
@@ -758,7 +788,9 @@ def release_task_lease(
             (released["task_id"],),
         )
         result = ok_result("lease", released)
-        remember_idempotency(cur, "release_task_lease", workspace_id, idempotency_key, payload, result)
+        remember_idempotency(
+            cur, "release_task_lease", workspace_id, idempotency_key, payload, result
+        )
     conn.commit()
     return result
 
@@ -789,18 +821,26 @@ def finish_task_with_handoff(
     with conn.cursor() as cur:
         lease = get_task_lease_row_cursor(cur, lease_id)
         workspace_id = lease["workspace_id"] if lease else None
-        hit = idempotency_result(cur, "finish_task_with_handoff", workspace_id, idempotency_key, payload)
+        hit = idempotency_result(
+            cur, "finish_task_with_handoff", workspace_id, idempotency_key, payload
+        )
         if hit is not None:
             conn.commit()
             return hit
         if not lease or not lease_is_active(lease):
-            result = error_result("LEASE_EXPIRED", "Lease is not active.", related_ids={"lease_id": lease_id})
-            remember_idempotency(cur, "finish_task_with_handoff", workspace_id, idempotency_key, payload, result)
+            result = error_result(
+                "LEASE_EXPIRED", "Lease is not active.", related_ids={"lease_id": lease_id}
+            )
+            remember_idempotency(
+                cur, "finish_task_with_handoff", workspace_id, idempotency_key, payload, result
+            )
             conn.commit()
             return result
         if worker_session_id and lease["worker_session_id"] != worker_session_id:
             result = error_result("LEASE_CONFLICT", "Lease belongs to another worker session.")
-            remember_idempotency(cur, "finish_task_with_handoff", workspace_id, idempotency_key, payload, result)
+            remember_idempotency(
+                cur, "finish_task_with_handoff", workspace_id, idempotency_key, payload, result
+            )
             conn.commit()
             return result
         worker = get_worker_session_row_cursor(cur, lease["worker_session_id"])
@@ -932,12 +972,18 @@ def record_command_evidence(
         run = get_run_row_cursor(cur, run_id)
         if not run:
             conn.commit()
-            return error_result("RUN_NOT_FOUND", "Run was not found.", related_ids={"run_id": run_id})
-        hit = idempotency_result(cur, "record_command_evidence", run["workspace_id"], idempotency_key, payload)
+            return error_result(
+                "RUN_NOT_FOUND", "Run was not found.", related_ids={"run_id": run_id}
+            )
+        hit = idempotency_result(
+            cur, "record_command_evidence", run["workspace_id"], idempotency_key, payload
+        )
         if hit is not None:
             conn.commit()
             return hit
-        evidence_status = status or ("passed" if exit_code == 0 else "failed" if exit_code else "recorded")
+        evidence_status = status or (
+            "passed" if exit_code == 0 else "failed" if exit_code else "recorded"
+        )
         cur.execute(
             """
             INSERT INTO command_evidence (
@@ -966,7 +1012,9 @@ def record_command_evidence(
             ),
         )
         result = ok_result("command_evidence", command_row(cur.fetchone()))
-        remember_idempotency(cur, "record_command_evidence", run["workspace_id"], idempotency_key, payload, result)
+        remember_idempotency(
+            cur, "record_command_evidence", run["workspace_id"], idempotency_key, payload, result
+        )
     conn.commit()
     return result
 
@@ -1039,7 +1087,9 @@ def resolve_review_finding(
     with conn.cursor() as cur:
         finding = get_review_finding_row_cursor(cur, finding_id)
         workspace_id = finding["workspace_id"] if finding else None
-        hit = idempotency_result(cur, "resolve_review_finding", workspace_id, idempotency_key, payload)
+        hit = idempotency_result(
+            cur, "resolve_review_finding", workspace_id, idempotency_key, payload
+        )
         if hit is not None:
             conn.commit()
             return hit
@@ -1049,7 +1099,9 @@ def resolve_review_finding(
                 "Review finding was not found.",
                 related_ids={"finding_id": finding_id},
             )
-            remember_idempotency(cur, "resolve_review_finding", workspace_id, idempotency_key, payload, result)
+            remember_idempotency(
+                cur, "resolve_review_finding", workspace_id, idempotency_key, payload, result
+            )
             conn.commit()
             return result
         cur.execute(
@@ -1068,7 +1120,9 @@ def resolve_review_finding(
             (status, Jsonb(resolution_metadata), finding_id),
         )
         result = ok_result("finding", finding_row(cur.fetchone()))
-        remember_idempotency(cur, "resolve_review_finding", workspace_id, idempotency_key, payload, result)
+        remember_idempotency(
+            cur, "resolve_review_finding", workspace_id, idempotency_key, payload, result
+        )
     conn.commit()
     return result
 
@@ -1174,7 +1228,9 @@ def resolve_approval(
                 "Approval request was not found.",
                 related_ids={"approval_id": approval_id},
             )
-            remember_idempotency(cur, "resolve_approval", workspace_id, idempotency_key, payload, result)
+            remember_idempotency(
+                cur, "resolve_approval", workspace_id, idempotency_key, payload, result
+            )
             conn.commit()
             return result
         cur.execute(
@@ -1194,7 +1250,9 @@ def resolve_approval(
             (status, resolved_by, Jsonb(metadata or {}), approval_id),
         )
         result = ok_result("approval", approval_row(cur.fetchone()))
-        remember_idempotency(cur, "resolve_approval", workspace_id, idempotency_key, payload, result)
+        remember_idempotency(
+            cur, "resolve_approval", workspace_id, idempotency_key, payload, result
+        )
     conn.commit()
     return result
 
@@ -1204,7 +1262,9 @@ def get_run(conn: Connection, run_id: str) -> dict[str, Any]:
         cleanup_expired_task_leases_cursor(cur, run_id)
         run = get_run_row_cursor(cur, run_id)
         if not run:
-            return error_result("RUN_NOT_FOUND", "Run was not found.", related_ids={"run_id": run_id})
+            return error_result(
+                "RUN_NOT_FOUND", "Run was not found.", related_ids={"run_id": run_id}
+            )
         return {
             "schema": RUN_SCHEMA,
             "status": "ok",
@@ -1267,7 +1327,9 @@ def get_claimable_tasks(
         if run_id:
             run = get_run_row_cursor(cur, run_id)
             if not run:
-                return error_result("RUN_NOT_FOUND", "Run was not found.", related_ids={"run_id": run_id})
+                return error_result(
+                    "RUN_NOT_FOUND", "Run was not found.", related_ids={"run_id": run_id}
+                )
             workspace_id = run["workspace_id"]
             cleanup_expired_task_leases_cursor(cur, run_id)
         elif workspace_id_or_uri:
@@ -1332,7 +1394,9 @@ def get_readiness_report(conn: Connection, run_id: str) -> dict[str, Any]:
         cleanup_expired_task_leases_cursor(cur, run_id)
         run = get_run_row_cursor(cur, run_id)
         if not run:
-            return error_result("RUN_NOT_FOUND", "Run was not found.", related_ids={"run_id": run_id})
+            return error_result(
+                "RUN_NOT_FOUND", "Run was not found.", related_ids={"run_id": run_id}
+            )
         cur.execute(
             """
             SELECT
@@ -1487,7 +1551,9 @@ def get_run_handoff_package(conn: Connection, run_id: str, limit: int = 100) -> 
         cleanup_expired_task_leases_cursor(cur, run_id)
         run = get_run_row_cursor(cur, run_id)
         if not run:
-            return error_result("RUN_NOT_FOUND", "Run was not found.", related_ids={"run_id": run_id})
+            return error_result(
+                "RUN_NOT_FOUND", "Run was not found.", related_ids={"run_id": run_id}
+            )
         package = {
             "schema": RUN_HANDOFF_PACKAGE_SCHEMA,
             "status": "ok",
@@ -1532,7 +1598,9 @@ def build_run_summary(package: dict[str, Any]) -> dict[str, Any]:
     handoffs = package.get("handoffs") or []
     completed_tasks = [task for task in tasks if task.get("status") == "done"]
     open_findings = [finding for finding in findings if finding.get("status") == "open"]
-    pending_approvals = [approval for approval in approvals if approval.get("status") == "requested"]
+    pending_approvals = [
+        approval for approval in approvals if approval.get("status") == "requested"
+    ]
     next_actions = extract_next_actions(handoffs)
     return {
         "readiness_status": readiness.get("status"),
@@ -1569,8 +1637,7 @@ def format_run_summary_markdown(package: dict[str, Any], summary: dict[str, Any]
     lines.extend(["", "## Completed Tasks"])
     lines.extend(
         markdown_list(
-            f"{task['title']} (`{task['task_id']}`)"
-            for task in summary.get("completed_tasks", [])
+            f"{task['title']} (`{task['task_id']}`)" for task in summary.get("completed_tasks", [])
         )
     )
     lines.extend(["", "## Command Evidence"])
@@ -1701,7 +1768,9 @@ def insert_run_child(
         run = get_run_row_cursor(cur, run_id)
         if not run:
             conn.commit()
-            return error_result("RUN_NOT_FOUND", "Run was not found.", related_ids={"run_id": run_id})
+            return error_result(
+                "RUN_NOT_FOUND", "Run was not found.", related_ids={"run_id": run_id}
+            )
         if task_id and not task_belongs_to_run_cursor(cur, task_id, run_id):
             conn.commit()
             return error_result(
@@ -1714,7 +1783,9 @@ def insert_run_child(
             conn.commit()
             return hit
         result = inserter(cur, run)
-        remember_idempotency(cur, operation, run["workspace_id"], idempotency_key, full_payload, result)
+        remember_idempotency(
+            cur, operation, run["workspace_id"], idempotency_key, full_payload, result
+        )
     conn.commit()
     return result
 
@@ -1907,7 +1978,9 @@ def task_graph_table_exists_cursor(cur: Cursor) -> bool:
     return cur.fetchone()[0] == "orchestration_task_edges"
 
 
-def get_worker_session_row_cursor(cur: Cursor, worker_session_id: str | None) -> dict[str, Any] | None:
+def get_worker_session_row_cursor(
+    cur: Cursor, worker_session_id: str | None
+) -> dict[str, Any] | None:
     if not worker_session_id:
         return None
     cur.execute(

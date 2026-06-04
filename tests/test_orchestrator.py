@@ -171,8 +171,7 @@ def test_status_and_dispatch_return_claim_mode_commands(monkeypatch) -> None:
     assert status["active_workers"][0]["worker_session_id"] == "worker-1"
     assert status["open_findings"][0]["finding_id"] == "finding-1"
     assert (
-        "geond worker register run-1 --agent claude"
-        in status["next_worker_commands"][0]["command"]
+        "geond worker register run-1 --agent claude" in status["next_worker_commands"][0]["command"]
     )
     assert any(
         "geond worker claim --task-id task-1" in item["command"]

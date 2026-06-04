@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-
 MANIFEST_SCHEMA = "geond.run_manifest.v1"
 
 
@@ -33,8 +32,12 @@ def write_run_manifest(
     files: dict[str, str] = {}
     manifest = build_manifest(package)
     files["manifest"] = write_json(run_dir / "EVIDENCE_MANIFEST.json", manifest)
-    files["commands"] = write_jsonl(run_dir / "COMMANDS.jsonl", package.get("command_evidence") or [])
-    files["approvals"] = write_jsonl(run_dir / "APPROVALS.jsonl", package.get("approval_requests") or [])
+    files["commands"] = write_jsonl(
+        run_dir / "COMMANDS.jsonl", package.get("command_evidence") or []
+    )
+    files["approvals"] = write_jsonl(
+        run_dir / "APPROVALS.jsonl", package.get("approval_requests") or []
+    )
     files["reviews"] = write_text(run_dir / "REVIEWS.md", format_reviews_markdown(package))
     files["decisions"] = write_text(run_dir / "DECISIONS.md", format_decisions_markdown(package))
     files["readiness"] = write_text(run_dir / "READINESS.md", format_readiness_markdown(package))
@@ -105,7 +108,9 @@ def collect_db_event_refs(package: dict[str, Any]) -> list[dict[str, str | None]
 
 
 def write_json(path: Path, payload: dict[str, Any]) -> str:
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     return str(path)
 
 

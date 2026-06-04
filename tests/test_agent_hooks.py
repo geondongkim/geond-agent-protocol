@@ -82,9 +82,7 @@ def test_write_hook_template_is_deterministic(tmp_path: Path) -> None:
     assert (tmp_path / "codex" / "README.md").exists()
     assert json_result["status"] == "ok"
     assert (tmp_path / "claude" / "hook-event.json").exists()
-    assert "GEOND_WORKSPACE" in (tmp_path / "codex" / "record-hook.sh").read_text(
-        encoding="utf-8"
-    )
+    assert "GEOND_WORKSPACE" in (tmp_path / "codex" / "record-hook.sh").read_text(encoding="utf-8")
 
 
 def test_record_hook_event_records_activity_evidence_and_heartbeat() -> None:

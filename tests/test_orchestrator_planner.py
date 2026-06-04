@@ -23,9 +23,7 @@ def status_payload(
             "status": "active",
         },
         "readiness": {"status": readiness, "blocking_reasons": []},
-        "claimable_tasks": [
-            {"task_id": "task-1", "title": "Implement task", "status": "ready"}
-        ]
+        "claimable_tasks": [{"task_id": "task-1", "title": "Implement task", "status": "ready"}]
         if claimable
         else [],
         "active_leases": [],
@@ -96,8 +94,7 @@ def test_planner_prioritizes_p1_finding_before_finalize(monkeypatch, tmp_path: P
 
     assert plan["recommended_actions"][0]["action_type"] == "resolve_finding"
     assert (
-        "geond review resolve finding-1"
-        in plan["recommended_actions"][0]["suggested_cli_command"]
+        "geond review resolve finding-1" in plan["recommended_actions"][0]["suggested_cli_command"]
     )
     assert not any(
         action["action_type"] == "finalize_ready_run" for action in plan["recommended_actions"]
@@ -126,8 +123,7 @@ def test_planner_recommends_dispatch_and_finalize(monkeypatch, tmp_path: Path) -
         "dispatch_spawn",
     ]
     assert (
-        "--agents codex,claude"
-        in dispatch_plan["recommended_actions"][1]["suggested_cli_command"]
+        "--agents codex,claude" in dispatch_plan["recommended_actions"][1]["suggested_cli_command"]
     )
     assert finalize_plan["recommended_actions"][0]["action_type"] == "finalize_ready_run"
     assert (

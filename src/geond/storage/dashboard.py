@@ -196,10 +196,7 @@ def get_dashboard_orchestration(
             (workspace_id, limit),
         )
         rows = cur.fetchall()
-    runs = [
-        dashboard_orchestration_run(conn, row, base_dir=base_dir)
-        for row in rows
-    ]
+    runs = [dashboard_orchestration_run(conn, row, base_dir=base_dir) for row in rows]
     return {
         "schema": DASHBOARD_ORCHESTRATION_SCHEMA,
         "status": "ok",
@@ -284,9 +281,7 @@ def dashboard_orchestration_summary(runs: list[dict[str, Any]]) -> dict[str, int
         "pending_approvals": sum(int(run.get("pending_approval_count") or 0) for run in runs),
         "active_workers": sum(int(run.get("active_worker_count") or 0) for run in runs),
         "active_leases": sum(int(run.get("active_lease_count") or 0) for run in runs),
-        "degraded_pending": sum(
-            int(run.get("degraded_ledger_pending_count") or 0) for run in runs
-        ),
+        "degraded_pending": sum(int(run.get("degraded_ledger_pending_count") or 0) for run in runs),
     }
 
 

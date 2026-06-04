@@ -1963,13 +1963,18 @@ def _orchestration_metadata(
     params: list[str],
     output: str,
 ) -> dict[str, Any]:
+    side_effects = (
+        "writes orchestration state"
+        if not title.startswith(("Get", "List"))
+        else "none beyond database reads"
+    )
     return {
         "title": title,
         "description": (
             f"Purpose: {purpose} When to use: use this in MCP-first orchestration "
             "flows before building a higher-level Geond Orchestrator. Inputs: "
             "parameters identify the workspace, run, task, worker, or evidence record. "
-            f"Side effects: {'writes orchestration state' if not title.startswith(('Get', 'List')) else 'none beyond database reads'}. "
+            f"Side effects: {side_effects}. "
             f"Output: {output}. Failure modes: returns a stable status/code payload such as "
             "RUN_NOT_FOUND, TASK_NOT_CLAIMABLE, LEASE_CONFLICT, or IDEMPOTENCY_CONFLICT."
         ),

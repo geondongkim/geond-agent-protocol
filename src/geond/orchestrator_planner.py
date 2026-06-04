@@ -71,9 +71,7 @@ def create_plan(
             and not action.get("blocks_execution")
         ],
         "recovery_commands": [
-            command
-            for run_plan in run_plans
-            for command in run_plan.get("recovery_commands", [])
+            command for run_plan in run_plans for command in run_plan.get("recovery_commands", [])
         ],
         "evidence_refs": [
             ref for run_plan in run_plans for ref in run_plan.get("evidence_refs", [])
@@ -140,11 +138,9 @@ def collect_status_payloads(
     runs_result = orchestration_store.list_runs(conn, workspace_id_or_uri, limit=limit)
     if runs_result.get("status") != "ok":
         return runs_result
-    runs = [
-        run
-        for run in runs_result.get("runs", [])
-        if run.get("status") in ACTIVE_RUN_STATUSES
-    ][:limit]
+    runs = [run for run in runs_result.get("runs", []) if run.get("status") in ACTIVE_RUN_STATUSES][
+        :limit
+    ]
     status_payloads = []
     for run in runs:
         status_payload = orchestrator.get_status(
@@ -285,8 +281,7 @@ def add_approval_actions(
                 f"{approval.get('reason') or 'approval required'}."
             ),
             command=(
-                f"geond approval resolve {approval_id} "
-                "--status approved --resolved-by <name>"
+                f"geond approval resolve {approval_id} --status approved --resolved-by <name>"
             ),
             run_id=run.get("run_id"),
             approval_id=approval_id,
@@ -317,13 +312,9 @@ def add_finding_actions(
             priority=30 if severity == "P1" else 25,
             severity="critical" if severity == "P0" else "high",
             reason=(
-                f"{severity} review finding is open: "
-                f"{finding.get('summary') or 'review required'}."
+                f"{severity} review finding is open: {finding.get('summary') or 'review required'}."
             ),
-            command=(
-                f"geond review resolve {finding_id} "
-                '--status fixed --reason "<reason>"'
-            ),
+            command=(f'geond review resolve {finding_id} --status fixed --reason "<reason>"'),
             run_id=run_id,
             task_id=finding.get("task_id"),
             finding_id=finding_id,
@@ -471,9 +462,7 @@ def plan_summary(run_plans: list[dict[str, Any]], actions: list[dict[str, Any]])
 
 def stable_plan_id(payload: dict[str, Any]) -> str:
     stable = {
-        key: value
-        for key, value in payload.items()
-        if key not in {"plan_id", "markdown", "bundle"}
+        key: value for key, value in payload.items() if key not in {"plan_id", "markdown", "bundle"}
     }
     raw = json.dumps(stable, ensure_ascii=False, sort_keys=True, default=str, separators=(",", ":"))
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
