@@ -79,6 +79,7 @@ from geond.storage.dashboard import (
     get_dashboard_changesets,
     get_dashboard_code_risk,
     get_dashboard_manus_sessions,
+    get_dashboard_orchestration,
     get_dashboard_overview,
     get_dashboard_usage,
 )
@@ -1186,6 +1187,14 @@ def main() -> None:
     dashboard_changesets.add_argument("workspace_id_or_uri")
     dashboard_changesets.add_argument("--limit", type=int, default=50)
 
+    dashboard_orchestration = subparsers.add_parser(
+        "dashboard-orchestration",
+        help="Return dashboard orchestration mission-control state for one workspace",
+    )
+    dashboard_orchestration.add_argument("workspace_id_or_uri")
+    dashboard_orchestration.add_argument("--limit", type=int, default=50)
+    dashboard_orchestration.add_argument("--base-dir", type=Path, default=Path("tmp/geond-runs"))
+
     dashboard_graph = subparsers.add_parser(
         "dashboard-graph",
         help="Return bounded dashboard lineage graph nodes and edges for one workspace",
@@ -2257,6 +2266,17 @@ def main() -> None:
                 conn,
                 args.workspace_id_or_uri,
                 limit=args.limit,
+            )
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        return
+
+    if args.command == "dashboard-orchestration":
+        with connect(get_settings()) as conn:
+            result = get_dashboard_orchestration(
+                conn,
+                args.workspace_id_or_uri,
+                limit=args.limit,
+                base_dir=args.base_dir,
             )
         print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
         return

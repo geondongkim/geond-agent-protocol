@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import shlex
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
 from psycopg import Connection
 
-from geond import degraded_ledger, orchestrator_spawn
+from geond import degraded_ledger, orchestrator_finalize, orchestrator_spawn
 from geond.orchestration_manifest import write_run_manifest
 from geond.storage import orchestration as orchestration_store
 from geond.task_graph import parse_task_graph_file
@@ -176,6 +177,9 @@ def dispatch_spawn(
     agent_name: str = "codex",
     execute: bool = False,
     task_id: str | None = None,
+    task_ids: list[str] | None = None,
+    agent_names: list[str] | None = None,
+    max_workers: int = 1,
     model: str | None = None,
     sandbox: str = "workspace-write",
     timeout_seconds: int = 3600,
@@ -183,6 +187,22 @@ def dispatch_spawn(
     manifest_base_dir: Path = DEFAULT_MANIFEST_BASE_DIR,
     codex_runner: Any | None = None,
 ) -> dict[str, Any]:
+    if should_use_multi_spawn(task_ids=task_ids, agent_names=agent_names, max_workers=max_workers):
+        return dispatch_spawn_many(
+            conn,
+            run_id=run_id,
+            agent_name=agent_name,
+            execute=execute,
+            task_ids=task_ids or ([task_id] if task_id else None),
+            agent_names=agent_names,
+            max_workers=max_workers,
+            model=model,
+            sandbox=sandbox,
+            timeout_seconds=timeout_seconds,
+            write_bundle=write_bundle,
+            manifest_base_dir=manifest_base_dir,
+            codex_runner=codex_runner,
+        )
     status_payload = get_status(
         conn,
         run_id,
@@ -360,6 +380,415 @@ def dispatch_spawn(
         invocation=invocation,
         timeout_seconds=timeout_seconds,
     )
+    return complete_spawn_execution(
+        conn,
+        base_payload=base_payload,
+        run_id=run_id,
+        agent_name=agent_name,
+        selected_task=selected_task,
+        workspace=workspace,
+        invocation=invocation,
+        bundle=bundle,
+        worker_session=worker_session,
+        claim_result=claim,
+        run_result=run_result,
+        manifest_base_dir=manifest_base_dir,
+        source_command=source_command,
+    )
+
+
+def should_use_multi_spawn(
+    *,
+    task_ids: list[str] | None,
+    agent_names: list[str] | None,
+    max_workers: int,
+) -> bool:
+    return max_workers != 1 or bool(agent_names) or bool(task_ids and len(task_ids) > 1)
+
+
+def dispatch_spawn_many(
+    conn: Connection,
+    *,
+    run_id: str,
+    agent_name: str = "codex",
+    execute: bool = False,
+    task_ids: list[str] | None = None,
+    agent_names: list[str] | None = None,
+    max_workers: int = 1,
+    model: str | None = None,
+    sandbox: str = "workspace-write",
+    timeout_seconds: int = 3600,
+    write_bundle: bool = False,
+    manifest_base_dir: Path = DEFAULT_MANIFEST_BASE_DIR,
+    codex_runner: Any | None = None,
+) -> dict[str, Any]:
+    agent_pool = normalized_agent_pool(agent_name, agent_names)
+    max_workers = max(1, max_workers)
+    status_payload = get_status(
+        conn,
+        run_id,
+        agent_name=agent_pool[0],
+        manifest_base_dir=manifest_base_dir,
+    )
+    if status_payload.get("status") != "ok":
+        return status_payload
+    run_summary = orchestration_store.summarize_run(conn, run_id)
+    base_payload = spawn_base_payload(status_payload, run_summary, ",".join(agent_pool))
+    selection = select_spawn_tasks(status_payload, task_ids, max_workers)
+    if selection.get("status") != "ok":
+        return finish_spawn_payload(
+            base_payload,
+            status="error",
+            code=selection.get("code"),
+            execution_status="blocked",
+            message=selection.get("message"),
+            selected_task=selection.get("selected_task"),
+        )
+    selected_tasks = selection["selected_tasks"]
+    workspace_result = resolve_spawn_workspace(conn, status_payload)
+    if workspace_result.get("status") != "ok":
+        return finish_spawn_many_payload(
+            base_payload,
+            status="error",
+            code=workspace_result.get("code"),
+            overall_execution_status="failed",
+            message=workspace_result.get("message"),
+            items=[],
+        )
+    workspace = workspace_result["workspace"]
+    prepared: list[dict[str, Any]] = []
+    for index, selected_task in enumerate(selected_tasks):
+        assigned_agent = agent_pool[index % len(agent_pool)]
+        item_base = spawn_base_payload(status_payload, run_summary, assigned_agent)
+        prepared_item = prepare_spawn_item(
+            item_base,
+            run_id=run_id,
+            agent_name=assigned_agent,
+            selected_task=selected_task,
+            workspace=workspace,
+            model=model,
+            sandbox=sandbox,
+            timeout_seconds=timeout_seconds,
+            write_bundle=write_bundle,
+            execute=execute,
+            manifest_base_dir=manifest_base_dir,
+        )
+        if prepared_item.get("status") != "prepared":
+            prepared.append(prepared_item["payload"])
+            continue
+        prepared.append(prepared_item)
+
+    if not execute:
+        items = [
+            item["payload"] if item.get("status") != "prepared" else item["preview_payload"]
+            for item in prepared
+        ]
+        return finish_spawn_many_payload(
+            base_payload,
+            status=overall_spawn_status(items),
+            code=overall_spawn_code(items),
+            overall_execution_status=overall_preview_status(items),
+            items=items,
+        )
+
+    runnable: list[dict[str, Any]] = []
+    items: list[dict[str, Any]] = []
+    for item in prepared:
+        if item.get("status") != "prepared":
+            items.append(item["payload"])
+            continue
+        claim_ready = register_and_claim_spawn_item(
+            conn,
+            item,
+            run_id=run_id,
+            manifest_base_dir=manifest_base_dir,
+        )
+        if claim_ready.get("status") != "ready":
+            items.append(claim_ready["payload"])
+            continue
+        runnable.append(claim_ready)
+
+    runner = codex_runner or orchestrator_spawn.run_codex
+    future_map = {}
+    if runnable:
+        with ThreadPoolExecutor(max_workers=min(max_workers, len(runnable))) as executor:
+            for item in runnable:
+                future = executor.submit(
+                    runner,
+                    command=item["command"],
+                    prompt=item["prompt"],
+                    invocation=item["invocation"],
+                    timeout_seconds=timeout_seconds,
+                )
+                future_map[future] = item
+            for future in as_completed(future_map):
+                item = future_map[future]
+                try:
+                    run_result = future.result()
+                except Exception as exc:  # pragma: no cover - defensive runner guard
+                    run_result = orchestrator_spawn.CodexRunResult(
+                        exit_code=1,
+                        timed_out=False,
+                        stdout="",
+                        stderr=str(exc),
+                        command=item["command"],
+                    )
+                items.append(
+                    complete_spawn_execution(
+                        conn,
+                        base_payload=item["base_payload"],
+                        run_id=run_id,
+                        agent_name=item["agent_name"],
+                        selected_task=item["selected_task"],
+                        workspace=item["workspace"],
+                        invocation=item["invocation"],
+                        bundle=item["bundle"],
+                        worker_session=item["worker_session"],
+                        claim_result=item["claim_result"],
+                        run_result=run_result,
+                        manifest_base_dir=manifest_base_dir,
+                        source_command=item["source_command"],
+                    )
+                )
+
+    return finish_spawn_many_payload(
+        base_payload,
+        status=overall_spawn_status(items),
+        code=overall_spawn_code(items),
+        overall_execution_status=overall_execution_status(items, execute=execute),
+        items=items,
+    )
+
+
+def normalized_agent_pool(agent_name: str, agent_names: list[str] | None) -> list[str]:
+    names = agent_names or [agent_name]
+    normalized = [name.strip() for name in names if name and name.strip()]
+    return normalized or [agent_name]
+
+
+def resolve_spawn_workspace(conn: Connection, status_payload: dict[str, Any]) -> dict[str, Any]:
+    root_uri = orchestrator_spawn.get_workspace_root_uri(
+        conn,
+        status_payload["run"]["workspace_id"],
+    )
+    if not root_uri:
+        return {
+            "status": "error",
+            "code": "WORKSPACE_NOT_FOUND",
+            "message": "Run workspace was not found.",
+        }
+    workspace = orchestrator_spawn.resolve_local_workspace_path(root_uri)
+    if workspace.get("status") != "ok":
+        return {
+            "status": "error",
+            "code": workspace.get("code"),
+            "message": workspace.get("message"),
+            "workspace": workspace,
+        }
+    return {"status": "ok", "code": None, "workspace": workspace}
+
+
+def prepare_spawn_item(
+    base_payload: dict[str, Any],
+    *,
+    run_id: str,
+    agent_name: str,
+    selected_task: dict[str, Any],
+    workspace: dict[str, Any],
+    model: str | None,
+    sandbox: str,
+    timeout_seconds: int,
+    write_bundle: bool,
+    execute: bool,
+    manifest_base_dir: Path,
+) -> dict[str, Any]:
+    if agent_name not in orchestrator_spawn.SUPPORTED_SPAWN_AGENTS:
+        return {
+            "status": "error",
+            "payload": finish_spawn_payload(
+                base_payload,
+                status="error",
+                code="UNSUPPORTED_AGENT",
+                execution_status="failed",
+                message="Spawn mode supports codex and claude agents.",
+                selected_task=selected_task,
+                workspace=workspace,
+            ),
+        }
+    agent_bin = orchestrator_spawn.find_agent_binary(agent_name)
+    if not agent_bin:
+        return {
+            "status": "error",
+            "payload": finish_spawn_payload(
+                base_payload,
+                status="error",
+                code=orchestrator_spawn.missing_binary_code(agent_name),
+                execution_status="failed",
+                message=missing_agent_binary_message(agent_name),
+                selected_task=selected_task,
+                workspace=workspace,
+            ),
+        }
+    invocation = orchestrator_spawn.new_invocation(run_id, manifest_base_dir)
+    prompt = orchestrator_spawn.build_worker_prompt(
+        status_payload=base_payload["orchestrator_status"],
+        run_summary=base_payload["run_summary"],
+        selected_task=selected_task,
+        workspace_path=workspace["workspace_path"],
+        agent_name=agent_name,
+    )
+    command = orchestrator_spawn.build_agent_command(
+        agent_name=agent_name,
+        agent_bin=agent_bin,
+        workspace_path=workspace["workspace_path"],
+        invocation=invocation,
+        model=model,
+        sandbox=sandbox,
+    )
+    bundle = spawn_invocation_payload(invocation, command, prompt, model, sandbox, timeout_seconds)
+    if write_bundle or execute:
+        bundle.update(orchestrator_spawn.write_prompt_bundle(invocation, prompt))
+    preview_payload = finish_spawn_payload(
+        base_payload,
+        status="ok",
+        code=None,
+        execution_status="preview",
+        selected_task=selected_task,
+        workspace=workspace,
+        invocation=bundle,
+        worker_prompt=prompt,
+        expected_output_schema=orchestrator_spawn.output_schema(),
+    )
+    return {
+        "status": "prepared",
+        "agent_name": agent_name,
+        "selected_task": selected_task,
+        "workspace": workspace,
+        "invocation": invocation,
+        "bundle": bundle,
+        "prompt": prompt,
+        "command": command,
+        "base_payload": base_payload,
+        "preview_payload": preview_payload,
+    }
+
+
+def register_and_claim_spawn_item(
+    conn: Connection,
+    item: dict[str, Any],
+    *,
+    run_id: str,
+    manifest_base_dir: Path,
+) -> dict[str, Any]:
+    agent_name = item["agent_name"]
+    selected_task = item["selected_task"]
+    invocation = item["invocation"]
+    bundle = item["bundle"]
+    source_command = spawn_source_command(agent_name, run_id)
+    degraded_ledger.append_event(
+        run_id=run_id,
+        base_dir=manifest_base_dir,
+        event_type="spawn_started",
+        payload={
+            "agent_name": agent_name,
+            "task_id": selected_task["task_id"],
+            "invocation_id": invocation.invocation_id,
+            "command": item["command"],
+        },
+        idempotency_key=f"geond-orchestrator:{invocation.invocation_id}:spawn-started",
+        db_status="recorded",
+        source_command=source_command,
+    )
+    try:
+        register = orchestration_store.register_worker_session(
+            conn,
+            run_id,
+            agent_name,
+            session_external_id=invocation.invocation_id,
+            metadata={
+                "launch_mode": "spawned",
+                "agent": agent_name,
+                "invocation_id": invocation.invocation_id,
+                "prompt_path": str(invocation.prompt_path),
+                "output_dir": str(invocation.output_dir),
+            },
+            idempotency_key=f"geond-orchestrator:{invocation.invocation_id}:register",
+        )
+    except Exception as exc:  # pragma: no cover - defensive DB guard
+        rollback_quietly(conn)
+        register = {"status": "error", "code": "WORKER_REGISTER_FAILED", "message": str(exc)}
+    if register.get("status") != "ok":
+        return {
+            "status": "error",
+            "payload": finish_spawn_payload(
+                item["base_payload"],
+                status="error",
+                code=register.get("code"),
+                execution_status="failed",
+                message=register.get("message"),
+                selected_task=selected_task,
+                workspace=item["workspace"],
+                invocation=bundle,
+                worker_session=register.get("worker_session"),
+                storage_result=register,
+            ),
+        }
+    worker_session = register["worker_session"]
+    try:
+        claim = orchestration_store.claim_task(
+            conn,
+            selected_task["task_id"],
+            agent_name,
+            worker_session_id=worker_session["worker_session_id"],
+            metadata={"launch_mode": "spawned", "invocation_id": invocation.invocation_id},
+            idempotency_key=f"geond-orchestrator:{invocation.invocation_id}:claim",
+        )
+    except Exception as exc:  # pragma: no cover - defensive DB guard
+        rollback_quietly(conn)
+        claim = {"status": "error", "code": "TASK_CLAIM_FAILED", "message": str(exc)}
+    if claim.get("status") != "ok":
+        return {
+            "status": "error",
+            "payload": finish_spawn_payload(
+                item["base_payload"],
+                status="error",
+                code=claim.get("code"),
+                execution_status="failed",
+                message=claim.get("message"),
+                selected_task=selected_task,
+                workspace=item["workspace"],
+                invocation=bundle,
+                worker_session=worker_session,
+                claim_result=claim,
+            ),
+        }
+    item.update(
+        {
+            "status": "ready",
+            "worker_session": worker_session,
+            "claim_result": claim,
+            "source_command": source_command,
+        }
+    )
+    return item
+
+
+def complete_spawn_execution(
+    conn: Connection,
+    *,
+    base_payload: dict[str, Any],
+    run_id: str,
+    agent_name: str,
+    selected_task: dict[str, Any],
+    workspace: dict[str, Any],
+    invocation: orchestrator_spawn.SpawnInvocation,
+    bundle: dict[str, Any],
+    worker_session: dict[str, Any],
+    claim_result: dict[str, Any],
+    run_result: orchestrator_spawn.CodexRunResult,
+    manifest_base_dir: Path,
+    source_command: str,
+) -> dict[str, Any]:
     bundle.update(
         {
             "exit_code": run_result.exit_code,
@@ -383,8 +812,8 @@ def dispatch_spawn(
             workspace=workspace,
             invocation=bundle,
             worker_session=worker_session,
-            claim_result=claim,
-            lease_id=claim["lease"]["lease_id"],
+            claim_result=claim_result,
+            lease_id=claim_result["lease"]["lease_id"],
             summary=(
                 f"{agent_name} spawn failed before returning a valid task result. "
                 f"See {invocation.output_dir}."
@@ -407,8 +836,8 @@ def dispatch_spawn(
             workspace=workspace,
             invocation=bundle,
             worker_session=worker_session,
-            claim_result=claim,
-            lease_id=claim["lease"]["lease_id"],
+            claim_result=claim_result,
+            lease_id=claim_result["lease"]["lease_id"],
             summary=f"{agent_name} spawn returned an invalid result. See {invocation.output_dir}.",
             blocked_on=[str(parsed.get("code") or "WORKER_RESULT_INVALID")],
             next_action="Inspect LAST_MESSAGE.json and retry or finish the task manually.",
@@ -426,7 +855,7 @@ def dispatch_spawn(
             "agent_name": agent_name,
             "task_id": selected_task["task_id"],
             "worker_session_id": worker_session["worker_session_id"],
-            "lease_id": claim["lease"]["lease_id"],
+            "lease_id": claim_result["lease"]["lease_id"],
             "invocation_id": invocation.invocation_id,
             "worker_result": worker_result,
         },
@@ -446,7 +875,7 @@ def dispatch_spawn(
         source_command=source_command,
     )
     finish_payload = {
-        "lease_id": claim["lease"]["lease_id"],
+        "lease_id": claim_result["lease"]["lease_id"],
         "summary": worker_result["summary"],
         "task_status": worker_result["task_status"],
         "tested_commands": [
@@ -481,7 +910,7 @@ def dispatch_spawn(
             workspace=workspace,
             invocation=bundle,
             worker_session=worker_session,
-            claim_result=claim,
+            claim_result=claim_result,
             evidence_results=evidence_results,
             handoff_result=finish,
             worker_result=worker_result,
@@ -497,7 +926,7 @@ def dispatch_spawn(
             workspace=workspace,
             invocation=bundle,
             worker_session=worker_session,
-            claim_result=claim,
+            claim_result=claim_result,
             evidence_results=evidence_results,
             handoff_result=finish,
             worker_result=worker_result,
@@ -514,7 +943,7 @@ def dispatch_spawn(
             workspace=workspace,
             invocation=bundle,
             worker_session=worker_session,
-            claim_result=claim,
+            claim_result=claim_result,
             evidence_results=evidence_results,
             handoff_result=finish,
             worker_result=worker_result,
@@ -529,7 +958,7 @@ def dispatch_spawn(
         workspace=workspace,
         invocation=bundle,
         worker_session=worker_session,
-        claim_result=claim,
+        claim_result=claim_result,
         evidence_results=evidence_results,
         handoff_result=finish,
         worker_result=worker_result,
@@ -629,6 +1058,19 @@ def finalize_run(
     *,
     write_manifest: bool = False,
     manifest_base_dir: Path = DEFAULT_MANIFEST_BASE_DIR,
+    git_checkpoint: bool = False,
+    commit: bool = False,
+    paths: list[str] | None = None,
+    stage_all: bool = False,
+    commit_message: str | None = None,
+    push: bool = False,
+    remote: str = "origin",
+    branch: str = "CURRENT",
+    create_pr: bool = False,
+    pr_title: str | None = None,
+    pr_body_file: Path | None = None,
+    dry_run: bool = False,
+    command_runner: Any | None = None,
 ) -> dict[str, Any]:
     status_payload = get_status(conn, run_id, manifest_base_dir=manifest_base_dir)
     if status_payload.get("status") != "ok":
@@ -646,6 +1088,31 @@ def finalize_run(
             base_dir=manifest_base_dir,
             write_result=True,
         )
+    git_result = None
+    git_requested = git_checkpoint or commit or push or create_pr
+    if git_requested:
+        git_result = orchestrator_finalize.execute_git_finalize(
+            conn,
+            run_id=run_id,
+            status_payload=status_payload,
+            run_summary=summary,
+            git_checkpoint=git_checkpoint,
+            commit=commit,
+            paths=paths or [],
+            stage_all=stage_all,
+            commit_message=commit_message,
+            push=push,
+            remote=remote,
+            branch=branch,
+            create_pr=create_pr,
+            pr_title=pr_title,
+            pr_body_file=pr_body_file,
+            dry_run=dry_run,
+            command_runner=command_runner,
+        )
+        if git_result.get("status") != "ok":
+            result_status = "not_ready" if git_result.get("code") == "RUN_NOT_READY" else "error"
+            code = git_result.get("code")
     result = {
         "schema": ORCHESTRATOR_FINALIZE_SCHEMA,
         "status": result_status,
@@ -653,6 +1120,7 @@ def finalize_run(
         "orchestrator_status": status_payload,
         "run_summary": summary,
         "manifest": manifest,
+        "git_result": git_result,
     }
     result["markdown"] = format_finalize_markdown(result)
     return result
@@ -864,6 +1332,132 @@ def select_spawn_task(
     return {"status": "ok", "code": None, "selected_task": claimable_tasks[0]}
 
 
+def select_spawn_tasks(
+    status_payload: dict[str, Any],
+    task_ids: list[str] | None,
+    max_workers: int,
+) -> dict[str, Any]:
+    if task_ids:
+        selected = []
+        for requested_task_id in task_ids:
+            selection = select_spawn_task(status_payload, requested_task_id)
+            if selection.get("status") != "ok":
+                return {
+                    **selection,
+                    "selected_tasks": selected,
+                    "message": selection.get("message") or "Requested task is not claimable.",
+                }
+            selected.append(selection["selected_task"])
+        return {"status": "ok", "code": None, "selected_tasks": selected}
+    claimable_tasks = status_payload.get("claimable_tasks") or []
+    if not claimable_tasks:
+        return {
+            "status": "error",
+            "code": "TASK_NOT_CLAIMABLE",
+            "message": "No claimable task is available for spawn mode.",
+            "selected_task": None,
+            "selected_tasks": [],
+        }
+    return {
+        "status": "ok",
+        "code": None,
+        "selected_tasks": claimable_tasks[: max(1, max_workers)],
+    }
+
+
+def finish_spawn_many_payload(
+    base_payload: dict[str, Any],
+    *,
+    status: str,
+    code: str | None,
+    overall_execution_status: str,
+    items: list[dict[str, Any]],
+    message: str | None = None,
+) -> dict[str, Any]:
+    completed_count = sum(1 for item in items if item.get("execution_status") == "completed")
+    degraded_count = sum(1 for item in items if item.get("status") == "degraded")
+    failed_count = sum(
+        1
+        for item in items
+        if item.get("execution_status") in {"failed", "blocked"}
+        and item.get("status") != "degraded"
+    )
+    payload = {
+        **base_payload,
+        "status": status,
+        "code": code,
+        "execution_status": overall_execution_status,
+        "overall_execution_status": overall_execution_status,
+        "message": message,
+        "items": items,
+        "completed_count": completed_count,
+        "failed_count": failed_count,
+        "degraded_count": degraded_count,
+        "selected_task": (items[0].get("selected_task") if items else None),
+        "workspace": (items[0].get("workspace") if items else None),
+        "invocation": None,
+        "worker_session": None,
+        "claim_result": None,
+        "handoff_result": None,
+        "evidence_results": [
+            evidence
+            for item in items
+            for evidence in (item.get("evidence_results") or [])
+        ],
+        "worker_result": None,
+    }
+    payload["markdown"] = format_dispatch_markdown(payload)
+    return payload
+
+
+def overall_execution_status(items: list[dict[str, Any]], *, execute: bool) -> str:
+    if not execute:
+        return "preview"
+    if not items:
+        return "failed"
+    statuses = [str(item.get("execution_status") or "") for item in items]
+    if any(item.get("status") == "degraded" for item in items):
+        return "partial" if any(status == "completed" for status in statuses) else "blocked"
+    if all(status == "completed" for status in statuses):
+        return "completed"
+    if any(status == "completed" for status in statuses):
+        return "partial"
+    if all(status == "blocked" for status in statuses):
+        return "blocked"
+    return "failed"
+
+
+def overall_preview_status(items: list[dict[str, Any]]) -> str:
+    if all(item.get("status") == "ok" for item in items):
+        return "preview"
+    if any(item.get("status") == "ok" for item in items):
+        return "partial"
+    return "failed"
+
+
+def overall_spawn_status(items: list[dict[str, Any]]) -> str:
+    if not items:
+        return "error"
+    if any(item.get("status") == "degraded" for item in items):
+        return "degraded"
+    if all(item.get("status") == "ok" for item in items):
+        return "ok"
+    if any(item.get("status") == "ok" for item in items):
+        return "partial"
+    return "error"
+
+
+def overall_spawn_code(items: list[dict[str, Any]]) -> str | None:
+    if any(item.get("status") == "degraded" for item in items):
+        return "DEGRADED_LEDGER_PENDING"
+    failed_codes = [item.get("code") for item in items if item.get("code")]
+    if not failed_codes:
+        return None
+    if any(item.get("status") == "ok" for item in items):
+        return "PARTIAL_SPAWN_FAILURE"
+    return str(failed_codes[0])
+
+
 def spawn_invocation_payload(
     invocation: orchestrator_spawn.SpawnInvocation,
     command: list[str],
@@ -1042,6 +1636,40 @@ def format_dispatch_markdown(payload: dict[str, Any]) -> str:
 
 
 def format_spawn_dispatch_markdown(payload: dict[str, Any]) -> str:
+    if payload.get("items"):
+        lines = [
+            "# Spawn-mode Dispatch",
+            "",
+            f"- Agents: `{payload.get('agent_name')}`",
+            f"- Status: `{payload.get('overall_execution_status')}`",
+            f"- Completed: `{payload.get('completed_count', 0)}`",
+            f"- Failed: `{payload.get('failed_count', 0)}`",
+            f"- Degraded: `{payload.get('degraded_count', 0)}`",
+        ]
+        if payload.get("message"):
+            lines.extend(["", "## Message", "", str(payload["message"])])
+        lines.extend(["", "## Items"])
+        lines.extend(
+            markdown_list(
+                (
+                    f"{item.get('agent_name')} "
+                    f"{(item.get('selected_task') or {}).get('title') or 'task'} "
+                    f"(`{(item.get('selected_task') or {}).get('task_id') or 'none'}`): "
+                    f"{item.get('execution_status')} {item.get('code') or ''}"
+                ).strip()
+                for item in payload.get("items") or []
+            )
+        )
+        preview_commands = [
+            (item.get("invocation") or {}).get("display_command")
+            for item in payload.get("items") or []
+            if (item.get("invocation") or {}).get("display_command")
+        ]
+        if preview_commands:
+            lines.extend(["", "## Commands"])
+            lines.extend(markdown_list(f"`{command}`" for command in preview_commands))
+        return "\n".join(lines).rstrip() + "\n"
+
     task = payload.get("selected_task") or {}
     invocation = payload.get("invocation") or {}
     workspace = payload.get("workspace") or {}
@@ -1115,9 +1743,28 @@ def format_finalize_markdown(payload: dict[str, Any]) -> str:
     manifest = payload.get("manifest")
     if manifest:
         lines.append(f"- Manifest: `{manifest.get('run_dir')}`")
+    git_result = payload.get("git_result") or {}
+    if git_result:
+        lines.extend(
+            [
+                f"- Git finalize: `{git_result.get('status')}`",
+                f"- Commit: `{git_result.get('commit_sha') or 'none'}`",
+                f"- PR: `{git_result.get('pr_url') or 'none'}`",
+            ]
+        )
     if payload.get("status") != "ok":
         lines.extend(["", "## Blockers"])
         lines.extend(markdown_list(readiness.get("blocking_reasons") or []))
+        if git_result.get("message"):
+            lines.extend(["", "## Git Blocker", f"- {git_result.get('message')}"])
+    if git_result.get("planned_commands"):
+        lines.extend(["", "## Git Commands"])
+        lines.extend(
+            markdown_list(
+                f"{item.get('label')}: `{item.get('command')}`"
+                for item in git_result.get("planned_commands") or []
+            )
+        )
     return "\n".join(lines).rstrip() + "\n"
 
 

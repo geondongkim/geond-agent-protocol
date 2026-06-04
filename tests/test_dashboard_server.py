@@ -29,6 +29,10 @@ def test_dashboard_route_matching_and_index() -> None:
     )
     assert match_workspace_route("/api/workspaces/abc-123/lineage") == ("abc-123", "lineage")
     assert match_workspace_route("/api/workspaces/abc-123/usage") == ("abc-123", "usage")
+    assert match_workspace_route("/api/workspaces/abc-123/orchestration") == (
+        "abc-123",
+        "orchestration",
+    )
     assert match_workspace_route("/api/workspaces/abc/write") is None
     assert query_limit("limit=5") == 5
     assert query_limit("limit=9999") == 500
@@ -79,6 +83,9 @@ def test_dashboard_root_serves_html_without_database() -> None:
     assert b"Related Graph Node" in body
     assert b"Usage Evidence" in body
     assert b"usage-summary" in body
+    assert b"Orchestration" in body
+    assert b"orchestration-summary" in body
+    assert b"/orchestration" in body
     assert b"Conversation Evidence" in body
     assert b"Work Evidence" in body
     assert b"Validation Evidence" in body
@@ -139,4 +146,5 @@ def test_dashboard_index_includes_safe_database_metadata() -> None:
     assert "/api/workspaces" in index["endpoints"]
     assert "/api/workspaces/{workspace_id}/project" in index["endpoints"]
     assert "/api/workspaces/{workspace_id}/usage" in index["endpoints"]
+    assert "/api/workspaces/{workspace_id}/orchestration" in index["endpoints"]
     assert "secret" not in str(index)

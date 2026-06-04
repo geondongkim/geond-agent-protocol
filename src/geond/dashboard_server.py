@@ -13,6 +13,7 @@ from geond.storage.dashboard import (
     get_agent_activity_events,
     get_dashboard_changesets,
     get_dashboard_code_risk,
+    get_dashboard_orchestration,
     get_dashboard_overview,
     get_dashboard_project_activity,
     get_dashboard_sessions,
@@ -249,6 +250,9 @@ def dashboard_payload(settings: Settings, path: str) -> tuple[int, dict[str, Any
         if endpoint == "usage":
             payload = get_dashboard_usage(conn, workspace_id)
             return status_for_payload(payload), payload
+        if endpoint == "orchestration":
+            payload = get_dashboard_orchestration(conn, workspace_id, limit=limit)
+            return status_for_payload(payload), payload
 
     return 404, {"status": "not_found", "workspace_id": workspace_id, "endpoint": endpoint}
 
@@ -273,6 +277,7 @@ def dashboard_index(settings: Settings | None = None) -> dict[str, Any]:
             "/api/workspaces/{workspace_id}/code-risk",
             "/api/workspaces/{workspace_id}/changesets",
             "/api/workspaces/{workspace_id}/usage",
+            "/api/workspaces/{workspace_id}/orchestration",
         ],
     }
 
@@ -1142,6 +1147,7 @@ def mission_control_html() -> str:
       <button class="tab" type="button" data-view="handoffs">Handoffs</button>
       <button class="tab" type="button" data-view="code-risk">Code Risk</button>
       <button class="tab" type="button" data-view="changesets">Changesets</button>
+      <button class="tab" type="button" data-view="orchestration">Orchestration</button>
       <button class="tab" type="button" data-view="graph">Graph</button>
       <button class="tab" type="button" data-view="usage">Usage Evidence</button>
       <button class="tab" type="button" data-view="timeline">Timeline</button>
@@ -1220,6 +1226,12 @@ def mission_control_html() -> str:
       <div class="session-workspace">
         <div class="session-summary" id="changeset-summary"></div>
         <div class="session-board" id="changeset-board"></div>
+      </div>
+    </section>
+    <section class="view" data-view-panel="orchestration">
+      <div class="session-workspace">
+        <div class="session-summary" id="orchestration-summary"></div>
+        <div class="session-board" id="orchestration-board"></div>
       </div>
     </section>
     <section class="view" data-view-panel="graph">
@@ -1348,6 +1360,7 @@ def mission_control_html() -> str:
       handoffs: [],
       codeRisk: null,
       changesets: [],
+      orchestration: null,
       lineage: null,
       workspaces: [],
     };
@@ -1373,6 +1386,8 @@ def mission_control_html() -> str:
     const codeRiskFiles = document.querySelector("#code-risk-files");
     const changesetSummary = document.querySelector("#changeset-summary");
     const changesetBoard = document.querySelector("#changeset-board");
+    const orchestrationSummary = document.querySelector("#orchestration-summary");
+    const orchestrationBoard = document.querySelector("#orchestration-board");
     const graphSummary = document.querySelector("#graph-summary");
     const graphNodes = document.querySelector("#graph-nodes");
     const graphEdges = document.querySelector("#graph-edges");
@@ -2628,6 +2643,89 @@ def mission_control_html() -> str:
       }
     }
 
+    function renderOrchestrationBoard(payload) {
+      const summary = payload?.summary || {};
+      const runs = payload?.runs || [];
+      renderStatCards(orchestrationSummary, [
+        ["Active Runs", formatNumber(summary.active_runs)],
+        ["Ready", formatNumber(summary.ready_runs)],
+        ["Blocked", formatNumber(summary.blocked_runs)],
+        ["Approvals", formatNumber(summary.pending_approvals)],
+        ["Workers", formatNumber(summary.active_workers)],
+        ["Leases", formatNumber(summary.active_leases)],
+        ["Ledger Pending", formatNumber(summary.degraded_pending)],
+      ]);
+      orchestrationBoard.replaceChildren();
+      if (!runs.length) {
+        const lane = document.createElement("section");
+        lane.className = "session-lane";
+        lane.innerHTML = `
+          <div class="lane-head"><h2>No orchestrator runs</h2></div>
+          <div class="lane-body"><div class="empty">No active runs recorded.</div></div>`;
+        orchestrationBoard.append(lane);
+        return;
+      }
+      const groups = new Map();
+      for (const run of runs) {
+        const key = run.readiness_status || "unknown";
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(run);
+      }
+      for (const [status, statusRuns] of groups.entries()) {
+        const lane = laneShell(status, `${statusRuns.length} runs`);
+        const body = lane.querySelector(".lane-body");
+        for (const run of statusRuns) {
+          const card = document.createElement("article");
+          card.className = "session-card";
+          card.innerHTML = `
+            <div class="card-head">
+              <h3></h3>
+              <span class="badge ${badgeClass(run.readiness_status)}"></span>
+            </div>
+            <div class="meta"></div>
+            <div class="chip-row"></div>
+            <div class="mini-list"></div>`;
+          card.querySelector("h3").textContent = run.title || run.run_id;
+          card.querySelector(".badge").textContent = run.readiness_status || "unknown";
+          card.querySelector(".meta").textContent = [
+            run.risk_level,
+            run.next_action,
+            `evidence ${formatNumber(run.command_evidence_count)}`,
+          ].filter(Boolean).join(" | ");
+          card.querySelector(".chip-row").replaceChildren(
+            ...[
+              ["tasks", `${formatNumber(run.done_task_count)}/${formatNumber(run.task_count)}`],
+              ["claimable", formatNumber(run.claimable_task_count)],
+              ["workers", formatNumber(run.active_worker_count)],
+              ["leases", formatNumber(run.active_lease_count)],
+              ["findings", formatNumber(run.open_finding_count)],
+              ["approvals", formatNumber(run.pending_approval_count)],
+              ["ledger", formatNumber(run.degraded_ledger_pending_count)],
+            ].map(([label, value]) => {
+              const chip = document.createElement("span");
+              chip.className = "badge";
+              chip.textContent = `${label}: ${value}`;
+              return chip;
+            })
+          );
+          const list = card.querySelector(".mini-list");
+          const reasons = run.blocking_reasons || [];
+          if (!reasons.length) {
+            const empty = document.createElement("div");
+            empty.className = "empty";
+            empty.textContent = "No active blockers.";
+            list.append(empty);
+          } else {
+            for (const reason of reasons.slice(0, 6)) {
+              list.append(row(String(reason), run.run_id, "warning", "blocker"));
+            }
+          }
+          body.append(card);
+        }
+        orchestrationBoard.append(lane);
+      }
+    }
+
     function graphCounts(items, key) {
       return items.reduce((counts, item) => {
         const value = item[key] || "unknown";
@@ -2812,6 +2910,9 @@ def mission_control_html() -> str:
         `/api/workspaces/${encoded}/changesets?limit=${encodeURIComponent(limit)}`
       ].join("");
       const usageUrl = `/api/workspaces/${encoded}/usage`;
+      const orchestrationUrl = [
+        `/api/workspaces/${encoded}/orchestration?limit=${encodeURIComponent(limit)}`
+      ].join("");
       const handoffsUrl = `/api/workspaces/${encoded}/handoffs?limit=${encodeURIComponent(limit)}`;
       const sessionsUrl = [
         `/api/workspaces/${encoded}/sessions?limit=${encodeURIComponent(limit)}`,
@@ -2825,6 +2926,7 @@ def mission_control_html() -> str:
       let codeRiskResponse;
       let changesetsResponse;
       let usageResponse;
+      let orchestrationResponse;
       let handoffResponse;
       try {
         [
@@ -2836,6 +2938,7 @@ def mission_control_html() -> str:
           codeRiskResponse,
           changesetsResponse,
           usageResponse,
+          orchestrationResponse,
           handoffResponse,
         ] = await Promise.all([
           fetch(overviewUrl),
@@ -2846,6 +2949,7 @@ def mission_control_html() -> str:
           fetch(codeRiskUrl),
           fetch(changesetsUrl),
           fetch(usageUrl),
+          fetch(orchestrationUrl),
           fetch(handoffsUrl),
         ]);
         const overview = await overviewResponse.json();
@@ -2856,6 +2960,7 @@ def mission_control_html() -> str:
         const codeRiskPayload = await codeRiskResponse.json();
         const changesetsPayload = await changesetsResponse.json();
         const usagePayload = await usageResponse.json();
+        const orchestrationPayload = await orchestrationResponse.json();
         const handoffPayload = await handoffResponse.json();
         if (!overviewResponse.ok || overview.status === "not_found") {
           setStatus(`Workspace not found: ${workspace}`, true);
@@ -2895,6 +3000,7 @@ def mission_control_html() -> str:
       state.codeRisk = codeRiskPayload;
       state.changesets = changesetsPayload.changesets || [];
       state.usage = usagePayload;
+      state.orchestration = orchestrationPayload;
       state.handoffs = handoffPayload.handoffs || [];
       renderMetrics(overview.counts || {}, collectAgentKeys(events, sessions, overview).length);
       renderProjectTree(projectPayload);
@@ -2902,6 +3008,7 @@ def mission_control_html() -> str:
       renderCodeRiskBoard(codeRiskPayload);
       renderChangesetBoard(changesetsPayload);
       renderUsageBoard(usagePayload);
+      renderOrchestrationBoard(orchestrationPayload);
       renderHandoffBoard(handoffPayload);
       renderAgentBoard(events, sessions, overview);
       renderSessionBoard(sessions);
@@ -2948,6 +3055,7 @@ def match_workspace_route(path: str) -> tuple[str, str] | None:
         "code-risk",
         "changesets",
         "usage",
+        "orchestration",
     }:
         return None
     return parts[2], endpoint

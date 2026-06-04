@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from psycopg import Connection, Error
 
+from geond import degraded_ledger
+from geond.storage import orchestration as orchestration_store
 from geond.storage.repository import (
     list_active_file_reservations,
     list_active_symbol_reservations,
@@ -12,6 +15,8 @@ from geond.storage.repository import (
 )
 from geond.storage.resources import get_workspace_lineage
 from geond.storage.usage import summarize_usage, usage_table_exists
+
+DASHBOARD_ORCHESTRATION_SCHEMA = "geond.dashboard_orchestration.v1"
 
 
 def get_dashboard_workspaces(conn: Connection, limit: int = 100) -> dict[str, Any]:
@@ -120,6 +125,168 @@ def dashboard_workspace_summary(row: tuple[Any, ...]) -> dict[str, Any]:
         "session_sources": sources,
         "agents": agents,
         "latest_activity_at": row[12].isoformat() if row[12] else None,
+    }
+
+
+def get_dashboard_orchestration(
+    conn: Connection,
+    workspace_id_or_uri: str,
+    *,
+    limit: int = 50,
+    base_dir: Path = Path("tmp/geond-runs"),
+) -> dict[str, Any]:
+    workspace = resolve_dashboard_workspace(conn, workspace_id_or_uri)
+    if workspace is None:
+        return {
+            "schema": DASHBOARD_ORCHESTRATION_SCHEMA,
+            "status": "not_found",
+            "workspace_id": workspace_id_or_uri,
+            "runs": [],
+            "summary": dashboard_orchestration_summary([]),
+        }
+    workspace_id, workspace_uri, workspace_name = workspace
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                r.id::text,
+                r.title,
+                r.risk_level,
+                r.status,
+                r.created_by_agent,
+                r.created_at,
+                r.updated_at,
+                (
+                    SELECT count(*) FROM orchestration_tasks t
+                    WHERE t.run_id = r.id
+                ) AS task_count,
+                (
+                    SELECT count(*) FROM orchestration_tasks t
+                    WHERE t.run_id = r.id AND t.status = 'done'
+                ) AS done_task_count,
+                (
+                    SELECT count(*) FROM worker_sessions ws
+                    WHERE ws.run_id = r.id
+                      AND ws.status IN ('registered', 'active', 'idle')
+                ) AS active_worker_count,
+                (
+                    SELECT count(*) FROM task_leases tl
+                    WHERE tl.run_id = r.id
+                      AND tl.released_at IS NULL
+                      AND tl.status IN ('active', 'renewed')
+                ) AS active_lease_count,
+                (
+                    SELECT count(*) FROM review_findings rf
+                    WHERE rf.run_id = r.id AND rf.status = 'open'
+                ) AS open_finding_count,
+                (
+                    SELECT count(*) FROM approval_requests ar
+                    WHERE ar.run_id = r.id AND ar.status = 'requested'
+                ) AS pending_approval_count,
+                (
+                    SELECT count(*) FROM command_evidence ce
+                    WHERE ce.run_id = r.id
+                ) AS command_evidence_count
+            FROM orchestration_runs r
+            WHERE r.workspace_id = %s
+              AND r.status IN ('active', 'paused', 'blocked')
+            ORDER BY r.updated_at DESC, r.created_at DESC
+            LIMIT %s
+            """,
+            (workspace_id, limit),
+        )
+        rows = cur.fetchall()
+    runs = [
+        dashboard_orchestration_run(conn, row, base_dir=base_dir)
+        for row in rows
+    ]
+    return {
+        "schema": DASHBOARD_ORCHESTRATION_SCHEMA,
+        "status": "ok",
+        "workspace_id": workspace_id,
+        "workspace_uri": workspace_uri,
+        "workspace_name": workspace_name,
+        "runs": runs,
+        "summary": dashboard_orchestration_summary(runs),
+    }
+
+
+def dashboard_orchestration_run(
+    conn: Connection,
+    row: tuple[Any, ...],
+    *,
+    base_dir: Path,
+) -> dict[str, Any]:
+    run_id = row[0]
+    readiness = orchestration_store.get_readiness_report(conn, run_id)
+    claimable = orchestration_store.get_claimable_tasks(conn, run_id=run_id, limit=100)
+    blocked = orchestration_store.get_blocked_task_reasons(conn, run_id)
+    ledger = degraded_ledger.ledger_summary(run_id, base_dir)
+    claimable_tasks = claimable.get("tasks") or []
+    blocking_reasons = list(readiness.get("blocking_reasons") or [])
+    blocking_reasons.extend(
+        f"{item.get('title')} blocked by {len(item.get('blockers') or [])} dependencies"
+        for item in blocked.get("blocked_tasks") or []
+    )
+    next_action = dashboard_orchestration_next_action(
+        readiness.get("status"),
+        len(claimable_tasks),
+        ledger.get("pending_count", 0),
+    )
+    return {
+        "run_id": run_id,
+        "title": row[1],
+        "risk_level": row[2],
+        "status": row[3],
+        "created_by_agent": row[4],
+        "created_at": row[5].isoformat() if row[5] else None,
+        "updated_at": row[6].isoformat() if row[6] else None,
+        "readiness_status": readiness.get("status"),
+        "blocking_reasons": blocking_reasons,
+        "claimable_task_count": len(claimable_tasks),
+        "claimable_tasks": [
+            {"task_id": task.get("task_id"), "title": task.get("title")}
+            for task in claimable_tasks[:10]
+        ],
+        "task_count": int(row[7] or 0),
+        "done_task_count": int(row[8] or 0),
+        "active_worker_count": int(row[9] or 0),
+        "active_lease_count": int(row[10] or 0),
+        "open_finding_count": int(row[11] or 0),
+        "pending_approval_count": int(row[12] or 0),
+        "command_evidence_count": int(row[13] or 0),
+        "degraded_ledger_pending_count": int(ledger.get("pending_count") or 0),
+        "next_action": next_action,
+    }
+
+
+def dashboard_orchestration_next_action(
+    readiness_status: str | None,
+    claimable_count: int,
+    degraded_pending_count: int,
+) -> str:
+    if degraded_pending_count:
+        return "reconcile degraded ledger"
+    if readiness_status == "ready":
+        return "finalize run"
+    if readiness_status == "needs_human_approval":
+        return "resolve pending approval"
+    if claimable_count:
+        return "dispatch workers"
+    return "create or unblock task"
+
+
+def dashboard_orchestration_summary(runs: list[dict[str, Any]]) -> dict[str, int]:
+    return {
+        "active_runs": len(runs),
+        "ready_runs": sum(1 for run in runs if run.get("readiness_status") == "ready"),
+        "blocked_runs": sum(1 for run in runs if run.get("blocking_reasons")),
+        "pending_approvals": sum(int(run.get("pending_approval_count") or 0) for run in runs),
+        "active_workers": sum(int(run.get("active_worker_count") or 0) for run in runs),
+        "active_leases": sum(int(run.get("active_lease_count") or 0) for run in runs),
+        "degraded_pending": sum(
+            int(run.get("degraded_ledger_pending_count") or 0) for run in runs
+        ),
     }
 
 

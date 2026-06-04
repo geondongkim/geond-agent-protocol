@@ -6,7 +6,16 @@ from pathlib import Path
 from geond import degraded_ledger, orchestrator, orchestrator_spawn
 
 
-def spawn_status(task_id: str = "task-1") -> dict[str, object]:
+def spawn_status(task_id: str = "task-1", task_count: int = 1) -> dict[str, object]:
+    tasks = [
+        {
+            "task_id": task_id if index == 0 else f"task-{index + 1}",
+            "title": f"Implement task {index + 1}",
+            "description": "Do the work",
+            "status": "ready",
+        }
+        for index in range(task_count)
+    ]
     return {
         "schema": "geond.orchestrator_status.v1",
         "status": "ok",
@@ -17,22 +26,21 @@ def spawn_status(task_id: str = "task-1") -> dict[str, object]:
             "risk_level": "medium",
         },
         "readiness": {"status": "not_ready", "blocking_reasons": ["no completed tasks"]},
-        "claimable_tasks": [
-            {
-                "task_id": task_id,
-                "title": "Implement task",
-                "description": "Do the work",
-                "status": "ready",
-            }
-        ],
+        "claimable_tasks": tasks,
         "open_findings": [],
         "pending_approvals": [],
         "latest_decisions": [],
     }
 
 
-def patch_spawn_context(monkeypatch, tmp_path: Path, *, claimable: bool = True) -> None:
-    status = spawn_status()
+def patch_spawn_context(
+    monkeypatch,
+    tmp_path: Path,
+    *,
+    claimable: bool = True,
+    task_count: int = 1,
+) -> None:
+    status = spawn_status(task_count=task_count)
     if not claimable:
         status["claimable_tasks"] = []
     monkeypatch.setattr(orchestrator, "get_status", lambda *args, **kwargs: status)
@@ -100,6 +108,42 @@ def test_spawn_write_bundle_writes_prompt_only(monkeypatch, tmp_path: Path) -> N
     assert Path(payload["invocation"]["prompt_path"]).exists()
     assert Path(payload["invocation"]["output_schema_path"]).exists()
     assert not Path(payload["invocation"]["events_path"]).exists()
+
+
+def test_spawn_parallel_dry_run_assigns_multiple_agents_without_writes(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    patch_spawn_context(monkeypatch, tmp_path, task_count=2)
+    monkeypatch.setattr(
+        orchestrator_spawn,
+        "find_agent_binary",
+        lambda agent_name: f"/bin/{agent_name}",
+    )
+
+    def fail_write(*args, **kwargs):  # noqa: ANN001, ANN202
+        raise AssertionError("parallel dry-run must not write worker state")
+
+    monkeypatch.setattr(orchestrator.orchestration_store, "register_worker_session", fail_write)
+    monkeypatch.setattr(orchestrator.orchestration_store, "claim_task", fail_write)
+    monkeypatch.setattr(orchestrator.orchestration_store, "record_command_evidence", fail_write)
+    monkeypatch.setattr(orchestrator.orchestration_store, "finish_task_with_handoff", fail_write)
+
+    payload = orchestrator.dispatch_spawn(
+        object(),
+        run_id="run-1",
+        task_ids=["task-1", "task-2"],
+        agent_names=["codex", "claude"],
+        max_workers=2,
+        manifest_base_dir=tmp_path,
+    )
+
+    assert payload["status"] == "ok"
+    assert payload["overall_execution_status"] == "preview"
+    assert len(payload["items"]) == 2
+    assert [item["agent_name"] for item in payload["items"]] == ["codex", "claude"]
+    assert [item["selected_task"]["task_id"] for item in payload["items"]] == ["task-1", "task-2"]
+    assert payload["items"][0]["invocation"]["display_command"]
 
 
 def test_spawn_execute_records_evidence_then_finishes(monkeypatch, tmp_path: Path) -> None:
@@ -195,6 +239,97 @@ def test_spawn_execute_records_evidence_then_finishes(monkeypatch, tmp_path: Pat
     assert payload["execution_status"] == "completed"
     assert calls == ["register", "claim", "evidence", "finish"]
     assert Path(payload["invocation"]["result_path"]).exists()
+
+
+def test_spawn_parallel_execute_reports_partial_success(monkeypatch, tmp_path: Path) -> None:
+    patch_spawn_context(monkeypatch, tmp_path, task_count=2)
+    monkeypatch.setattr(
+        orchestrator_spawn,
+        "find_agent_binary",
+        lambda agent_name: f"/bin/{agent_name}",
+    )
+    evidence_calls: list[str] = []
+    finish_statuses: list[str] = []
+
+    def fake_register(conn, run_id, agent_name, **kwargs):  # noqa: ANN001, ANN202
+        return {
+            "status": "ok",
+            "worker_session": {
+                "worker_session_id": f"worker-{agent_name}",
+                "run_id": run_id,
+                "agent_name": agent_name,
+            },
+        }
+
+    def fake_claim(conn, task_id, agent_name, **kwargs):  # noqa: ANN001, ANN202
+        return {
+            "status": "ok",
+            "lease": {"lease_id": f"lease-{task_id}"},
+            "task": {"task_id": task_id},
+        }
+
+    def fake_record(conn, run_id, command, **kwargs):  # noqa: ANN001, ANN202
+        evidence_calls.append(kwargs["task_id"])
+        return {
+            "status": "ok",
+            "command_evidence": {"command_evidence_id": f"evidence-{kwargs['task_id']}"},
+        }
+
+    def fake_finish(*args, **kwargs):  # noqa: ANN001, ANN202
+        finish_statuses.append(kwargs["task_status"])
+        return {"status": "ok", "handoff_id": f"handoff-{kwargs['task_status']}"}
+
+    monkeypatch.setattr(orchestrator.orchestration_store, "register_worker_session", fake_register)
+    monkeypatch.setattr(orchestrator.orchestration_store, "claim_task", fake_claim)
+    monkeypatch.setattr(orchestrator.orchestration_store, "record_command_evidence", fake_record)
+    monkeypatch.setattr(orchestrator.orchestration_store, "finish_task_with_handoff", fake_finish)
+
+    def fake_runner(command, prompt, invocation, timeout_seconds):  # noqa: ANN001, ANN202
+        if '"task_id": "task-2"' in prompt:
+            return orchestrator_spawn.CodexRunResult(
+                exit_code=1,
+                timed_out=False,
+                stdout="",
+                stderr="failed task",
+                command=command,
+            )
+        invocation.last_message_path.write_text(
+            json.dumps(
+                {
+                    "task_status": "done",
+                    "summary": "Completed first task.",
+                    "tested_commands": [{"command": "uv run pytest", "exit_code": 0}],
+                    "changed_files": [],
+                    "risks": [],
+                    "next_action": "continue",
+                }
+            ),
+            encoding="utf-8",
+        )
+        return orchestrator_spawn.CodexRunResult(
+            exit_code=0,
+            timed_out=False,
+            stdout="",
+            stderr="",
+            command=command,
+        )
+
+    payload = orchestrator.dispatch_spawn(
+        object(),
+        run_id="run-1",
+        execute=True,
+        task_ids=["task-1", "task-2"],
+        agent_names=["codex", "claude"],
+        max_workers=2,
+        manifest_base_dir=tmp_path,
+        codex_runner=fake_runner,
+    )
+
+    assert payload["overall_execution_status"] == "partial"
+    assert payload["completed_count"] == 1
+    assert payload["failed_count"] == 1
+    assert evidence_calls == ["task-1"]
+    assert sorted(finish_statuses) == ["blocked", "done"]
 
 
 def test_spawn_execute_blocks_on_codex_failure_without_evidence(

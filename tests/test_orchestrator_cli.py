@@ -131,7 +131,14 @@ def test_orchestrator_status_dispatch_resume_finalize_cli(monkeypatch, capsys) -
     monkeypatch.setattr(
         sys,
         "argv",
-        ["geond-orchestrator", "finalize", "run-1", "--write-manifest"],
+        [
+            "geond-orchestrator",
+            "finalize",
+            "run-1",
+            "--write-manifest",
+            "--git-checkpoint",
+            "--dry-run",
+        ],
     )
     orchestrator_cli.main()
     assert capsys.readouterr().out == "# Finalize\n"
@@ -141,6 +148,8 @@ def test_orchestrator_status_dispatch_resume_finalize_cli(monkeypatch, capsys) -
     assert captured["dispatch"]["agent_name"] == "claude"
     assert captured["resume"]["run_id"] == "run-1"
     assert captured["finalize"]["write_manifest"] is True
+    assert captured["finalize"]["git_checkpoint"] is True
+    assert captured["finalize"]["dry_run"] is True
 
 
 def test_orchestrator_spawn_dispatch_cli_wires_service(monkeypatch, capsys, tmp_path: Path) -> None:
@@ -171,9 +180,13 @@ def test_orchestrator_spawn_dispatch_cli_wires_service(monkeypatch, capsys, tmp_
             "spawn",
             "--agent",
             "codex",
+            "--agents",
+            "codex,claude",
             "--execute",
             "--task",
             "task-1",
+            "--task",
+            "task-2",
             "--model",
             "gpt-5",
             "--sandbox",
@@ -181,6 +194,8 @@ def test_orchestrator_spawn_dispatch_cli_wires_service(monkeypatch, capsys, tmp_
             "--timeout-seconds",
             "12",
             "--write-bundle",
+            "--max-workers",
+            "2",
             "--base-dir",
             str(tmp_path),
             "--format",
@@ -197,6 +212,9 @@ def test_orchestrator_spawn_dispatch_cli_wires_service(monkeypatch, capsys, tmp_
         "agent_name": "codex",
         "execute": True,
         "task_id": "task-1",
+        "task_ids": ["task-1", "task-2"],
+        "agent_names": ["codex", "claude"],
+        "max_workers": 2,
         "model": "gpt-5",
         "sandbox": "workspace-write",
         "timeout_seconds": 12,

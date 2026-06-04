@@ -8,11 +8,13 @@ import pytest
 
 from geond.config import get_settings
 from geond.db import connect, run_schema_file
+from geond.storage import orchestration
 from geond.storage.benchmark import save_benchmark_run
 from geond.storage.dashboard import (
     get_agent_activity_events,
     get_dashboard_changesets,
     get_dashboard_code_risk,
+    get_dashboard_orchestration,
     get_dashboard_overview,
     get_dashboard_project_activity,
     get_dashboard_sessions,
@@ -32,6 +34,8 @@ from geond.storage.usage import insert_usage_event
 
 SCHEMA = Path(__file__).parents[1] / "schemas" / "001_initial.sql"
 USAGE_SCHEMA = Path(__file__).parents[1] / "schemas" / "003_llm_usage.sql"
+ORCHESTRATION_SCHEMA = Path(__file__).parents[1] / "schemas" / "007_orchestration.sql"
+TASK_GRAPH_SCHEMA = Path(__file__).parents[1] / "schemas" / "008_orchestration_task_graph.sql"
 
 
 def test_dashboard_overview_and_activity_events() -> None:
@@ -45,6 +49,8 @@ def test_dashboard_overview_and_activity_events() -> None:
     with conn:
         try:
             run_schema_file(conn, SCHEMA)
+            run_schema_file(conn, ORCHESTRATION_SCHEMA)
+            run_schema_file(conn, TASK_GRAPH_SCHEMA)
         except psycopg.Error as exc:
             pytest.skip(f"Postgres integration schema is not available: {exc}")
 
@@ -121,6 +127,48 @@ def test_dashboard_overview_and_activity_events() -> None:
                 label="dashboard-smoke",
                 workspace_uri=workspace_id,
             )
+            run = orchestration.create_run(
+                conn,
+                workspace_id,
+                "Dashboard orchestration run",
+                risk_level="high",
+            )
+            task = orchestration.create_task(
+                conn,
+                run["run"]["run_id"],
+                "Inspect mission control state",
+            )
+            worker = orchestration.register_worker_session(
+                conn,
+                run["run"]["run_id"],
+                "codex",
+            )
+            orchestration.claim_task(
+                conn,
+                task["task"]["task_id"],
+                "codex",
+                worker_session_id=worker["worker_session"]["worker_session_id"],
+            )
+            orchestration.record_command_evidence(
+                conn,
+                run["run"]["run_id"],
+                command="uv run pytest tests/test_dashboard.py",
+                task_id=task["task"]["task_id"],
+                worker_session_id=worker["worker_session"]["worker_session_id"],
+                exit_code=0,
+            )
+            orchestration.record_review_finding(
+                conn,
+                run["run"]["run_id"],
+                "Mission control needs review.",
+                severity="P1",
+            )
+            orchestration.request_approval(
+                conn,
+                run["run"]["run_id"],
+                "High-risk dashboard release gate.",
+                risk_level="high",
+            )
 
             overview = get_dashboard_overview(conn, workspace_id, limit=10)
             activity = get_agent_activity_events(conn, workspace_uri, limit=20)
@@ -137,6 +185,12 @@ def test_dashboard_overview_and_activity_events() -> None:
             project = get_dashboard_project_activity(conn, workspace_id, limit=10)
             code_risk = get_dashboard_code_risk(conn, workspace_id, limit=10)
             changesets = get_dashboard_changesets(conn, workspace_id, limit=10)
+            orchestration_dashboard = get_dashboard_orchestration(
+                conn,
+                workspace_id,
+                limit=10,
+                base_dir=Path("tmp/geond-runs"),
+            )
 
             assert overview["status"] == "ok"
             assert overview["counts"]["sessions"] >= 1
@@ -195,6 +249,14 @@ def test_dashboard_overview_and_activity_events() -> None:
             assert changesets["summary"]["changesets"] == 1
             assert changesets["summary"]["files"] == 1
             assert changesets["changesets"][0]["files"][0]["file_path"] == "service.py"
+            assert orchestration_dashboard["schema"] == "geond.dashboard_orchestration.v1"
+            assert orchestration_dashboard["summary"]["active_runs"] >= 1
+            assert orchestration_dashboard["runs"][0]["readiness_status"] == "not_ready"
+            assert orchestration_dashboard["runs"][0]["active_worker_count"] == 1
+            assert orchestration_dashboard["runs"][0]["active_lease_count"] == 1
+            assert orchestration_dashboard["runs"][0]["open_finding_count"] == 1
+            assert orchestration_dashboard["runs"][0]["pending_approval_count"] == 1
+            assert orchestration_dashboard["runs"][0]["command_evidence_count"] == 1
         finally:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM workspaces WHERE id = %s", (workspace_id,))

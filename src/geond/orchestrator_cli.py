@@ -34,12 +34,14 @@ def main() -> None:
     dispatch_cmd.add_argument("--run", dest="run_id", required=True)
     dispatch_cmd.add_argument("--mode", choices=["claim", "spawn"], default="claim")
     dispatch_cmd.add_argument("--agent", default="codex")
+    dispatch_cmd.add_argument("--agents")
     dispatch_cmd.add_argument("--execute", action="store_true")
-    dispatch_cmd.add_argument("--task", dest="task_id")
+    dispatch_cmd.add_argument("--task", dest="task_ids", action="append")
     dispatch_cmd.add_argument("--model")
     dispatch_cmd.add_argument("--sandbox", default="workspace-write")
     dispatch_cmd.add_argument("--timeout-seconds", type=int, default=3600)
     dispatch_cmd.add_argument("--write-bundle", action="store_true")
+    dispatch_cmd.add_argument("--max-workers", type=int, default=1)
     dispatch_cmd.add_argument(
         "--base-dir",
         type=Path,
@@ -59,6 +61,18 @@ def main() -> None:
     finalize_cmd = subparsers.add_parser("finalize", help="Finalize a ready run")
     finalize_cmd.add_argument("run_id")
     finalize_cmd.add_argument("--write-manifest", action="store_true")
+    finalize_cmd.add_argument("--git-checkpoint", action="store_true")
+    finalize_cmd.add_argument("--commit", action="store_true")
+    finalize_cmd.add_argument("--path", dest="paths", action="append")
+    finalize_cmd.add_argument("--stage-all", action="store_true")
+    finalize_cmd.add_argument("--commit-message")
+    finalize_cmd.add_argument("--push", action="store_true")
+    finalize_cmd.add_argument("--remote", default="origin")
+    finalize_cmd.add_argument("--branch", default="CURRENT")
+    finalize_cmd.add_argument("--create-pr", action="store_true")
+    finalize_cmd.add_argument("--pr-title")
+    finalize_cmd.add_argument("--pr-body-file", type=Path)
+    finalize_cmd.add_argument("--dry-run", action="store_true")
     finalize_cmd.add_argument(
         "--base-dir",
         type=Path,
@@ -93,7 +107,10 @@ def main() -> None:
                     run_id=args.run_id,
                     agent_name=args.agent,
                     execute=args.execute,
-                    task_id=args.task_id,
+                    task_id=args.task_ids[0] if args.task_ids else None,
+                    task_ids=args.task_ids if args.task_ids and len(args.task_ids) > 1 else None,
+                    agent_names=parse_agents(args.agents),
+                    max_workers=args.max_workers,
                     model=args.model,
                     sandbox=args.sandbox,
                     timeout_seconds=args.timeout_seconds,
@@ -112,6 +129,18 @@ def main() -> None:
                 args.run_id,
                 write_manifest=args.write_manifest,
                 manifest_base_dir=args.base_dir,
+                git_checkpoint=args.git_checkpoint,
+                commit=args.commit,
+                paths=args.paths or [],
+                stage_all=args.stage_all,
+                commit_message=args.commit_message,
+                push=args.push,
+                remote=args.remote,
+                branch=args.branch,
+                create_pr=args.create_pr,
+                pr_title=args.pr_title,
+                pr_body_file=args.pr_body_file,
+                dry_run=args.dry_run,
             )
         else:
             parser.error(f"Unsupported command: {args.command}")
@@ -128,6 +157,13 @@ def print_payload(payload: dict[str, Any], output_format: str) -> None:
         print(markdown, end="")
     else:
         print(json.dumps(payload, ensure_ascii=False, indent=2, default=str))
+
+
+def parse_agents(value: str | None) -> list[str] | None:
+    if not value:
+        return None
+    agents = [item.strip() for item in value.split(",") if item.strip()]
+    return agents or None
 
 
 if __name__ == "__main__":

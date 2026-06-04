@@ -16,6 +16,7 @@ def sample_package(run_id: str = "run-1", *, claimable: bool = True) -> dict[str
         "status": "ok",
         "run": {
             "run_id": run_id,
+            "workspace_id": "00000000-0000-0000-0000-000000000001",
             "title": "Fix checkout flow",
             "risk_level": "medium",
             "status": "active",
@@ -257,3 +258,146 @@ def test_finalize_gates_manifest_on_readiness(monkeypatch, tmp_path: Path) -> No
     )
     assert ready["status"] == "ok"
     assert writes[0]["base_dir"] == tmp_path
+
+
+def patch_ready_finalize_context(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(
+        orchestrator.orchestration_store,
+        "get_run_handoff_package",
+        lambda conn, run_id, limit=100: sample_package(run_id),
+    )
+    monkeypatch.setattr(
+        orchestrator.orchestration_store,
+        "get_readiness_report",
+        lambda conn, run_id: ready_report(),
+    )
+    monkeypatch.setattr(
+        orchestrator.orchestration_store,
+        "get_claimable_tasks",
+        lambda conn, **kwargs: {"status": "ok", "tasks": []},
+    )
+    monkeypatch.setattr(
+        orchestrator.orchestration_store,
+        "summarize_run",
+        lambda conn, run_id: {"status": "ok", "markdown": "# Summary\n"},
+    )
+    monkeypatch.setattr(
+        orchestrator.orchestrator_spawn,
+        "get_workspace_root_uri",
+        lambda conn, workspace_id: tmp_path.as_uri(),
+    )
+
+
+def test_finalize_git_checkpoint_validates_safety_gates(monkeypatch, tmp_path: Path) -> None:
+    patch_ready_finalize_context(monkeypatch, tmp_path)
+
+    missing_target = orchestrator.finalize_run(
+        object(),
+        "run-1",
+        commit=True,
+        manifest_base_dir=tmp_path,
+    )
+    dry_run = orchestrator.finalize_run(
+        object(),
+        "run-1",
+        git_checkpoint=True,
+        commit=True,
+        stage_all=True,
+        push=True,
+        create_pr=True,
+        dry_run=True,
+        manifest_base_dir=tmp_path,
+    )
+
+    assert missing_target["status"] == "error"
+    assert missing_target["code"] == "GIT_STAGE_TARGET_REQUIRED"
+    assert dry_run["status"] == "ok"
+    assert dry_run["git_result"]["dry_run"] is True
+    planned = [item["command"] for item in dry_run["git_result"]["planned_commands"]]
+    assert any(command.startswith("git commit") for command in planned)
+    assert any(command.startswith("git push") for command in planned)
+    assert any(command.startswith("gh pr create") for command in planned)
+
+
+def test_finalize_git_mutation_blocks_on_pending_degraded_ledger(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    status_payload = {
+        "schema": "geond.orchestrator_status.v1",
+        "status": "ok",
+        "run": sample_package("run-1")["run"],
+        "readiness": ready_report(),
+        "degraded_ledger": {"pending_count": 1},
+    }
+    monkeypatch.setattr(orchestrator, "get_status", lambda *args, **kwargs: status_payload)
+    monkeypatch.setattr(
+        orchestrator.orchestration_store,
+        "summarize_run",
+        lambda conn, run_id: {"status": "ok", "markdown": "# Summary\n"},
+    )
+
+    payload = orchestrator.finalize_run(
+        object(),
+        "run-1",
+        commit=True,
+        stage_all=True,
+        manifest_base_dir=tmp_path,
+    )
+
+    assert payload["status"] == "error"
+    assert payload["code"] == "DEGRADED_LEDGER_PENDING"
+
+
+def test_finalize_git_records_command_evidence_and_decision(monkeypatch, tmp_path: Path) -> None:
+    patch_ready_finalize_context(monkeypatch, tmp_path)
+    monkeypatch.setattr(orchestrator.orchestrator_finalize, "find_gh_binary", lambda: "/usr/bin/gh")
+    evidence_commands: list[str] = []
+    decisions: list[dict[str, object]] = []
+
+    def fake_record_evidence(conn, run_id, command, **kwargs):  # noqa: ANN001, ANN202
+        evidence_commands.append(command)
+        return {"status": "ok", "command_evidence": {"command_evidence_id": command}}
+
+    def fake_record_decision(conn, run_id, decision, **kwargs):  # noqa: ANN001, ANN202
+        decisions.append({"decision": decision, **kwargs})
+        return {"status": "ok", "decision": {"decision_id": "decision-1"}}
+
+    def fake_runner(command, *, cwd, timeout_seconds):  # noqa: ANN001, ANN202
+        stdout = ""
+        if command[:2] == ["git", "rev-parse"]:
+            stdout = "abc123\n"
+        elif command[:2] == ["git", "branch"]:
+            stdout = "codex/test\n"
+        elif command[:3] == ["gh", "pr", "create"]:
+            stdout = "https://github.com/example/repo/pull/1\n"
+        return {"command": command, "exit_code": 0, "stdout": stdout, "stderr": ""}
+
+    monkeypatch.setattr(
+        orchestrator.orchestration_store,
+        "record_command_evidence",
+        fake_record_evidence,
+    )
+    monkeypatch.setattr(orchestrator.orchestration_store, "record_decision", fake_record_decision)
+
+    payload = orchestrator.finalize_run(
+        object(),
+        "run-1",
+        git_checkpoint=True,
+        commit=True,
+        stage_all=True,
+        commit_message="Finalize run",
+        push=True,
+        create_pr=True,
+        pr_title="Finalize run",
+        manifest_base_dir=tmp_path,
+        command_runner=fake_runner,
+    )
+
+    assert payload["status"] == "ok"
+    assert payload["git_result"]["commit_sha"] == "abc123"
+    assert payload["git_result"]["branch"] == "codex/test"
+    assert payload["git_result"]["pr_url"] == "https://github.com/example/repo/pull/1"
+    assert any(command.startswith("git commit") for command in evidence_commands)
+    assert decisions[0]["metadata"]["git"]["commit_sha"] == "abc123"
+    assert decisions[0]["metadata"]["git"]["pr_url"] == "https://github.com/example/repo/pull/1"

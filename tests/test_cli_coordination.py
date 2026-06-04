@@ -152,6 +152,44 @@ def test_finish_task_cli_wires_wrapper(monkeypatch, capsys) -> None:
     assert captured["reservation_mode"] == "release"
 
 
+def test_dashboard_orchestration_cli_wires_storage(monkeypatch, capsys, tmp_path) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_connect(settings) -> FakeConnection:  # noqa: ANN001
+        return FakeConnection()
+
+    def fake_dashboard_orchestration(conn, workspace_id_or_uri, **kwargs):  # noqa: ANN001, ANN202
+        captured["workspace_id_or_uri"] = workspace_id_or_uri
+        captured.update(kwargs)
+        return {"schema": "geond.dashboard_orchestration.v1", "status": "ok", "runs": []}
+
+    monkeypatch.setattr(cli, "connect", fake_connect)
+    monkeypatch.setattr(cli, "get_dashboard_orchestration", fake_dashboard_orchestration)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "geond",
+            "dashboard-orchestration",
+            "file:///repo",
+            "--limit",
+            "5",
+            "--base-dir",
+            str(tmp_path),
+        ],
+    )
+
+    cli.main()
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["schema"] == "geond.dashboard_orchestration.v1"
+    assert captured == {
+        "workspace_id_or_uri": "file:///repo",
+        "limit": 5,
+        "base_dir": tmp_path,
+    }
+
+
 def test_orchestration_goal_start_cli_wires_storage(monkeypatch, capsys) -> None:
     captured: dict[str, object] = {}
 
