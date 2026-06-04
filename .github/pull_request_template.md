@@ -4,6 +4,8 @@
 
 ## Validation
 
+- [ ] `uv run pre-commit run --all-files`
+- [ ] `uv run pytest`
 - [ ] `uv run python scripts/check_docs_links.py`
 - [ ] `uv run geond doctor --format text`
 - [ ] `uv run geond mcp-smoke --format text --strict`
