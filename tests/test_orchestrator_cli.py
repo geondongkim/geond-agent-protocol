@@ -146,6 +146,9 @@ def test_orchestrator_status_dispatch_resume_finalize_cli(monkeypatch, capsys) -
             "run-1",
             "--agents",
             "codex,claude",
+            "--propose-task-graph",
+            "--template",
+            "bugfix",
             "--write-bundle",
         ],
     )
@@ -160,10 +163,13 @@ def test_orchestrator_status_dispatch_resume_finalize_cli(monkeypatch, capsys) -
             "agent",
             "run-1",
             "--execute",
+            "--allow-task-graph-create",
             "--max-steps",
             "2",
             "--agents",
             "codex,claude",
+            "--template",
+            "implementation",
             "--max-workers",
             "2",
             "--model",
@@ -226,11 +232,15 @@ def test_orchestrator_status_dispatch_resume_finalize_cli(monkeypatch, capsys) -
     assert captured["plan"]["workspace_id_or_uri"] == "file:///repo"
     assert captured["plan"]["run_id"] == "run-1"
     assert captured["plan"]["agents"] == ["codex", "claude"]
+    assert captured["plan"]["propose_task_graph"] is True
+    assert captured["plan"]["template"] == "bugfix"
     assert captured["plan"]["write_bundle"] is True
     assert captured["agent"]["run_id"] == "run-1"
     assert captured["agent"]["execute"] is True
+    assert captured["agent"]["allow_task_graph_create"] is True
     assert captured["agent"]["max_steps"] == 2
     assert captured["agent"]["agents"] == ["codex", "claude"]
+    assert captured["agent"]["template"] == "implementation"
     assert captured["agent"]["max_workers"] == 2
     assert captured["agent"]["model"] == "gpt-5"
     assert captured["agent"]["timeout_seconds"] == 12
@@ -243,6 +253,89 @@ def test_orchestrator_status_dispatch_resume_finalize_cli(monkeypatch, capsys) -
     assert captured["finalize"]["write_manifest"] is True
     assert captured["finalize"]["git_checkpoint"] is True
     assert captured["finalize"]["dry_run"] is True
+
+
+def test_orchestrator_graph_cli_wires_task_planner(monkeypatch, capsys, tmp_path: Path) -> None:
+    captured: dict[str, object] = {}
+    source_path = tmp_path / "proposal.json"
+    output_path = tmp_path / "out.json"
+    source_path.write_text('{"tasks":[{"key":"design","title":"Design"}]}', encoding="utf-8")
+
+    def fake_connect(settings) -> FakeConnection:  # noqa: ANN001
+        return FakeConnection()
+
+    def fake_propose(conn, run_id, **kwargs):  # noqa: ANN001, ANN202
+        captured["propose"] = {"run_id": run_id, **kwargs}
+        return {
+            "schema": "geond.task_graph_proposal.v1",
+            "status": "ok",
+            "proposal_id": "proposal-1",
+            "tasks": [],
+            "markdown": "# Proposal\n",
+        }
+
+    def fake_write(payload, path):  # noqa: ANN001, ANN202
+        captured["write"] = {"payload": payload, "path": path}
+        path.write_text("{}", encoding="utf-8")
+        return {"proposal_path": str(path)}
+
+    def fake_apply(conn, run_id, path, **kwargs):  # noqa: ANN001, ANN202
+        captured["apply"] = {"run_id": run_id, "path": path, **kwargs}
+        return {
+            "schema": "geond.task_graph_materialization.v1",
+            "status": "ok",
+            "markdown": "# Apply\n",
+        }
+
+    monkeypatch.setattr(orchestrator_cli, "connect", fake_connect)
+    monkeypatch.setattr(
+        orchestrator_cli.orchestrator_task_planner,
+        "propose_task_graph",
+        fake_propose,
+    )
+    monkeypatch.setattr(orchestrator_cli.orchestrator_task_planner, "write_proposal", fake_write)
+    monkeypatch.setattr(
+        orchestrator_cli.orchestrator_task_planner,
+        "apply_task_graph_file",
+        fake_apply,
+    )
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "geond-orchestrator",
+            "graph",
+            "propose",
+            "run-1",
+            "--template",
+            "docs",
+            "--output",
+            str(output_path),
+        ],
+    )
+    orchestrator_cli.main()
+    assert capsys.readouterr().out.startswith("# Task Graph Proposal\n")
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "geond-orchestrator",
+            "graph",
+            "apply",
+            "run-1",
+            "--from",
+            str(source_path),
+            "--execute",
+        ],
+    )
+    orchestrator_cli.main()
+    assert capsys.readouterr().out == "# Apply\n"
+
+    assert captured["propose"] == {"run_id": "run-1", "template": "docs"}
+    assert captured["write"]["path"] == output_path
+    assert captured["apply"] == {"run_id": "run-1", "path": source_path, "execute": True}
 
 
 def test_orchestrator_spawn_dispatch_cli_wires_service(monkeypatch, capsys, tmp_path: Path) -> None:

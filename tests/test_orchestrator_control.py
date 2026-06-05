@@ -2,7 +2,27 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from geond import orchestrator_control
+
+SUGGESTED_GRAPH_APPLY = "geond-orchestrator agent run-1 --execute --allow-task-graph-create"
+
+
+@pytest.fixture(autouse=True)
+def disable_task_graph_proposal(monkeypatch) -> None:  # noqa: ANN001
+    monkeypatch.setattr(
+        orchestrator_control.orchestrator_task_planner,
+        "propose_task_graph",
+        lambda *args, **kwargs: {
+            "schema": "geond.task_graph_proposal.v1",
+            "status": "ok",
+            "code": None,
+            "eligible_for_materialization": False,
+            "eligibility_reason": "not needed",
+            "tasks": [],
+        },
+    )
 
 
 def action(action_type: str, *, priority: int = 50, blocks: bool = False) -> dict[str, object]:
@@ -82,6 +102,47 @@ def test_plan_mode_wraps_existing_planner_without_mutating(monkeypatch, tmp_path
     assert payload["next_action"] == "dispatch_spawn"
     assert Path(payload["bundle"]["control_plan_path"]).exists()
     assert calls == ["plan"]
+
+
+def test_plan_mode_can_prioritize_task_graph_materialization(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    proposal = {
+        "schema": "geond.task_graph_proposal.v1",
+        "status": "ok",
+        "code": None,
+        "run_id": "run-1",
+        "proposal_id": "proposal-1",
+        "template": "implementation",
+        "eligible_for_materialization": True,
+        "eligibility_reason": "placeholder only",
+        "planning_placeholder_task": {"task_id": "task-1"},
+        "tasks": [{"key": "design", "title": "Design", "depends_on": []}],
+        "suggested_apply_command": SUGGESTED_GRAPH_APPLY,
+    }
+    monkeypatch.setattr(
+        orchestrator_control.orchestrator_planner,
+        "create_plan",
+        lambda *args, **kwargs: plan_payload(action("dispatch_spawn", priority=55)),
+    )
+    monkeypatch.setattr(
+        orchestrator_control.orchestrator_task_planner,
+        "propose_task_graph",
+        lambda *args, **kwargs: proposal,
+    )
+
+    payload = orchestrator_control.run_plan_mode(
+        object(),
+        workspace_id_or_uri="file:///repo",
+        run_id="run-1",
+        base_dir=tmp_path,
+        propose_task_graph=True,
+    )
+
+    assert payload["next_action"] == "materialize_task_graph"
+    assert payload["proposal_id"] == "proposal-1"
+    assert payload["plan"]["recommended_actions"][0]["action_type"] == "materialize_task_graph"
 
 
 def test_agent_preview_selects_spawn_without_executing(monkeypatch, tmp_path: Path) -> None:
@@ -232,6 +293,133 @@ def test_agent_execute_stops_on_partial_spawn(monkeypatch, tmp_path: Path) -> No
     assert payload["status"] == "partial"
     assert payload["execution_status"] == "partial"
     assert payload["code"] == "PARTIAL_SPAWN_FAILURE"
+
+
+def test_agent_preview_surfaces_task_graph_without_writes(monkeypatch, tmp_path: Path) -> None:
+    proposal = {
+        "schema": "geond.task_graph_proposal.v1",
+        "status": "ok",
+        "code": None,
+        "run_id": "run-1",
+        "proposal_id": "proposal-1",
+        "template": "implementation",
+        "eligible_for_materialization": True,
+        "eligibility_reason": "placeholder only",
+        "planning_placeholder_task": {"task_id": "task-1"},
+        "tasks": [{"key": "design", "title": "Design", "depends_on": []}],
+        "suggested_apply_command": SUGGESTED_GRAPH_APPLY,
+    }
+
+    monkeypatch.setattr(
+        orchestrator_control.orchestrator_planner,
+        "doctor_run",
+        lambda *args, **kwargs: plan_payload(action("dispatch_spawn", priority=55)),
+    )
+    monkeypatch.setattr(
+        orchestrator_control.orchestrator_task_planner,
+        "propose_task_graph",
+        lambda *args, **kwargs: proposal,
+    )
+    monkeypatch.setattr(
+        orchestrator_control.orchestrator_task_planner,
+        "apply_task_graph_payload",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("preview must not apply")),
+    )
+
+    payload = orchestrator_control.run_agent_mode(object(), "run-1", base_dir=tmp_path)
+
+    assert payload["next_action"] == "materialize_task_graph"
+    assert payload["proposal_id"] == "proposal-1"
+    assert payload["execution_status"] == "preview"
+
+
+def test_agent_execute_requires_task_graph_approval(monkeypatch, tmp_path: Path) -> None:
+    proposal = {
+        "schema": "geond.task_graph_proposal.v1",
+        "status": "ok",
+        "code": None,
+        "run_id": "run-1",
+        "proposal_id": "proposal-1",
+        "template": "implementation",
+        "eligible_for_materialization": True,
+        "eligibility_reason": "placeholder only",
+        "planning_placeholder_task": {"task_id": "task-1"},
+        "tasks": [{"key": "design", "title": "Design", "depends_on": []}],
+        "suggested_apply_command": SUGGESTED_GRAPH_APPLY,
+    }
+    monkeypatch.setattr(
+        orchestrator_control.orchestrator_planner,
+        "doctor_run",
+        lambda *args, **kwargs: plan_payload(action("dispatch_spawn", priority=55)),
+    )
+    monkeypatch.setattr(
+        orchestrator_control.orchestrator_task_planner,
+        "propose_task_graph",
+        lambda *args, **kwargs: proposal,
+    )
+
+    payload = orchestrator_control.run_agent_mode(
+        object(),
+        "run-1",
+        execute=True,
+        base_dir=tmp_path,
+    )
+
+    assert payload["status"] == "blocked"
+    assert payload["code"] == "TASK_GRAPH_APPROVAL_REQUIRED"
+    assert payload["steps"][0]["step_status"] == "manual_required"
+
+
+def test_agent_execute_applies_allowed_task_graph(monkeypatch, tmp_path: Path) -> None:
+    proposal = {
+        "schema": "geond.task_graph_proposal.v1",
+        "status": "ok",
+        "code": None,
+        "run_id": "run-1",
+        "proposal_id": "proposal-1",
+        "template": "implementation",
+        "eligible_for_materialization": True,
+        "eligibility_reason": "placeholder only",
+        "planning_placeholder_task": {"task_id": "task-1"},
+        "tasks": [{"key": "design", "title": "Design", "depends_on": []}],
+        "suggested_apply_command": SUGGESTED_GRAPH_APPLY,
+    }
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        orchestrator_control.orchestrator_planner,
+        "doctor_run",
+        lambda *args, **kwargs: plan_payload(action("dispatch_spawn", priority=55)),
+    )
+    monkeypatch.setattr(
+        orchestrator_control.orchestrator_task_planner,
+        "propose_task_graph",
+        lambda *args, **kwargs: proposal,
+    )
+
+    def fake_apply(conn, run_id, graph_payload, **kwargs):  # noqa: ANN001, ANN202
+        calls.append({"run_id": run_id, "graph_payload": graph_payload, **kwargs})
+        return {
+            "schema": "geond.task_graph_materialization.v1",
+            "status": "ok",
+            "code": None,
+        }
+
+    monkeypatch.setattr(
+        orchestrator_control.orchestrator_task_planner,
+        "apply_task_graph_payload",
+        fake_apply,
+    )
+
+    payload = orchestrator_control.run_agent_mode(
+        object(),
+        "run-1",
+        execute=True,
+        allow_task_graph_create=True,
+        base_dir=tmp_path,
+    )
+
+    assert payload["execution_status"] == "completed"
+    assert calls == [{"run_id": "run-1", "graph_payload": proposal, "execute": True}]
 
 
 def test_agent_execute_finalizes_ready_run_dry_run_only(monkeypatch, tmp_path: Path) -> None:

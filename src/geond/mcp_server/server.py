@@ -7,7 +7,7 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from geond import orchestrator_control, orchestrator_planner
+from geond import orchestrator_control, orchestrator_planner, orchestrator_task_planner
 from geond.config import get_settings
 from geond.db import connect
 from geond.embeddings import get_embedding_provider
@@ -1786,6 +1786,20 @@ def preview_orchestrator_agent_step(
         )
 
 
+@mcp.tool()
+def propose_orchestrator_task_graph(
+    run_id: str,
+    template: str = "auto",
+) -> dict[str, Any]:
+    """Return a read-only deterministic task graph proposal for one orchestrator run."""
+    with connect(get_settings()) as conn:
+        return orchestrator_task_planner.propose_task_graph(
+            conn,
+            run_id,
+            template=template,
+        )
+
+
 @mcp.resource("geond://sessions", mime_type="application/json")
 def sessions_resource() -> list[dict[str, Any]]:
     """List recent imported sessions."""
@@ -2008,6 +2022,7 @@ _ORCH_PARAM_DESCRIPTIONS = {
     "sandbox": "Worker sandbox profile, usually workspace-write.",
     "timeout_seconds": "Maximum spawned worker runtime in seconds.",
     "base_dir": "Local-only run artifact base directory, usually tmp/geond-runs.",
+    "template": "Task graph proposal template: auto, bugfix, implementation, docs, or ops.",
 }
 
 
@@ -2290,6 +2305,12 @@ TOOL_METADATA.update(
                 "base_dir",
             ],
             output="a geond.orchestrator_control.v1 preview payload",
+        ),
+        "propose_orchestrator_task_graph": _orchestration_metadata(
+            title="Get task graph proposal",
+            purpose="Build a deterministic read-only task graph proposal for a run.",
+            params=["run_id", "template"],
+            output="a geond.task_graph_proposal.v1 payload",
         ),
     }
 )

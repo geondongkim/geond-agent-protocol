@@ -5,7 +5,12 @@ import json
 from pathlib import Path
 from typing import Any
 
-from geond import orchestrator, orchestrator_control, orchestrator_planner
+from geond import (
+    orchestrator,
+    orchestrator_control,
+    orchestrator_planner,
+    orchestrator_task_planner,
+)
 from geond.config import get_settings
 from geond.db import connect
 
@@ -34,6 +39,8 @@ def main() -> None:
     plan_cmd.add_argument("--workspace", required=True)
     plan_cmd.add_argument("--run", dest="run_id")
     plan_cmd.add_argument("--agents")
+    plan_cmd.add_argument("--propose-task-graph", action="store_true")
+    plan_cmd.add_argument("--template", default="auto")
     plan_cmd.add_argument("--write-bundle", action="store_true")
     plan_cmd.add_argument(
         "--base-dir",
@@ -46,8 +53,10 @@ def main() -> None:
     agent_cmd = subparsers.add_parser("agent", help="Preview or execute the next safe agent step")
     agent_cmd.add_argument("run_id")
     agent_cmd.add_argument("--execute", action="store_true")
+    agent_cmd.add_argument("--allow-task-graph-create", action="store_true")
     agent_cmd.add_argument("--max-steps", type=int, default=1)
     agent_cmd.add_argument("--agents")
+    agent_cmd.add_argument("--template", default="auto")
     agent_cmd.add_argument("--max-workers", type=int, default=1)
     agent_cmd.add_argument("--model")
     agent_cmd.add_argument("--sandbox", default="workspace-write")
@@ -90,6 +99,19 @@ def main() -> None:
         default=orchestrator.DEFAULT_MANIFEST_BASE_DIR,
     )
     dispatch_cmd.add_argument("--format", choices=["markdown", "json"], default="markdown")
+
+    graph_cmd = subparsers.add_parser("graph", help="Propose or apply task graphs")
+    graph_subparsers = graph_cmd.add_subparsers(dest="graph_command", required=True)
+    graph_propose = graph_subparsers.add_parser("propose", help="Propose a task graph")
+    graph_propose.add_argument("run_id")
+    graph_propose.add_argument("--template", default="auto")
+    graph_propose.add_argument("--output", type=Path)
+    graph_propose.add_argument("--format", choices=["markdown", "json"], default="markdown")
+    graph_apply = graph_subparsers.add_parser("apply", help="Apply a task graph proposal")
+    graph_apply.add_argument("run_id")
+    graph_apply.add_argument("--from", dest="source_path", type=Path, required=True)
+    graph_apply.add_argument("--execute", action="store_true")
+    graph_apply.add_argument("--format", choices=["markdown", "json"], default="markdown")
 
     resume_cmd = subparsers.add_parser("resume", help="Resume and summarize an existing run")
     resume_cmd.add_argument("run_id")
@@ -144,6 +166,8 @@ def main() -> None:
                 limit=args.limit,
                 base_dir=args.base_dir,
                 write_bundle=args.write_bundle,
+                propose_task_graph=args.propose_task_graph,
+                template=args.template,
             )
         elif args.command == "agent":
             payload = orchestrator_control.run_agent_mode(
@@ -159,6 +183,8 @@ def main() -> None:
                 write_bundle=args.write_bundle,
                 base_dir=args.base_dir,
                 limit=args.limit,
+                allow_task_graph_create=args.allow_task_graph_create,
+                template=args.template,
             )
         elif args.command == "doctor":
             payload = orchestrator_planner.doctor_run(
@@ -198,6 +224,28 @@ def main() -> None:
                 args.run_id,
                 manifest_base_dir=args.base_dir,
             )
+        elif args.command == "graph":
+            if args.graph_command == "propose":
+                payload = orchestrator_task_planner.propose_task_graph(
+                    conn,
+                    args.run_id,
+                    template=args.template,
+                )
+                if args.output and payload.get("status") == "ok":
+                    payload["output"] = orchestrator_task_planner.write_proposal(
+                        payload,
+                        args.output,
+                    )
+                    payload["markdown"] = orchestrator_task_planner.format_proposal_markdown(
+                        payload,
+                    )
+            else:
+                payload = orchestrator_task_planner.apply_task_graph_file(
+                    conn,
+                    args.run_id,
+                    args.source_path,
+                    execute=args.execute,
+                )
         elif args.command == "finalize":
             payload = orchestrator.finalize_run(
                 conn,

@@ -9,15 +9,21 @@ from typing import Any
 
 from psycopg import Connection
 
-from geond import degraded_ledger, orchestrator, orchestrator_planner
+from geond import degraded_ledger, orchestrator, orchestrator_planner, orchestrator_task_planner
 
 CONTROL_SCHEMA = "geond.orchestrator_control.v1"
-AUTO_ACTIONS = {"ledger_reconcile", "dispatch_spawn", "finalize_ready_run"}
+AUTO_ACTIONS = {
+    "ledger_reconcile",
+    "dispatch_spawn",
+    "finalize_ready_run",
+    "materialize_task_graph",
+}
 MANUAL_ACTIONS = {"resolve_approval", "resolve_finding", "create_task_needed", "dispatch_claim"}
 ACTION_PREFERENCE = [
     "ledger_reconcile",
     "resolve_approval",
     "resolve_finding",
+    "materialize_task_graph",
     "dispatch_spawn",
     "finalize_ready_run",
     "create_task_needed",
@@ -34,6 +40,8 @@ def run_plan_mode(
     limit: int = 50,
     base_dir: Path = orchestrator.DEFAULT_MANIFEST_BASE_DIR,
     write_bundle: bool = False,
+    propose_task_graph: bool = False,
+    template: str = "auto",
 ) -> dict[str, Any]:
     plan = orchestrator_planner.create_plan(
         conn,
@@ -46,6 +54,15 @@ def run_plan_mode(
     )
     if plan.get("status") != "ok":
         return plan
+    task_graph_proposal = None
+    if propose_task_graph and run_id:
+        task_graph_proposal = orchestrator_task_planner.propose_task_graph(
+            conn,
+            run_id,
+            template=template,
+        )
+        if task_graph_proposal.get("status") == "ok":
+            plan = inject_task_graph_action(plan, task_graph_proposal)
     selected_action = select_agent_action(plan)
     payload = control_payload(
         mode="plan",
@@ -58,6 +75,9 @@ def run_plan_mode(
         max_steps=0,
         max_workers=1,
     )
+    payload["task_graph_proposal"] = task_graph_proposal
+    payload["proposal_id"] = (task_graph_proposal or {}).get("proposal_id")
+    payload["suggested_apply_command"] = (task_graph_proposal or {}).get("suggested_apply_command")
     payload["markdown"] = format_control_markdown(payload)
     if write_bundle:
         payload["bundle"] = write_control_bundle(payload, base_dir=base_dir)
@@ -106,6 +126,8 @@ def run_agent_mode(
     write_bundle: bool = False,
     base_dir: Path = orchestrator.DEFAULT_MANIFEST_BASE_DIR,
     limit: int = 50,
+    allow_task_graph_create: bool = False,
+    template: str = "auto",
 ) -> dict[str, Any]:
     if max_steps < 1:
         return error_payload("VALIDATION_ERROR", "--max-steps must be at least 1.")
@@ -122,6 +144,8 @@ def run_agent_mode(
             "model": model,
             "sandbox": sandbox,
             "timeout_seconds": timeout_seconds,
+            "allow_task_graph_create": allow_task_graph_create,
+            "template": template,
         },
     )
     control_dir = base_dir / run_id / "control" / control_id
@@ -149,6 +173,14 @@ def run_agent_mode(
             code = plan.get("code")
             execution_status = "failed"
             break
+        task_graph_proposal = orchestrator_task_planner.propose_task_graph(
+            conn,
+            run_id,
+            template=template,
+        )
+        if task_graph_proposal.get("status") == "ok":
+            plan = inject_task_graph_action(plan, task_graph_proposal)
+            last_plan = plan
 
         selected_action = select_agent_action(plan)
         if not selected_action:
@@ -171,6 +203,26 @@ def run_agent_mode(
             steps.append(step)
             break
 
+        if selected_action.get("action_type") == "materialize_task_graph" and not (
+            allow_task_graph_create
+        ):
+            step["step_status"] = "manual_required"
+            step["blocks_execution"] = True
+            step["result"] = {
+                "status": "blocked",
+                "code": "TASK_GRAPH_APPROVAL_REQUIRED",
+                "message": (
+                    "Agent Mode requires --allow-task-graph-create before materializing "
+                    "a proposed task graph."
+                ),
+            }
+            steps.append(step)
+            append_trace_step(control_dir, step)
+            execution_status = "blocked"
+            status = "blocked"
+            code = "TASK_GRAPH_APPROVAL_REQUIRED"
+            break
+
         if not action_is_auto_executable(selected_action):
             step["step_status"] = "manual_required"
             step["blocks_execution"] = True
@@ -178,8 +230,7 @@ def run_agent_mode(
                 "status": "blocked",
                 "code": "HUMAN_ACTION_REQUIRED",
                 "message": (
-                    "Agent Mode stops before human approval, finding resolution, "
-                    "or task creation."
+                    "Agent Mode stops before human approval, finding resolution, or task creation."
                 ),
             }
             steps.append(step)
@@ -200,6 +251,7 @@ def run_agent_mode(
             timeout_seconds=timeout_seconds,
             write_bundle=write_bundle,
             base_dir=base_dir,
+            allow_task_graph_create=allow_task_graph_create,
         )
         step["result"] = compact_result(result)
         step["step_status"] = step_status_from_result(result)
@@ -211,6 +263,13 @@ def run_agent_mode(
             base_dir=base_dir,
         )
         if after_plan.get("status") == "ok":
+            after_proposal = orchestrator_task_planner.propose_task_graph(
+                conn,
+                run_id,
+                template=template,
+            )
+            if after_proposal.get("status") == "ok":
+                after_plan = inject_task_graph_action(after_plan, after_proposal)
             step["after_readiness"] = readiness_from_plan(after_plan)
             last_plan = after_plan
         steps.append(step)
@@ -244,6 +303,11 @@ def run_agent_mode(
         code=code,
     )
     payload["control_dir"] = str(control_dir) if execute or write_bundle else None
+    payload["task_graph_proposal"] = (selected_action or {}).get("task_graph_proposal")
+    payload["proposal_id"] = (payload["task_graph_proposal"] or {}).get("proposal_id")
+    payload["suggested_apply_command"] = (payload["task_graph_proposal"] or {}).get(
+        "suggested_apply_command"
+    )
     payload["markdown"] = format_control_markdown(payload)
     if execute or write_bundle:
         payload["bundle"] = write_control_bundle(
@@ -279,6 +343,7 @@ def execute_action(
     timeout_seconds: int,
     write_bundle: bool,
     base_dir: Path,
+    allow_task_graph_create: bool,
 ) -> dict[str, Any]:
     action_type = action.get("action_type")
     if action_type == "ledger_reconcile":
@@ -305,6 +370,20 @@ def execute_action(
             manifest_base_dir=base_dir,
             git_checkpoint=True,
             dry_run=True,
+        )
+    if action_type == "materialize_task_graph":
+        if not allow_task_graph_create:
+            return {
+                "status": "blocked",
+                "code": "TASK_GRAPH_APPROVAL_REQUIRED",
+                "message": "Task graph materialization requires explicit approval.",
+            }
+        proposal = action.get("task_graph_proposal") or {}
+        return orchestrator_task_planner.apply_task_graph_payload(
+            conn,
+            run_id,
+            proposal,
+            execute=True,
         )
     return {
         "status": "blocked",
@@ -414,6 +493,15 @@ def delegated_command(
         )
     if action_type == "ledger_reconcile":
         return shlex.join(["geond", "ledger", "reconcile", run_id])
+    if action_type == "materialize_task_graph":
+        if action.get("suggested_cli_command"):
+            return action["suggested_cli_command"]
+        parts = ["geond-orchestrator", "agent", run_id, "--template"]
+        proposal = action.get("task_graph_proposal") or {}
+        parts.append(str(proposal.get("template") or "auto"))
+        if execute:
+            parts.extend(["--execute", "--allow-task-graph-create"])
+        return shlex.join(parts)
     return action.get("suggested_cli_command")
 
 
@@ -439,7 +527,8 @@ def control_payload(
         "code": code,
         "mode": mode,
         "execute": execute,
-        "control_id": control_id or new_control_id(
+        "control_id": control_id
+        or new_control_id(
             run_id=run_id or "workspace",
             mode=mode,
             execute=False,
@@ -487,6 +576,7 @@ def compact_result(result: dict[str, Any]) -> dict[str, Any]:
         "failed_count",
         "degraded_count",
         "dry_run",
+        "eligible_for_materialization",
     ]
     return {key: result.get(key) for key in keys if key in result}
 
@@ -500,6 +590,56 @@ def step_status_from_result(result: dict[str, Any]) -> str:
     if execution_status in {"blocked", "failed", "partial"}:
         return str(execution_status)
     return "completed" if result.get("status") == "ok" else str(result.get("status") or "failed")
+
+
+def inject_task_graph_action(
+    plan: dict[str, Any],
+    proposal: dict[str, Any],
+) -> dict[str, Any]:
+    if not proposal.get("eligible_for_materialization"):
+        return plan
+    action = {
+        "action_type": "materialize_task_graph",
+        "priority": 45,
+        "severity": "info",
+        "reason": "Run only has the default planning placeholder; materialize a task graph first.",
+        "suggested_cli_command": proposal.get("suggested_apply_command"),
+        "related_ids": {"run_id": proposal.get("run_id")},
+        "run_id": proposal.get("run_id"),
+        "task_id": (proposal.get("planning_placeholder_task") or {}).get("task_id"),
+        "blocks_execution": False,
+        "task_graph_proposal": proposal,
+    }
+    updated = {**plan}
+    actions = [
+        item
+        for item in updated.get("recommended_actions") or []
+        if item.get("action_type") != "materialize_task_graph"
+    ]
+    actions.append(action)
+    updated["recommended_actions"] = sorted(
+        actions,
+        key=lambda item: (
+            int(item.get("priority") or 0),
+            str(item.get("run_id") or ""),
+            str(item.get("action_type") or ""),
+        ),
+    )
+    updated["runnable_dispatch_commands"] = [
+        item.get("suggested_cli_command")
+        for item in updated["recommended_actions"]
+        if item.get("action_type") in {"dispatch_claim", "dispatch_spawn"}
+        and item.get("suggested_cli_command")
+        and not item.get("blocks_execution")
+    ]
+    summary = dict(updated.get("summary") or {})
+    summary["task_graph_action_count"] = sum(
+        1
+        for item in updated["recommended_actions"]
+        if item.get("action_type") == "materialize_task_graph"
+    )
+    updated["summary"] = summary
+    return updated
 
 
 def readiness_from_plan(plan: dict[str, Any]) -> str | None:
