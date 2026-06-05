@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from geond import orchestrator, orchestrator_planner
+from geond import orchestrator, orchestrator_control, orchestrator_planner
 from geond.config import get_settings
 from geond.db import connect
 
@@ -42,6 +42,24 @@ def main() -> None:
     )
     plan_cmd.add_argument("--limit", type=int, default=50)
     plan_cmd.add_argument("--format", choices=["markdown", "json"], default="markdown")
+
+    agent_cmd = subparsers.add_parser("agent", help="Preview or execute the next safe agent step")
+    agent_cmd.add_argument("run_id")
+    agent_cmd.add_argument("--execute", action="store_true")
+    agent_cmd.add_argument("--max-steps", type=int, default=1)
+    agent_cmd.add_argument("--agents")
+    agent_cmd.add_argument("--max-workers", type=int, default=1)
+    agent_cmd.add_argument("--model")
+    agent_cmd.add_argument("--sandbox", default="workspace-write")
+    agent_cmd.add_argument("--timeout-seconds", type=int, default=3600)
+    agent_cmd.add_argument("--write-bundle", action="store_true")
+    agent_cmd.add_argument(
+        "--base-dir",
+        type=Path,
+        default=orchestrator.DEFAULT_MANIFEST_BASE_DIR,
+    )
+    agent_cmd.add_argument("--limit", type=int, default=50)
+    agent_cmd.add_argument("--format", choices=["markdown", "json"], default="markdown")
 
     doctor_cmd = subparsers.add_parser("doctor", help="Diagnose one orchestrator run")
     doctor_cmd.add_argument("run_id")
@@ -118,7 +136,7 @@ def main() -> None:
         elif args.command == "status":
             payload = orchestrator.get_status(conn, args.run_id, manifest_base_dir=args.base_dir)
         elif args.command == "plan":
-            payload = orchestrator_planner.create_plan(
+            payload = orchestrator_control.run_plan_mode(
                 conn,
                 workspace_id_or_uri=args.workspace,
                 run_id=args.run_id,
@@ -126,6 +144,21 @@ def main() -> None:
                 limit=args.limit,
                 base_dir=args.base_dir,
                 write_bundle=args.write_bundle,
+            )
+        elif args.command == "agent":
+            payload = orchestrator_control.run_agent_mode(
+                conn,
+                args.run_id,
+                execute=args.execute,
+                max_steps=args.max_steps,
+                agents=parse_agents(args.agents),
+                max_workers=args.max_workers,
+                model=args.model,
+                sandbox=args.sandbox,
+                timeout_seconds=args.timeout_seconds,
+                write_bundle=args.write_bundle,
+                base_dir=args.base_dir,
+                limit=args.limit,
             )
         elif args.command == "doctor":
             payload = orchestrator_planner.doctor_run(

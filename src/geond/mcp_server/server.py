@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as package_version
+from pathlib import Path
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
+from geond import orchestrator_control, orchestrator_planner
 from geond.config import get_settings
 from geond.db import connect
 from geond.embeddings import get_embedding_provider
@@ -1737,6 +1739,53 @@ def summarize_run(run_id: str) -> dict[str, Any]:
         return orchestration_store.summarize_run(conn, run_id)
 
 
+@mcp.tool()
+def get_orchestrator_plan(
+    workspace_id_or_uri: str,
+    run_id: str | None = None,
+    agents: list[str] | None = None,
+    limit: int = 50,
+    base_dir: str = "tmp/geond-runs",
+) -> dict[str, Any]:
+    """Return a read-only Geond Orchestrator plan for a workspace or run."""
+    with connect(get_settings()) as conn:
+        return orchestrator_planner.create_plan(
+            conn,
+            workspace_id_or_uri=workspace_id_or_uri,
+            run_id=run_id,
+            agents=agents,
+            limit=limit,
+            base_dir=Path(base_dir),
+            write_bundle=False,
+        )
+
+
+@mcp.tool()
+def preview_orchestrator_agent_step(
+    run_id: str,
+    agents: list[str] | None = None,
+    max_workers: int = 1,
+    model: str | None = None,
+    sandbox: str = "workspace-write",
+    timeout_seconds: int = 3600,
+    limit: int = 50,
+    base_dir: str = "tmp/geond-runs",
+) -> dict[str, Any]:
+    """Preview the next Agent Mode action without executing or writing state."""
+    with connect(get_settings()) as conn:
+        return orchestrator_control.preview_agent_step(
+            conn,
+            run_id,
+            agents=agents,
+            max_workers=max_workers,
+            model=model,
+            sandbox=sandbox,
+            timeout_seconds=timeout_seconds,
+            base_dir=Path(base_dir),
+            limit=limit,
+        )
+
+
 @mcp.resource("geond://sessions", mime_type="application/json")
 def sessions_resource() -> list[dict[str, Any]]:
     """List recent imported sessions."""
@@ -1953,6 +2002,12 @@ _ORCH_PARAM_DESCRIPTIONS = {
     "approval_id": "Approval request UUID.",
     "resolved_by": "Human or agent that resolved the approval.",
     "limit": "Maximum number of records to return.",
+    "agents": "Ordered worker agent pool such as ['codex', 'claude'] for planning or preview.",
+    "max_workers": "Maximum number of spawned workers Agent Mode may select for one dispatch step.",
+    "model": "Optional model name passed through to the spawned worker adapter.",
+    "sandbox": "Worker sandbox profile, usually workspace-write.",
+    "timeout_seconds": "Maximum spawned worker runtime in seconds.",
+    "base_dir": "Local-only run artifact base directory, usually tmp/geond-runs.",
 }
 
 
@@ -1965,7 +2020,7 @@ def _orchestration_metadata(
 ) -> dict[str, Any]:
     side_effects = (
         "writes orchestration state"
-        if not title.startswith(("Get", "List"))
+        if not title.startswith(("Get", "List", "Preview"))
         else "none beyond database reads"
     )
     return {
@@ -2214,6 +2269,27 @@ TOOL_METADATA.update(
             purpose="Build a deterministic run summary without LLM calls.",
             params=["run_id"],
             output="a geond.run_summary.v1 payload with Markdown and JSON summary",
+        ),
+        "get_orchestrator_plan": _orchestration_metadata(
+            title="Get orchestrator plan",
+            purpose="Build a read-only Plan Mode payload for a workspace or run.",
+            params=["workspace_id_or_uri", "run_id", "agents", "limit", "base_dir"],
+            output="a geond.orchestrator_plan.v1 payload",
+        ),
+        "preview_orchestrator_agent_step": _orchestration_metadata(
+            title="Preview orchestrator agent step",
+            purpose="Select the next Agent Mode action without executing or writing state.",
+            params=[
+                "run_id",
+                "agents",
+                "max_workers",
+                "model",
+                "sandbox",
+                "timeout_seconds",
+                "limit",
+                "base_dir",
+            ],
+            output="a geond.orchestrator_control.v1 preview payload",
         ),
     }
 )

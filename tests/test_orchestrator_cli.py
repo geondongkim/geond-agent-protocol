@@ -100,9 +100,17 @@ def test_orchestrator_status_dispatch_resume_finalize_cli(monkeypatch, capsys) -
     def fake_plan(conn, **kwargs):  # noqa: ANN001, ANN202
         captured["plan"] = kwargs
         return {
-            "schema": "geond.orchestrator_plan.v1",
+            "schema": "geond.orchestrator_control.v1",
             "status": "ok",
             "markdown": "# Plan\n",
+        }
+
+    def fake_agent(conn, run_id, **kwargs):  # noqa: ANN001, ANN202
+        captured["agent"] = {"run_id": run_id, **kwargs}
+        return {
+            "schema": "geond.orchestrator_control.v1",
+            "status": "ok",
+            "markdown": "# Agent\n",
         }
 
     def fake_doctor(conn, run_id, **kwargs):  # noqa: ANN001, ANN202
@@ -118,7 +126,8 @@ def test_orchestrator_status_dispatch_resume_finalize_cli(monkeypatch, capsys) -
     monkeypatch.setattr(orchestrator_cli.orchestrator, "dispatch_claim", fake_dispatch)
     monkeypatch.setattr(orchestrator_cli.orchestrator, "resume_run", fake_resume)
     monkeypatch.setattr(orchestrator_cli.orchestrator, "finalize_run", fake_finalize)
-    monkeypatch.setattr(orchestrator_cli.orchestrator_planner, "create_plan", fake_plan)
+    monkeypatch.setattr(orchestrator_cli.orchestrator_control, "run_plan_mode", fake_plan)
+    monkeypatch.setattr(orchestrator_cli.orchestrator_control, "run_agent_mode", fake_agent)
     monkeypatch.setattr(orchestrator_cli.orchestrator_planner, "doctor_run", fake_doctor)
 
     monkeypatch.setattr(sys, "argv", ["geond-orchestrator", "status", "run-1"])
@@ -142,6 +151,32 @@ def test_orchestrator_status_dispatch_resume_finalize_cli(monkeypatch, capsys) -
     )
     orchestrator_cli.main()
     assert capsys.readouterr().out == "# Plan\n"
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "geond-orchestrator",
+            "agent",
+            "run-1",
+            "--execute",
+            "--max-steps",
+            "2",
+            "--agents",
+            "codex,claude",
+            "--max-workers",
+            "2",
+            "--model",
+            "gpt-5",
+            "--sandbox",
+            "workspace-write",
+            "--timeout-seconds",
+            "12",
+            "--write-bundle",
+        ],
+    )
+    orchestrator_cli.main()
+    assert capsys.readouterr().out == "# Agent\n"
 
     monkeypatch.setattr(
         sys,
@@ -192,6 +227,14 @@ def test_orchestrator_status_dispatch_resume_finalize_cli(monkeypatch, capsys) -
     assert captured["plan"]["run_id"] == "run-1"
     assert captured["plan"]["agents"] == ["codex", "claude"]
     assert captured["plan"]["write_bundle"] is True
+    assert captured["agent"]["run_id"] == "run-1"
+    assert captured["agent"]["execute"] is True
+    assert captured["agent"]["max_steps"] == 2
+    assert captured["agent"]["agents"] == ["codex", "claude"]
+    assert captured["agent"]["max_workers"] == 2
+    assert captured["agent"]["model"] == "gpt-5"
+    assert captured["agent"]["timeout_seconds"] == 12
+    assert captured["agent"]["write_bundle"] is True
     assert captured["doctor"]["run_id"] == "run-1"
     assert captured["doctor"]["agents"] == ["claude"]
     assert captured["dispatch"]["run_id"] == "run-1"
