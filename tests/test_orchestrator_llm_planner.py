@@ -130,9 +130,7 @@ def test_llm_planner_claude_wrapper_result_is_supported(
         lambda agent: "claude",
     )
     wrapped = {
-        "result": json.dumps(
-            {"tasks": [{"key": "inspect", "title": "Inspect operational state"}]}
-        )
+        "result": json.dumps({"tasks": [{"key": "inspect", "title": "Inspect operational state"}]})
     }
 
     payload = orchestrator_llm_planner.propose_task_graph_with_llm(
