@@ -15,6 +15,7 @@ from geond.storage.dashboard import (
     get_dashboard_changesets,
     get_dashboard_code_risk,
     get_dashboard_orchestration,
+    get_dashboard_orchestration_traces,
     get_dashboard_overview,
     get_dashboard_project_activity,
     get_dashboard_sessions,
@@ -261,6 +262,9 @@ def dashboard_payload(settings: Settings, path: str) -> tuple[int, dict[str, Any
                 limit=limit,
             )
             return status_for_payload(payload), payload
+        if endpoint == "orchestration-traces":
+            payload = get_dashboard_orchestration_traces(conn, workspace_id, limit=limit)
+            return status_for_payload(payload), payload
 
     return 404, {"status": "not_found", "workspace_id": workspace_id, "endpoint": endpoint}
 
@@ -287,6 +291,7 @@ def dashboard_index(settings: Settings | None = None) -> dict[str, Any]:
             "/api/workspaces/{workspace_id}/usage",
             "/api/workspaces/{workspace_id}/orchestration",
             "/api/workspaces/{workspace_id}/orchestration-plan",
+            "/api/workspaces/{workspace_id}/orchestration-traces",
         ],
     }
 
@@ -1242,6 +1247,7 @@ def mission_control_html() -> str:
         <div class="session-summary" id="orchestration-summary"></div>
         <div class="session-summary" id="orchestration-plan-summary"></div>
         <div class="session-board" id="orchestration-plan-board"></div>
+        <div class="session-board" id="orchestration-trace-board"></div>
         <div class="session-board" id="orchestration-board"></div>
       </div>
     </section>
@@ -1373,6 +1379,7 @@ def mission_control_html() -> str:
       changesets: [],
       orchestration: null,
       orchestrationPlan: null,
+      orchestrationTraces: null,
       lineage: null,
       workspaces: [],
     };
@@ -1402,6 +1409,7 @@ def mission_control_html() -> str:
     const orchestrationBoard = document.querySelector("#orchestration-board");
     const orchestrationPlanSummary = document.querySelector("#orchestration-plan-summary");
     const orchestrationPlanBoard = document.querySelector("#orchestration-plan-board");
+    const orchestrationTraceBoard = document.querySelector("#orchestration-trace-board");
     const graphSummary = document.querySelector("#graph-summary");
     const graphNodes = document.querySelector("#graph-nodes");
     const graphEdges = document.querySelector("#graph-edges");
@@ -2791,6 +2799,99 @@ def mission_control_html() -> str:
       orchestrationPlanBoard.append(lane);
     }
 
+    function renderOrchestrationTraces(payload) {
+      const runs = payload?.runs || [];
+      orchestrationTraceBoard.replaceChildren();
+      const lane = laneShell("Control Traces", `${runs.length} runs`);
+      const body = lane.querySelector(".lane-body");
+      if (!runs.length) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = "No control or planner trace artifacts.";
+        body.append(empty);
+        orchestrationTraceBoard.append(lane);
+        return;
+      }
+      for (const run of runs.slice(0, 20)) {
+        const trace = run.latest_control_trace || {};
+        const control = run.latest_control_bundle || {};
+        const proposal = run.latest_task_graph_proposal || {};
+        const planner = run.latest_planner_invocation || {};
+        const card = document.createElement("article");
+        card.className = "session-card";
+        card.innerHTML = `
+          <div class="card-head">
+            <h3></h3>
+            <span class="badge"></span>
+          </div>
+          <div class="meta"></div>
+          <div class="chip-row"></div>
+          <div class="mini-list"></div>`;
+        card.querySelector("h3").textContent = run.title || run.run_id;
+        const status = (
+          trace.step_status || control.execution_status || planner.status || "no-trace"
+        );
+        card.querySelector(".badge").textContent = status;
+        const statusClass = badgeClass(status);
+        if (statusClass) card.querySelector(".badge").classList.add(statusClass);
+        card.querySelector(".meta").textContent = [
+          trace.action_type || control.next_action,
+          proposal.proposal_id ? `proposal ${shortId(proposal.proposal_id)}` : null,
+          planner.planner_agent ? `planner ${planner.planner_agent}` : null,
+          run.updated_at ? new Date(run.updated_at).toLocaleString() : null,
+        ].filter(Boolean).join(" | ");
+        card.querySelector(".chip-row").replaceChildren(
+          ...[
+            ["control", control.control_id || "none"],
+            ["action", trace.action_type || control.next_action || "none"],
+            ["planner", planner.planner_agent || proposal.planner || "template"],
+            ["tasks", formatNumber(proposal.task_count || planner.task_count)],
+          ].map(([label, value]) => {
+            const chip = document.createElement("span");
+            chip.className = "badge";
+            chip.textContent = `${label}: ${value}`;
+            return chip;
+          })
+        );
+        const list = card.querySelector(".mini-list");
+        if (trace.delegated_command || control.delegated_command) {
+          list.append(row(
+            trace.delegated_command || control.delegated_command,
+            "delegated command",
+            "ok",
+            "command"
+          ));
+        }
+        for (const task of [
+          ...(proposal.selected_tasks || []),
+          ...(planner.selected_tasks || []),
+        ].slice(0, 6)) {
+          list.append(row(
+            task.key || task.title,
+            task.depends_on?.length ? `depends on ${task.depends_on.join(", ")}` : "task",
+            "active",
+            "task"
+          ));
+        }
+        const paths = {
+          ...(control.artifact_paths || {}),
+          ...(trace.artifact_paths || {}),
+          ...(planner.artifact_paths || {}),
+        };
+        for (const [label, value] of Object.entries(paths).slice(0, 6)) {
+          list.append(row(label, value, "ok", "artifact"));
+        }
+        if (!list.children.length) {
+          const empty = document.createElement("div");
+          empty.className = "empty";
+          empty.textContent = "No redacted trace details for this run.";
+          list.append(empty);
+        }
+        body.append(card);
+      }
+      orchestrationTraceBoard.append(lane);
+    }
+
     function graphCounts(items, key) {
       return items.reduce((counts, item) => {
         const value = item[key] || "unknown";
@@ -2981,6 +3082,9 @@ def mission_control_html() -> str:
       const orchestrationPlanUrl = [
         `/api/workspaces/${encoded}/orchestration-plan?limit=${encodeURIComponent(limit)}`
       ].join("");
+      const orchestrationTraceUrl = [
+        `/api/workspaces/${encoded}/orchestration-traces?limit=${encodeURIComponent(limit)}`
+      ].join("");
       const handoffsUrl = `/api/workspaces/${encoded}/handoffs?limit=${encodeURIComponent(limit)}`;
       const sessionsUrl = [
         `/api/workspaces/${encoded}/sessions?limit=${encodeURIComponent(limit)}`,
@@ -2996,6 +3100,7 @@ def mission_control_html() -> str:
       let usageResponse;
       let orchestrationResponse;
       let orchestrationPlanResponse;
+      let orchestrationTraceResponse;
       let handoffResponse;
       try {
         [
@@ -3009,6 +3114,7 @@ def mission_control_html() -> str:
           usageResponse,
           orchestrationResponse,
           orchestrationPlanResponse,
+          orchestrationTraceResponse,
           handoffResponse,
         ] = await Promise.all([
           fetch(overviewUrl),
@@ -3021,6 +3127,7 @@ def mission_control_html() -> str:
           fetch(usageUrl),
           fetch(orchestrationUrl),
           fetch(orchestrationPlanUrl),
+          fetch(orchestrationTraceUrl),
           fetch(handoffsUrl),
         ]);
         const overview = await overviewResponse.json();
@@ -3033,6 +3140,7 @@ def mission_control_html() -> str:
         const usagePayload = await usageResponse.json();
         const orchestrationPayload = await orchestrationResponse.json();
         const orchestrationPlanPayload = await orchestrationPlanResponse.json();
+        const orchestrationTracePayload = await orchestrationTraceResponse.json();
         const handoffPayload = await handoffResponse.json();
         if (!overviewResponse.ok || overview.status === "not_found") {
           setStatus(`Workspace not found: ${workspace}`, true);
@@ -3074,6 +3182,7 @@ def mission_control_html() -> str:
       state.usage = usagePayload;
       state.orchestration = orchestrationPayload;
       state.orchestrationPlan = orchestrationPlanPayload;
+      state.orchestrationTraces = orchestrationTracePayload;
       state.handoffs = handoffPayload.handoffs || [];
       renderMetrics(overview.counts || {}, collectAgentKeys(events, sessions, overview).length);
       renderProjectTree(projectPayload);
@@ -3083,6 +3192,7 @@ def mission_control_html() -> str:
       renderUsageBoard(usagePayload);
       renderOrchestrationBoard(orchestrationPayload);
       renderOrchestrationPlan(orchestrationPlanPayload);
+      renderOrchestrationTraces(orchestrationTracePayload);
       renderHandoffBoard(handoffPayload);
       renderAgentBoard(events, sessions, overview);
       renderSessionBoard(sessions);
@@ -3131,6 +3241,7 @@ def match_workspace_route(path: str) -> tuple[str, str] | None:
         "usage",
         "orchestration",
         "orchestration-plan",
+        "orchestration-traces",
     }:
         return None
     return parts[2], endpoint

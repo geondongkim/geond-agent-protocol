@@ -1789,14 +1789,21 @@ def preview_orchestrator_agent_step(
 @mcp.tool()
 def propose_orchestrator_task_graph(
     run_id: str,
+    planner: str = "template",
     template: str = "auto",
+    planner_agent: str = "codex",
+    base_dir: str = "tmp/geond-runs",
 ) -> dict[str, Any]:
-    """Return a read-only deterministic task graph proposal for one orchestrator run."""
+    """Return a read-only task graph proposal or LLM planner preview for one run."""
     with connect(get_settings()) as conn:
         return orchestrator_task_planner.propose_task_graph(
             conn,
             run_id,
+            planner=planner,
             template=template,
+            agent_name=planner_agent,
+            execute_planner=False,
+            base_dir=Path(base_dir),
         )
 
 
@@ -2022,6 +2029,8 @@ _ORCH_PARAM_DESCRIPTIONS = {
     "sandbox": "Worker sandbox profile, usually workspace-write.",
     "timeout_seconds": "Maximum spawned worker runtime in seconds.",
     "base_dir": "Local-only run artifact base directory, usually tmp/geond-runs.",
+    "planner": "Task graph planner implementation, either template or llm.",
+    "planner_agent": "LLM planner agent name for preview-only planning, such as codex or claude.",
     "template": "Task graph proposal template: auto, bugfix, implementation, docs, or ops.",
 }
 
@@ -2308,9 +2317,11 @@ TOOL_METADATA.update(
         ),
         "propose_orchestrator_task_graph": _orchestration_metadata(
             title="Get task graph proposal",
-            purpose="Build a deterministic read-only task graph proposal for a run.",
-            params=["run_id", "template"],
-            output="a geond.task_graph_proposal.v1 payload",
+            purpose="Build a template task graph proposal or read-only LLM planner preview.",
+            params=["run_id", "planner", "template", "planner_agent", "base_dir"],
+            output=(
+                "a geond.task_graph_proposal.v1 proposal or geond.llm_task_graph_planner.v1 preview"
+            ),
         ),
     }
 )

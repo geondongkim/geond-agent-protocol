@@ -147,8 +147,12 @@ def test_orchestrator_status_dispatch_resume_finalize_cli(monkeypatch, capsys) -
             "--agents",
             "codex,claude",
             "--propose-task-graph",
+            "--planner",
+            "llm",
             "--template",
             "bugfix",
+            "--planner-agent",
+            "claude",
             "--write-bundle",
         ],
     )
@@ -164,12 +168,18 @@ def test_orchestrator_status_dispatch_resume_finalize_cli(monkeypatch, capsys) -
             "run-1",
             "--execute",
             "--allow-task-graph-create",
+            "--allow-llm-planner",
+            "--execute-planner",
             "--max-steps",
             "2",
             "--agents",
             "codex,claude",
+            "--planner",
+            "llm",
             "--template",
             "implementation",
+            "--planner-agent",
+            "claude",
             "--max-workers",
             "2",
             "--model",
@@ -233,14 +243,20 @@ def test_orchestrator_status_dispatch_resume_finalize_cli(monkeypatch, capsys) -
     assert captured["plan"]["run_id"] == "run-1"
     assert captured["plan"]["agents"] == ["codex", "claude"]
     assert captured["plan"]["propose_task_graph"] is True
+    assert captured["plan"]["planner"] == "llm"
     assert captured["plan"]["template"] == "bugfix"
+    assert captured["plan"]["planner_agent"] == "claude"
     assert captured["plan"]["write_bundle"] is True
     assert captured["agent"]["run_id"] == "run-1"
     assert captured["agent"]["execute"] is True
     assert captured["agent"]["allow_task_graph_create"] is True
+    assert captured["agent"]["allow_llm_planner"] is True
+    assert captured["agent"]["execute_planner"] is True
     assert captured["agent"]["max_steps"] == 2
     assert captured["agent"]["agents"] == ["codex", "claude"]
+    assert captured["agent"]["planner"] == "llm"
     assert captured["agent"]["template"] == "implementation"
+    assert captured["agent"]["planner_agent"] == "claude"
     assert captured["agent"]["max_workers"] == 2
     assert captured["agent"]["model"] == "gpt-5"
     assert captured["agent"]["timeout_seconds"] == 12
@@ -308,14 +324,27 @@ def test_orchestrator_graph_cli_wires_task_planner(monkeypatch, capsys, tmp_path
             "graph",
             "propose",
             "run-1",
+            "--planner",
+            "llm",
+            "--agent",
+            "claude",
+            "--execute-planner",
             "--template",
             "docs",
+            "--base-dir",
+            str(tmp_path / "runs"),
+            "--model",
+            "opus",
+            "--sandbox",
+            "workspace-write",
+            "--timeout-seconds",
+            "22",
             "--output",
             str(output_path),
         ],
     )
     orchestrator_cli.main()
-    assert capsys.readouterr().out.startswith("# Task Graph Proposal\n")
+    assert capsys.readouterr().out == "# Proposal\n"
 
     monkeypatch.setattr(
         sys,
@@ -333,7 +362,17 @@ def test_orchestrator_graph_cli_wires_task_planner(monkeypatch, capsys, tmp_path
     orchestrator_cli.main()
     assert capsys.readouterr().out == "# Apply\n"
 
-    assert captured["propose"] == {"run_id": "run-1", "template": "docs"}
+    assert captured["propose"] == {
+        "run_id": "run-1",
+        "planner": "llm",
+        "template": "docs",
+        "agent_name": "claude",
+        "execute_planner": True,
+        "base_dir": tmp_path / "runs",
+        "model": "opus",
+        "sandbox": "workspace-write",
+        "timeout_seconds": 22,
+    }
     assert captured["write"]["path"] == output_path
     assert captured["apply"] == {"run_id": "run-1", "path": source_path, "execute": True}
 

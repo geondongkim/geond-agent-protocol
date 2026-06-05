@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,7 @@ from geond.storage.resources import get_workspace_lineage
 from geond.storage.usage import summarize_usage, usage_table_exists
 
 DASHBOARD_ORCHESTRATION_SCHEMA = "geond.dashboard_orchestration.v1"
+DASHBOARD_ORCHESTRATION_TRACES_SCHEMA = "geond.dashboard_orchestration_traces.v1"
 
 
 def get_dashboard_workspaces(conn: Connection, limit: int = 100) -> dict[str, Any]:
@@ -208,6 +210,57 @@ def get_dashboard_orchestration(
     }
 
 
+def get_dashboard_orchestration_traces(
+    conn: Connection,
+    workspace_id_or_uri: str,
+    *,
+    limit: int = 50,
+    base_dir: Path = Path("tmp/geond-runs"),
+) -> dict[str, Any]:
+    workspace = resolve_dashboard_workspace(conn, workspace_id_or_uri)
+    if workspace is None:
+        return {
+            "schema": DASHBOARD_ORCHESTRATION_TRACES_SCHEMA,
+            "status": "not_found",
+            "workspace_id": workspace_id_or_uri,
+            "runs": [],
+            "summary": dashboard_orchestration_trace_summary([]),
+        }
+    workspace_id, workspace_uri, workspace_name = workspace
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT r.id::text, r.title, r.status, r.updated_at, r.created_at
+            FROM orchestration_runs r
+            WHERE r.workspace_id = %s
+            ORDER BY r.updated_at DESC, r.created_at DESC
+            LIMIT %s
+            """,
+            (workspace_id, limit),
+        )
+        rows = cur.fetchall()
+    runs = [
+        {
+            "run_id": row[0],
+            "title": row[1],
+            "status": row[2],
+            "updated_at": row[3].isoformat() if row[3] else None,
+            "created_at": row[4].isoformat() if row[4] else None,
+            **read_run_trace_artifacts(str(row[0]), base_dir),
+        }
+        for row in rows
+    ]
+    return {
+        "schema": DASHBOARD_ORCHESTRATION_TRACES_SCHEMA,
+        "status": "ok",
+        "workspace_id": workspace_id,
+        "workspace_uri": workspace_uri,
+        "workspace_name": workspace_name,
+        "runs": runs,
+        "summary": dashboard_orchestration_trace_summary(runs),
+    }
+
+
 def dashboard_orchestration_run(
     conn: Connection,
     row: tuple[Any, ...],
@@ -230,6 +283,7 @@ def dashboard_orchestration_run(
         len(claimable_tasks),
         ledger.get("pending_count", 0),
     )
+    trace_artifacts = read_run_trace_artifacts(run_id, base_dir)
     return {
         "run_id": run_id,
         "title": row[1],
@@ -254,6 +308,10 @@ def dashboard_orchestration_run(
         "command_evidence_count": int(row[13] or 0),
         "degraded_ledger_pending_count": int(ledger.get("pending_count") or 0),
         "next_action": next_action,
+        "control_bundle_summary": trace_artifacts["latest_control_bundle"],
+        "latest_control_trace": trace_artifacts["latest_control_trace"],
+        "task_graph_proposal_summary": trace_artifacts["latest_task_graph_proposal"],
+        "planner_invocation_summary": trace_artifacts["latest_planner_invocation"],
     }
 
 
@@ -283,6 +341,185 @@ def dashboard_orchestration_summary(runs: list[dict[str, Any]]) -> dict[str, int
         "active_leases": sum(int(run.get("active_lease_count") or 0) for run in runs),
         "degraded_pending": sum(int(run.get("degraded_ledger_pending_count") or 0) for run in runs),
     }
+
+
+def dashboard_orchestration_trace_summary(runs: list[dict[str, Any]]) -> dict[str, int]:
+    return {
+        "runs": len(runs),
+        "control_bundles": sum(1 for run in runs if run.get("latest_control_bundle")),
+        "control_traces": sum(1 for run in runs if run.get("latest_control_trace")),
+        "task_graph_proposals": sum(1 for run in runs if run.get("latest_task_graph_proposal")),
+        "planner_invocations": sum(1 for run in runs if run.get("latest_planner_invocation")),
+    }
+
+
+def read_run_trace_artifacts(run_id: str, base_dir: Path) -> dict[str, Any]:
+    run_dir = base_dir / run_id
+    control_dir = latest_child_dir(run_dir / "control")
+    planner_dir = latest_child_dir(run_dir / "planner")
+    control_bundle = summarize_control_bundle(control_dir) if control_dir else None
+    latest_trace = summarize_control_trace(control_dir) if control_dir else None
+    proposal = None
+    if control_bundle:
+        proposal = control_bundle.get("task_graph_proposal")
+    if proposal is None and planner_dir:
+        planner_summary = summarize_planner_invocation(planner_dir)
+        proposal = (planner_summary or {}).get("task_graph_proposal")
+    else:
+        planner_summary = summarize_planner_invocation(planner_dir) if planner_dir else None
+    return {
+        "latest_control_bundle": drop_internal_payload(control_bundle),
+        "latest_control_trace": latest_trace,
+        "latest_task_graph_proposal": summarize_task_graph_proposal(proposal),
+        "latest_planner_invocation": drop_internal_payload(planner_summary),
+    }
+
+
+def latest_child_dir(parent: Path) -> Path | None:
+    if not parent.exists() or not parent.is_dir():
+        return None
+    candidates = [item for item in parent.iterdir() if item.is_dir()]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda item: item.stat().st_mtime)
+
+
+def read_json_object(path: Path) -> dict[str, Any] | None:
+    if not path.exists() or not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def read_last_jsonl_object(path: Path) -> dict[str, Any] | None:
+    if not path.exists() or not path.is_file():
+        return None
+    last_payload: dict[str, Any] | None = None
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict):
+                last_payload = payload
+    except OSError:
+        return None
+    return last_payload
+
+
+def summarize_control_bundle(control_dir: Path) -> dict[str, Any] | None:
+    plan_path = control_dir / "CONTROL_PLAN.json"
+    payload = read_json_object(plan_path)
+    if payload is None:
+        return None
+    proposal = payload.get("task_graph_proposal")
+    return {
+        "control_id": payload.get("control_id"),
+        "mode": payload.get("mode"),
+        "execute": payload.get("execute"),
+        "status": payload.get("status"),
+        "execution_status": payload.get("execution_status"),
+        "next_action": payload.get("next_action"),
+        "delegated_command": payload.get("delegated_command"),
+        "proposal_id": payload.get("proposal_id"),
+        "artifact_paths": {
+            "control_dir": str(control_dir),
+            "control_plan_path": str(plan_path),
+            "trace_path": str(control_dir / "CONTROL_TRACE.jsonl"),
+            "summary_path": str(control_dir / "SUMMARY.md"),
+        },
+        "task_graph_proposal": proposal if isinstance(proposal, dict) else None,
+    }
+
+
+def summarize_control_trace(control_dir: Path) -> dict[str, Any] | None:
+    trace_path = control_dir / "CONTROL_TRACE.jsonl"
+    step = read_last_jsonl_object(trace_path)
+    if step is None:
+        return None
+    selected = step.get("selected_action") if isinstance(step.get("selected_action"), dict) else {}
+    result = step.get("result") if isinstance(step.get("result"), dict) else {}
+    proposal = selected.get("task_graph_proposal") if isinstance(selected, dict) else None
+    return {
+        "step_index": step.get("step_index"),
+        "action_type": step.get("action_type"),
+        "step_status": step.get("step_status"),
+        "delegated_command": step.get("delegated_command"),
+        "blocks_execution": step.get("blocks_execution"),
+        "result_status": result.get("status"),
+        "result_code": result.get("code"),
+        "proposal_id": (proposal or {}).get("proposal_id") if isinstance(proposal, dict) else None,
+        "artifact_paths": {"trace_path": str(trace_path)},
+    }
+
+
+def summarize_task_graph_proposal(proposal: Any) -> dict[str, Any] | None:
+    if not isinstance(proposal, dict):
+        return None
+    tasks = [item for item in proposal.get("tasks") or [] if isinstance(item, dict)]
+    return {
+        "schema": proposal.get("schema"),
+        "status": proposal.get("status"),
+        "code": proposal.get("code"),
+        "proposal_id": proposal.get("proposal_id"),
+        "planner": proposal.get("planner") or "template",
+        "planner_agent": proposal.get("planner_agent"),
+        "template": proposal.get("template"),
+        "eligible_for_materialization": proposal.get("eligible_for_materialization"),
+        "task_count": len(tasks),
+        "selected_tasks": [
+            {
+                "key": item.get("key"),
+                "title": item.get("title"),
+                "depends_on": item.get("depends_on") or [],
+            }
+            for item in tasks[:10]
+        ],
+    }
+
+
+def summarize_planner_invocation(planner_dir: Path) -> dict[str, Any] | None:
+    result_path = planner_dir / "RESULT.json"
+    result = read_json_object(result_path)
+    last_event = read_last_jsonl_object(planner_dir / "PLANNER_EVENTS.jsonl")
+    if result is None and last_event is None:
+        return None
+    proposal = None
+    if result:
+        candidate = result.get("task_graph_proposal") or result.get("proposal")
+        proposal = candidate if isinstance(candidate, dict) else None
+    proposal_summary = summarize_task_graph_proposal(proposal)
+    return {
+        "invocation_id": planner_dir.name,
+        "status": (result or {}).get("status") or (last_event or {}).get("status"),
+        "code": (result or {}).get("code") or (last_event or {}).get("code"),
+        "execution_status": (result or {}).get("execution_status"),
+        "planner_agent": (result or {}).get("planner_agent") or (last_event or {}).get("agent"),
+        "proposal_id": (proposal_summary or {}).get("proposal_id"),
+        "task_count": (proposal_summary or {}).get("task_count", 0),
+        "selected_tasks": (proposal_summary or {}).get("selected_tasks", []),
+        "delegated_command": (result or {}).get("delegated_command"),
+        "artifact_paths": {
+            "planner_dir": str(planner_dir),
+            "prompt_path": str(planner_dir / "PROMPT.md"),
+            "output_schema_path": str(planner_dir / "OUTPUT_SCHEMA.json"),
+            "result_path": str(result_path),
+            "events_path": str(planner_dir / "PLANNER_EVENTS.jsonl"),
+        },
+        "task_graph_proposal": proposal,
+    }
+
+
+def drop_internal_payload(payload: dict[str, Any] | None) -> dict[str, Any] | None:
+    if payload is None:
+        return None
+    return {key: value for key, value in payload.items() if key != "task_graph_proposal"}
 
 
 def get_agent_activity_events(

@@ -370,6 +370,27 @@ def test_agent_execute_requires_task_graph_approval(monkeypatch, tmp_path: Path)
     assert payload["steps"][0]["step_status"] == "manual_required"
 
 
+def test_agent_execute_requires_llm_planner_approval(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(
+        orchestrator_control.orchestrator_planner,
+        "doctor_run",
+        lambda *args, **kwargs: plan_payload(action("dispatch_spawn", priority=55)),
+    )
+
+    payload = orchestrator_control.run_agent_mode(
+        object(),
+        "run-1",
+        execute=True,
+        planner="llm",
+        execute_planner=True,
+        base_dir=tmp_path,
+    )
+
+    assert payload["status"] == "blocked"
+    assert payload["code"] == "LLM_PLANNER_APPROVAL_REQUIRED"
+    assert payload["steps"][0]["step_status"] == "manual_required"
+
+
 def test_agent_execute_applies_allowed_task_graph(monkeypatch, tmp_path: Path) -> None:
     proposal = {
         "schema": "geond.task_graph_proposal.v1",
@@ -420,6 +441,83 @@ def test_agent_execute_applies_allowed_task_graph(monkeypatch, tmp_path: Path) -
 
     assert payload["execution_status"] == "completed"
     assert calls == [{"run_id": "run-1", "graph_payload": proposal, "execute": True}]
+
+
+def test_agent_execute_materializes_allowed_llm_planner_proposal(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    proposal = {
+        "schema": "geond.task_graph_proposal.v1",
+        "status": "ok",
+        "code": None,
+        "run_id": "run-1",
+        "proposal_id": "llm-proposal-1",
+        "planner": "llm",
+        "planner_agent": "claude",
+        "eligible_for_materialization": True,
+        "eligibility_reason": "placeholder only",
+        "planning_placeholder_task": {"task_id": "task-1"},
+        "tasks": [{"key": "inspect", "title": "Inspect", "depends_on": []}],
+        "suggested_apply_command": SUGGESTED_GRAPH_APPLY,
+    }
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        orchestrator_control.orchestrator_planner,
+        "doctor_run",
+        lambda *args, **kwargs: plan_payload(action("dispatch_spawn", priority=55)),
+    )
+
+    def fake_propose(conn, run_id, **kwargs):  # noqa: ANN001, ANN202
+        calls.append({"phase": "propose", "run_id": run_id, **kwargs})
+        return {
+            "schema": "geond.llm_task_graph_planner.v1",
+            "status": "ok",
+            "code": None,
+            "task_graph_proposal": proposal,
+        }
+
+    def fake_apply(conn, run_id, graph_payload, **kwargs):  # noqa: ANN001, ANN202
+        calls.append({"phase": "apply", "run_id": run_id, "graph_payload": graph_payload, **kwargs})
+        return {
+            "schema": "geond.task_graph_materialization.v1",
+            "status": "ok",
+            "code": None,
+        }
+
+    monkeypatch.setattr(
+        orchestrator_control.orchestrator_task_planner,
+        "propose_task_graph",
+        fake_propose,
+    )
+    monkeypatch.setattr(
+        orchestrator_control.orchestrator_task_planner,
+        "apply_task_graph_payload",
+        fake_apply,
+    )
+
+    payload = orchestrator_control.run_agent_mode(
+        object(),
+        "run-1",
+        execute=True,
+        planner="llm",
+        planner_agent="claude",
+        allow_llm_planner=True,
+        execute_planner=True,
+        allow_task_graph_create=True,
+        base_dir=tmp_path,
+    )
+
+    assert payload["execution_status"] == "completed"
+    assert calls[0]["planner"] == "llm"
+    assert calls[0]["agent_name"] == "claude"
+    assert calls[0]["execute_planner"] is True
+    assert calls[1] == {
+        "phase": "apply",
+        "run_id": "run-1",
+        "graph_payload": proposal,
+        "execute": True,
+    }
 
 
 def test_agent_execute_finalizes_ready_run_dry_run_only(monkeypatch, tmp_path: Path) -> None:

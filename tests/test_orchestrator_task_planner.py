@@ -83,6 +83,43 @@ def test_proposal_tasks_match_task_graph_input(monkeypatch) -> None:  # noqa: AN
     ]
 
 
+def test_llm_planner_option_forwards_to_llm_service(monkeypatch, tmp_path: Path) -> None:  # noqa: ANN001
+    captured: dict[str, object] = {}
+
+    class FakeLlmPlanner:
+        @staticmethod
+        def propose_task_graph_with_llm(conn, run_id, **kwargs):  # noqa: ANN001, ANN202
+            captured.update({"run_id": run_id, **kwargs})
+            return {
+                "schema": "geond.llm_task_graph_planner.v1",
+                "status": "preview",
+                "code": None,
+            }
+
+    import geond.orchestrator_llm_planner as llm_planner
+
+    monkeypatch.setattr(
+        llm_planner,
+        "propose_task_graph_with_llm",
+        FakeLlmPlanner.propose_task_graph_with_llm,
+    )
+
+    payload = orchestrator_task_planner.propose_task_graph(
+        object(),
+        "run-1",
+        planner="llm",
+        agent_name="claude",
+        execute_planner=True,
+        base_dir=tmp_path,
+    )
+
+    assert payload["schema"] == "geond.llm_task_graph_planner.v1"
+    assert captured["run_id"] == "run-1"
+    assert captured["agent_name"] == "claude"
+    assert captured["execute_planner"] is True
+    assert captured["base_dir"] == tmp_path
+
+
 def test_proposal_validation_rejects_duplicate_and_missing_dependency() -> None:
     duplicate = orchestrator_task_planner.validate_task_graph_tasks(
         [

@@ -21,9 +21,35 @@ def propose_task_graph(
     conn: Connection,
     run_id: str,
     *,
+    planner: str = "template",
     template: str = "auto",
+    agent_name: str = "codex",
+    execute_planner: bool = False,
+    base_dir: Path = orchestrator.DEFAULT_MANIFEST_BASE_DIR,
+    model: str | None = None,
+    sandbox: str = "workspace-write",
+    timeout_seconds: int = 3600,
+    llm_runner: Any | None = None,
     status_payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    planner = (planner or "template").strip().lower()
+    if planner == "llm":
+        from geond import orchestrator_llm_planner
+
+        return orchestrator_llm_planner.propose_task_graph_with_llm(
+            conn,
+            run_id,
+            agent_name=agent_name,
+            execute_planner=execute_planner,
+            status_payload=status_payload,
+            base_dir=base_dir,
+            model=model,
+            sandbox=sandbox,
+            timeout_seconds=timeout_seconds,
+            runner=llm_runner,
+        )
+    if planner != "template":
+        return error_result("UNSUPPORTED_PLANNER", f"Unsupported task graph planner: {planner}")
     status_payload = status_payload or orchestrator.get_status(conn, run_id)
     if status_payload.get("status") != "ok":
         return status_payload
@@ -41,6 +67,8 @@ def propose_task_graph(
         "status": "ok",
         "code": None,
         "run_id": run_id,
+        "planner": "template",
+        "planner_agent": None,
         "template": selected_template,
         "requested_template": template,
         "eligible_for_materialization": eligibility["eligible"],

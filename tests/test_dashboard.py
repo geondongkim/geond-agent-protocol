@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from uuid import uuid4
 
@@ -15,6 +16,7 @@ from geond.storage.dashboard import (
     get_dashboard_changesets,
     get_dashboard_code_risk,
     get_dashboard_orchestration,
+    get_dashboard_orchestration_traces,
     get_dashboard_overview,
     get_dashboard_project_activity,
     get_dashboard_sessions,
@@ -38,7 +40,7 @@ ORCHESTRATION_SCHEMA = Path(__file__).parents[1] / "schemas" / "007_orchestratio
 TASK_GRAPH_SCHEMA = Path(__file__).parents[1] / "schemas" / "008_orchestration_task_graph.sql"
 
 
-def test_dashboard_overview_and_activity_events() -> None:
+def test_dashboard_overview_and_activity_events(tmp_path: Path) -> None:
     settings = get_settings()
     workspace_uri = f"file:///tmp/geond-dashboard-test-{uuid4()}"
     try:
@@ -169,6 +171,71 @@ def test_dashboard_overview_and_activity_events() -> None:
                 "High-risk dashboard release gate.",
                 risk_level="high",
             )
+            run_id = run["run"]["run_id"]
+            base_dir = tmp_path / "geond-runs"
+            control_dir = base_dir / run_id / "control" / "control-1"
+            control_dir.mkdir(parents=True)
+            proposal = {
+                "schema": "geond.task_graph_proposal.v1",
+                "status": "ok",
+                "code": None,
+                "run_id": run_id,
+                "proposal_id": "proposal-dashboard",
+                "planner": "llm",
+                "planner_agent": "codex",
+                "template": "llm",
+                "eligible_for_materialization": True,
+                "tasks": [{"key": "inspect", "title": "Inspect trace state"}],
+            }
+            (control_dir / "CONTROL_PLAN.json").write_text(
+                json.dumps(
+                    {
+                        "control_id": "control-1",
+                        "mode": "agent",
+                        "execute": True,
+                        "status": "ok",
+                        "execution_status": "completed",
+                        "next_action": "materialize_task_graph",
+                        "delegated_command": "geond-orchestrator agent run --execute",
+                        "proposal_id": "proposal-dashboard",
+                        "task_graph_proposal": proposal,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (control_dir / "CONTROL_TRACE.jsonl").write_text(
+                json.dumps(
+                    {
+                        "step_index": 0,
+                        "action_type": "materialize_task_graph",
+                        "step_status": "completed",
+                        "delegated_command": "geond-orchestrator agent run --execute",
+                        "selected_action": {"task_graph_proposal": proposal},
+                        "result": {"status": "ok", "code": None},
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            planner_dir = base_dir / run_id / "planner" / "planner-1"
+            planner_dir.mkdir(parents=True)
+            (planner_dir / "RESULT.json").write_text(
+                json.dumps(
+                    {
+                        "schema": "geond.llm_task_graph_planner.v1",
+                        "status": "ok",
+                        "planner_agent": "codex",
+                        "execution_status": "completed",
+                        "task_graph_proposal": proposal,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (planner_dir / "PLANNER_EVENTS.jsonl").write_text(
+                json.dumps({"event_type": "planner_process_completed", "status": "completed"})
+                + "\n",
+                encoding="utf-8",
+            )
 
             overview = get_dashboard_overview(conn, workspace_id, limit=10)
             activity = get_agent_activity_events(conn, workspace_uri, limit=20)
@@ -189,7 +256,13 @@ def test_dashboard_overview_and_activity_events() -> None:
                 conn,
                 workspace_id,
                 limit=10,
-                base_dir=Path("tmp/geond-runs"),
+                base_dir=base_dir,
+            )
+            orchestration_traces = get_dashboard_orchestration_traces(
+                conn,
+                workspace_id,
+                limit=10,
+                base_dir=base_dir,
             )
 
             assert overview["status"] == "ok"
@@ -257,6 +330,19 @@ def test_dashboard_overview_and_activity_events() -> None:
             assert orchestration_dashboard["runs"][0]["open_finding_count"] == 1
             assert orchestration_dashboard["runs"][0]["pending_approval_count"] == 1
             assert orchestration_dashboard["runs"][0]["command_evidence_count"] == 1
+            assert (
+                orchestration_dashboard["runs"][0]["latest_control_trace"]["action_type"]
+                == "materialize_task_graph"
+            )
+            assert (
+                orchestration_dashboard["runs"][0]["task_graph_proposal_summary"]["proposal_id"]
+                == "proposal-dashboard"
+            )
+            assert orchestration_traces["schema"] == "geond.dashboard_orchestration_traces.v1"
+            assert orchestration_traces["summary"]["control_traces"] >= 1
+            trace_run = orchestration_traces["runs"][0]
+            assert trace_run["latest_planner_invocation"]["planner_agent"] == "codex"
+            assert "Geond Task Graph Planner" not in str(trace_run)
         finally:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM workspaces WHERE id = %s", (workspace_id,))

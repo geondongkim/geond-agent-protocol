@@ -41,8 +41,11 @@ def run_plan_mode(
     base_dir: Path = orchestrator.DEFAULT_MANIFEST_BASE_DIR,
     write_bundle: bool = False,
     propose_task_graph: bool = False,
+    planner: str = "template",
     template: str = "auto",
+    planner_agent: str = "codex",
 ) -> dict[str, Any]:
+    planner = (planner or "template").strip().lower()
     plan = orchestrator_planner.create_plan(
         conn,
         workspace_id_or_uri=workspace_id_or_uri,
@@ -59,10 +62,15 @@ def run_plan_mode(
         task_graph_proposal = orchestrator_task_planner.propose_task_graph(
             conn,
             run_id,
+            planner=planner,
             template=template,
+            agent_name=planner_agent,
+            execute_planner=False,
+            base_dir=base_dir,
         )
-        if task_graph_proposal.get("status") == "ok":
-            plan = inject_task_graph_action(plan, task_graph_proposal)
+        proposal = extract_materializable_proposal(task_graph_proposal)
+        if proposal and proposal.get("status") == "ok":
+            plan = inject_task_graph_action(plan, proposal)
     selected_action = select_agent_action(plan)
     payload = control_payload(
         mode="plan",
@@ -127,10 +135,15 @@ def run_agent_mode(
     base_dir: Path = orchestrator.DEFAULT_MANIFEST_BASE_DIR,
     limit: int = 50,
     allow_task_graph_create: bool = False,
+    planner: str = "template",
     template: str = "auto",
+    planner_agent: str = "codex",
+    allow_llm_planner: bool = False,
+    execute_planner: bool = False,
 ) -> dict[str, Any]:
     if max_steps < 1:
         return error_payload("VALIDATION_ERROR", "--max-steps must be at least 1.")
+    planner = (planner or "template").strip().lower()
     agent_pool = orchestrator_planner.normalize_agents(agents)
     max_workers = max(1, max_workers)
     control_id = new_control_id(
@@ -145,7 +158,11 @@ def run_agent_mode(
             "sandbox": sandbox,
             "timeout_seconds": timeout_seconds,
             "allow_task_graph_create": allow_task_graph_create,
+            "planner": planner,
             "template": template,
+            "planner_agent": planner_agent,
+            "allow_llm_planner": allow_llm_planner,
+            "execute_planner": execute_planner,
         },
     )
     control_dir = base_dir / run_id / "control" / control_id
@@ -173,12 +190,75 @@ def run_agent_mode(
             code = plan.get("code")
             execution_status = "failed"
             break
-        task_graph_proposal = orchestrator_task_planner.propose_task_graph(
+        if planner == "llm" and execute and execute_planner and not allow_llm_planner:
+            selected_action = llm_planner_approval_action(run_id, planner_agent)
+            step = build_step_preview(
+                step_index,
+                selected_action,
+                plan,
+                agent_pool=agent_pool,
+                max_workers=max_workers,
+                model=model,
+                sandbox=sandbox,
+                timeout_seconds=timeout_seconds,
+                execute=execute,
+            )
+            step["step_status"] = "manual_required"
+            step["blocks_execution"] = True
+            step["result"] = {
+                "status": "blocked",
+                "code": "LLM_PLANNER_APPROVAL_REQUIRED",
+                "message": (
+                    "Agent Mode requires --allow-llm-planner before executing an LLM planner."
+                ),
+            }
+            steps.append(step)
+            append_trace_step(control_dir, step)
+            execution_status = "blocked"
+            status = "blocked"
+            code = "LLM_PLANNER_APPROVAL_REQUIRED"
+            break
+
+        task_graph_result = orchestrator_task_planner.propose_task_graph(
             conn,
             run_id,
+            planner=planner,
             template=template,
+            agent_name=planner_agent,
+            execute_planner=execute and execute_planner,
+            base_dir=base_dir,
+            model=model,
+            sandbox=sandbox,
+            timeout_seconds=timeout_seconds,
         )
-        if task_graph_proposal.get("status") == "ok":
+        if (
+            planner == "llm"
+            and execute
+            and execute_planner
+            and task_graph_result.get("status") == "error"
+        ):
+            selected_action = llm_planner_error_action(run_id, planner_agent, task_graph_result)
+            step = build_step_preview(
+                step_index,
+                selected_action,
+                plan,
+                agent_pool=agent_pool,
+                max_workers=max_workers,
+                model=model,
+                sandbox=sandbox,
+                timeout_seconds=timeout_seconds,
+                execute=execute,
+            )
+            step["step_status"] = "failed"
+            step["result"] = compact_result(task_graph_result)
+            steps.append(step)
+            append_trace_step(control_dir, step)
+            execution_status = "failed"
+            status = "error"
+            code = task_graph_result.get("code")
+            break
+        task_graph_proposal = extract_materializable_proposal(task_graph_result)
+        if task_graph_proposal and task_graph_proposal.get("status") == "ok":
             plan = inject_task_graph_action(plan, task_graph_proposal)
             last_plan = plan
 
@@ -263,12 +343,17 @@ def run_agent_mode(
             base_dir=base_dir,
         )
         if after_plan.get("status") == "ok":
-            after_proposal = orchestrator_task_planner.propose_task_graph(
+            after_result = orchestrator_task_planner.propose_task_graph(
                 conn,
                 run_id,
+                planner=planner,
                 template=template,
+                agent_name=planner_agent,
+                execute_planner=False,
+                base_dir=base_dir,
             )
-            if after_proposal.get("status") == "ok":
+            after_proposal = extract_materializable_proposal(after_result)
+            if after_proposal and after_proposal.get("status") == "ok":
                 after_plan = inject_task_graph_action(after_plan, after_proposal)
             step["after_readiness"] = readiness_from_plan(after_plan)
             last_plan = after_plan
@@ -329,6 +414,75 @@ def select_agent_action(plan: dict[str, Any]) -> dict[str, Any] | None:
 
 def action_is_auto_executable(action: dict[str, Any]) -> bool:
     return str(action.get("action_type") or "") in AUTO_ACTIONS
+
+
+def extract_materializable_proposal(payload: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not isinstance(payload, dict):
+        return None
+    if payload.get("schema") == orchestrator_task_planner.PROPOSAL_SCHEMA:
+        return payload
+    proposal = payload.get("task_graph_proposal")
+    if isinstance(proposal, dict):
+        return proposal
+    return None
+
+
+def llm_planner_approval_action(run_id: str, planner_agent: str) -> dict[str, Any]:
+    command = shlex.join(
+        [
+            "geond-orchestrator",
+            "agent",
+            run_id,
+            "--execute",
+            "--planner",
+            "llm",
+            "--planner-agent",
+            planner_agent,
+            "--allow-llm-planner",
+            "--execute-planner",
+        ]
+    )
+    return {
+        "action_type": "materialize_task_graph",
+        "priority": 45,
+        "severity": "warning",
+        "reason": "LLM task graph planning requires explicit approval before execution.",
+        "suggested_cli_command": command,
+        "related_ids": {"run_id": run_id},
+        "run_id": run_id,
+        "task_id": None,
+        "blocks_execution": True,
+    }
+
+
+def llm_planner_error_action(
+    run_id: str,
+    planner_agent: str,
+    result: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "action_type": "materialize_task_graph",
+        "priority": 45,
+        "severity": "error",
+        "reason": result.get("message") or "LLM task graph planner failed.",
+        "suggested_cli_command": shlex.join(
+            [
+                "geond-orchestrator",
+                "graph",
+                "propose",
+                run_id,
+                "--planner",
+                "llm",
+                "--agent",
+                planner_agent,
+                "--execute-planner",
+            ]
+        ),
+        "related_ids": {"run_id": run_id, "code": result.get("code")},
+        "run_id": run_id,
+        "task_id": None,
+        "blocks_execution": True,
+    }
 
 
 def execute_action(
