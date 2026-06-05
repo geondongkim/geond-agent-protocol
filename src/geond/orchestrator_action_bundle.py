@@ -97,6 +97,8 @@ def normalize_action_items(
             "run_id": action.get("run_id"),
             "task_id": action.get("task_id"),
             "artifact_refs": trace_refs.get(run_id, []),
+            "task_graph_proposal": action.get("task_graph_proposal"),
+            "task_graph_review": action.get("task_graph_review"),
         }
         normalized.append(item)
     return normalized

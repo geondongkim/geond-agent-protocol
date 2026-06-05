@@ -8,6 +8,7 @@ from typing import Any
 from geond import (
     orchestrator,
     orchestrator_action_bundle,
+    orchestrator_action_queue,
     orchestrator_control,
     orchestrator_graph_review,
     orchestrator_planner,
@@ -66,6 +67,72 @@ def main() -> None:
     )
     actions_cmd.add_argument("--limit", type=int, default=50)
     actions_cmd.add_argument("--format", choices=["markdown", "json"], default="markdown")
+
+    action_cmd = subparsers.add_parser(
+        "action",
+        help="Queue, approve, and execute operator actions",
+    )
+    action_subparsers = action_cmd.add_subparsers(dest="action_command", required=True)
+    action_queue = action_subparsers.add_parser("queue", help="Queue current operator actions")
+    action_queue.add_argument("--workspace", required=True)
+    action_queue.add_argument("--run", dest="run_id")
+    action_queue.add_argument("--agents")
+    action_queue.add_argument("--write-bundle", action="store_true")
+    action_queue.add_argument(
+        "--base-dir",
+        type=Path,
+        default=orchestrator.DEFAULT_MANIFEST_BASE_DIR,
+    )
+    action_queue.add_argument("--limit", type=int, default=50)
+    action_queue.add_argument("--format", choices=["markdown", "json"], default="markdown")
+    action_list = action_subparsers.add_parser("list", help="List queued operator actions")
+    action_list.add_argument("--workspace", required=True)
+    action_list.add_argument("--run", dest="run_id")
+    action_list.add_argument("--agents")
+    action_list.add_argument(
+        "--base-dir",
+        type=Path,
+        default=orchestrator.DEFAULT_MANIFEST_BASE_DIR,
+    )
+    action_list.add_argument("--limit", type=int, default=50)
+    action_list.add_argument("--format", choices=["markdown", "json"], default="markdown")
+    action_approve = action_subparsers.add_parser("approve", help="Approve a queued action")
+    action_approve.add_argument("run_id")
+    action_approve.add_argument("action_id")
+    action_approve.add_argument("--approved-by", required=True)
+    action_approve.add_argument("--reason", default="")
+    action_approve.add_argument(
+        "--base-dir",
+        type=Path,
+        default=orchestrator.DEFAULT_MANIFEST_BASE_DIR,
+    )
+    action_approve.add_argument("--format", choices=["markdown", "json"], default="markdown")
+    action_reject = action_subparsers.add_parser("reject", help="Reject a queued action")
+    action_reject.add_argument("run_id")
+    action_reject.add_argument("action_id")
+    action_reject.add_argument("--rejected-by", required=True)
+    action_reject.add_argument("--reason", required=True)
+    action_reject.add_argument(
+        "--base-dir",
+        type=Path,
+        default=orchestrator.DEFAULT_MANIFEST_BASE_DIR,
+    )
+    action_reject.add_argument("--format", choices=["markdown", "json"], default="markdown")
+    action_execute = action_subparsers.add_parser("execute", help="Preview or execute one action")
+    action_execute.add_argument("run_id")
+    action_execute.add_argument("action_id")
+    action_execute.add_argument("--execute", action="store_true")
+    action_execute.add_argument("--agents")
+    action_execute.add_argument("--max-workers", type=int, default=1)
+    action_execute.add_argument("--model")
+    action_execute.add_argument("--sandbox", default="workspace-write")
+    action_execute.add_argument("--timeout-seconds", type=int, default=3600)
+    action_execute.add_argument(
+        "--base-dir",
+        type=Path,
+        default=orchestrator.DEFAULT_MANIFEST_BASE_DIR,
+    )
+    action_execute.add_argument("--format", choices=["markdown", "json"], default="markdown")
 
     agent_cmd = subparsers.add_parser("agent", help="Preview or execute the next safe agent step")
     agent_cmd.add_argument("run_id")
@@ -225,6 +292,55 @@ def main() -> None:
                 base_dir=args.base_dir,
                 write_bundle=args.write_bundle,
             )
+        elif args.command == "action":
+            if args.action_command == "queue":
+                payload = orchestrator_action_queue.queue_actions_from_bundle(
+                    conn,
+                    workspace_id_or_uri=args.workspace,
+                    run_id=args.run_id,
+                    agents=parse_agents(args.agents),
+                    limit=args.limit,
+                    base_dir=args.base_dir,
+                    write_bundle=args.write_bundle,
+                )
+            elif args.action_command == "list":
+                payload = orchestrator_action_queue.list_action_queue(
+                    conn,
+                    workspace_id_or_uri=args.workspace,
+                    run_id=args.run_id,
+                    agents=parse_agents(args.agents),
+                    limit=args.limit,
+                    base_dir=args.base_dir,
+                )
+            elif args.action_command == "approve":
+                payload = orchestrator_action_queue.approve_action(
+                    run_id=args.run_id,
+                    action_id=args.action_id,
+                    approved_by=args.approved_by,
+                    reason=args.reason,
+                    base_dir=args.base_dir,
+                )
+            elif args.action_command == "reject":
+                payload = orchestrator_action_queue.reject_action(
+                    run_id=args.run_id,
+                    action_id=args.action_id,
+                    rejected_by=args.rejected_by,
+                    reason=args.reason,
+                    base_dir=args.base_dir,
+                )
+            else:
+                payload = orchestrator_action_queue.execute_queued_action(
+                    conn,
+                    run_id=args.run_id,
+                    action_id=args.action_id,
+                    execute=args.execute,
+                    agents=parse_agents(args.agents),
+                    max_workers=args.max_workers,
+                    model=args.model,
+                    sandbox=args.sandbox,
+                    timeout_seconds=args.timeout_seconds,
+                    base_dir=args.base_dir,
+                )
         elif args.command == "agent":
             payload = orchestrator_control.run_agent_mode(
                 conn,

@@ -306,6 +306,195 @@ def test_orchestrator_status_dispatch_resume_finalize_cli(monkeypatch, capsys) -
     assert captured["finalize"]["dry_run"] is True
 
 
+def test_orchestrator_action_cli_wires_queue_service(
+    monkeypatch,
+    capsys,
+    tmp_path: Path,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_connect(settings) -> FakeConnection:  # noqa: ANN001
+        return FakeConnection()
+
+    def fake_queue(conn, **kwargs):  # noqa: ANN001, ANN202
+        captured["queue"] = kwargs
+        return {
+            "schema": "geond.orchestrator_action_queue.v1",
+            "status": "ok",
+            "markdown": "# Queue\n",
+        }
+
+    def fake_list(conn, **kwargs):  # noqa: ANN001, ANN202
+        captured["list"] = kwargs
+        return {
+            "schema": "geond.orchestrator_action_queue.v1",
+            "status": "ok",
+            "markdown": "# List\n",
+        }
+
+    def fake_approve(**kwargs):  # noqa: ANN001, ANN202
+        captured["approve"] = kwargs
+        return {
+            "schema": "geond.orchestrator_action_event.v1",
+            "status": "ok",
+            "markdown": "# Approve\n",
+        }
+
+    def fake_reject(**kwargs):  # noqa: ANN001, ANN202
+        captured["reject"] = kwargs
+        return {
+            "schema": "geond.orchestrator_action_event.v1",
+            "status": "ok",
+            "markdown": "# Reject\n",
+        }
+
+    def fake_execute(conn, **kwargs):  # noqa: ANN001, ANN202
+        captured["execute"] = kwargs
+        return {
+            "schema": "geond.orchestrator_action_execution.v1",
+            "status": "ok",
+            "markdown": "# Execute\n",
+        }
+
+    monkeypatch.setattr(orchestrator_cli, "connect", fake_connect)
+    monkeypatch.setattr(
+        orchestrator_cli.orchestrator_action_queue,
+        "queue_actions_from_bundle",
+        fake_queue,
+    )
+    monkeypatch.setattr(orchestrator_cli.orchestrator_action_queue, "list_action_queue", fake_list)
+    monkeypatch.setattr(orchestrator_cli.orchestrator_action_queue, "approve_action", fake_approve)
+    monkeypatch.setattr(orchestrator_cli.orchestrator_action_queue, "reject_action", fake_reject)
+    monkeypatch.setattr(
+        orchestrator_cli.orchestrator_action_queue,
+        "execute_queued_action",
+        fake_execute,
+    )
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "geond-orchestrator",
+            "action",
+            "queue",
+            "--workspace",
+            "file:///repo",
+            "--run",
+            "run-1",
+            "--agents",
+            "codex,claude",
+            "--write-bundle",
+            "--base-dir",
+            str(tmp_path),
+        ],
+    )
+    orchestrator_cli.main()
+    assert capsys.readouterr().out == "# Queue\n"
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "geond-orchestrator",
+            "action",
+            "list",
+            "--workspace",
+            "file:///repo",
+            "--run",
+            "run-1",
+            "--agents",
+            "claude",
+            "--base-dir",
+            str(tmp_path),
+        ],
+    )
+    orchestrator_cli.main()
+    assert capsys.readouterr().out == "# List\n"
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "geond-orchestrator",
+            "action",
+            "approve",
+            "run-1",
+            "action-1",
+            "--approved-by",
+            "human",
+            "--reason",
+            "safe",
+            "--base-dir",
+            str(tmp_path),
+        ],
+    )
+    orchestrator_cli.main()
+    assert capsys.readouterr().out == "# Approve\n"
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "geond-orchestrator",
+            "action",
+            "reject",
+            "run-1",
+            "action-1",
+            "--rejected-by",
+            "human",
+            "--reason",
+            "not now",
+            "--base-dir",
+            str(tmp_path),
+        ],
+    )
+    orchestrator_cli.main()
+    assert capsys.readouterr().out == "# Reject\n"
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "geond-orchestrator",
+            "action",
+            "execute",
+            "run-1",
+            "action-1",
+            "--execute",
+            "--agents",
+            "codex,claude",
+            "--max-workers",
+            "2",
+            "--model",
+            "gpt-5",
+            "--sandbox",
+            "workspace-write",
+            "--timeout-seconds",
+            "12",
+            "--base-dir",
+            str(tmp_path),
+        ],
+    )
+    orchestrator_cli.main()
+    assert capsys.readouterr().out == "# Execute\n"
+
+    assert captured["queue"]["workspace_id_or_uri"] == "file:///repo"
+    assert captured["queue"]["run_id"] == "run-1"
+    assert captured["queue"]["agents"] == ["codex", "claude"]
+    assert captured["queue"]["write_bundle"] is True
+    assert captured["list"]["agents"] == ["claude"]
+    assert captured["approve"]["approved_by"] == "human"
+    assert captured["approve"]["reason"] == "safe"
+    assert captured["reject"]["rejected_by"] == "human"
+    assert captured["reject"]["reason"] == "not now"
+    assert captured["execute"]["execute"] is True
+    assert captured["execute"]["agents"] == ["codex", "claude"]
+    assert captured["execute"]["max_workers"] == 2
+    assert captured["execute"]["model"] == "gpt-5"
+    assert captured["execute"]["timeout_seconds"] == 12
+
+
 def test_orchestrator_graph_cli_wires_task_planner(monkeypatch, capsys, tmp_path: Path) -> None:
     captured: dict[str, object] = {}
     source_path = tmp_path / "proposal.json"

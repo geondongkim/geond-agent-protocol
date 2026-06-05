@@ -190,6 +190,53 @@ def test_dashboard_orchestration_cli_wires_storage(monkeypatch, capsys, tmp_path
     }
 
 
+def test_dashboard_orchestration_actions_cli_wires_queue(monkeypatch, capsys, tmp_path) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_connect(settings) -> FakeConnection:  # noqa: ANN001
+        return FakeConnection()
+
+    def fake_action_queue(conn, **kwargs):  # noqa: ANN001, ANN202
+        captured.update(kwargs)
+        return {
+            "schema": "geond.orchestrator_action_queue.v1",
+            "status": "ok",
+            "items": [],
+        }
+
+    monkeypatch.setattr(cli, "connect", fake_connect)
+    monkeypatch.setattr(cli.orchestrator_action_queue, "list_action_queue", fake_action_queue)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "geond",
+            "dashboard-orchestration-actions",
+            "file:///repo",
+            "--run",
+            "run-1",
+            "--agents",
+            "codex,claude",
+            "--limit",
+            "5",
+            "--base-dir",
+            str(tmp_path),
+        ],
+    )
+
+    cli.main()
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["schema"] == "geond.orchestrator_action_queue.v1"
+    assert captured == {
+        "workspace_id_or_uri": "file:///repo",
+        "run_id": "run-1",
+        "agents": ["codex", "claude"],
+        "limit": 5,
+        "base_dir": tmp_path,
+    }
+
+
 def test_orchestration_goal_start_cli_wires_storage(monkeypatch, capsys) -> None:
     captured: dict[str, object] = {}
 

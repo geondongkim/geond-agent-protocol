@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter, time
 
-from geond import agent_hooks, degraded_ledger
+from geond import agent_hooks, degraded_ledger, orchestrator_action_queue
 from geond.adapters.antigravity import infer_session_id as infer_antigravity_session_id
 from geond.adapters.antigravity import latest_transcript_path as latest_antigravity_transcript_path
 from geond.adapters.antigravity import parse_storage as parse_antigravity_storage
@@ -1207,6 +1207,20 @@ def main() -> None:
     dashboard_orchestration.add_argument("--limit", type=int, default=50)
     dashboard_orchestration.add_argument("--base-dir", type=Path, default=Path("tmp/geond-runs"))
 
+    dashboard_orchestration_actions = subparsers.add_parser(
+        "dashboard-orchestration-actions",
+        help="Return dashboard orchestration action bundle and queue for one workspace",
+    )
+    dashboard_orchestration_actions.add_argument("workspace_id_or_uri")
+    dashboard_orchestration_actions.add_argument("--run", dest="run_id")
+    dashboard_orchestration_actions.add_argument("--agents")
+    dashboard_orchestration_actions.add_argument("--limit", type=int, default=50)
+    dashboard_orchestration_actions.add_argument(
+        "--base-dir",
+        type=Path,
+        default=Path("tmp/geond-runs"),
+    )
+
     dashboard_graph = subparsers.add_parser(
         "dashboard-graph",
         help="Return bounded dashboard lineage graph nodes and edges for one workspace",
@@ -2321,6 +2335,20 @@ def main() -> None:
             result = get_dashboard_orchestration(
                 conn,
                 args.workspace_id_or_uri,
+                limit=args.limit,
+                base_dir=args.base_dir,
+            )
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        return
+
+    if args.command == "dashboard-orchestration-actions":
+        agents = [item.strip() for item in (args.agents or "").split(",") if item.strip()]
+        with connect(get_settings()) as conn:
+            result = orchestrator_action_queue.list_action_queue(
+                conn,
+                workspace_id_or_uri=args.workspace_id_or_uri,
+                run_id=args.run_id,
+                agents=agents or None,
                 limit=args.limit,
                 base_dir=args.base_dir,
             )

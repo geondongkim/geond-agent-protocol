@@ -17,7 +17,8 @@ These pieces should remain in `geond-agent-protocol`:
 - Task graph input/output shape: keys, titles, priorities, dependencies,
   required evidence, and status.
 - Read-only Dashboard Mission Control payloads, including redacted trace
-  summaries, operator action bundles, and artifact paths.
+  summaries, operator action bundles, local action queue summaries, and artifact
+  paths.
 
 The public surface should prefer deterministic payloads, stable error codes,
 and CLI/MCP parity over product-specific policy.
@@ -31,6 +32,7 @@ These pieces are candidates for a future private `Geond Orchestrator` package:
 - Planner review-gate policy for deciding whether generated task graphs are
   safe to materialize.
 - Operator action-bundle composition and future command queue policy.
+- Human-approved operator action queue and typed action execution policy.
 - Spawn policy for Codex, Claude, and future worker adapters.
 - Product UX beyond the read-only Dashboard protocol views.
 - Git/PR finalize policy, release gates, and organization-specific approval
@@ -63,6 +65,7 @@ Controller-oriented modules may compose protocol primitives:
 - `geond.orchestrator_llm_planner`
 - `geond.orchestrator_graph_review`
 - `geond.orchestrator_action_bundle`
+- `geond.orchestrator_action_queue`
 - `geond.orchestrator_spawn`
 
 Dashboard read models may summarize controller artifacts, but they must remain
