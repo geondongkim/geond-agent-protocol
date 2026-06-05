@@ -237,6 +237,51 @@ def test_dashboard_orchestration_actions_cli_wires_queue(monkeypatch, capsys, tm
     }
 
 
+def test_dashboard_orchestration_scheduler_cli_wires_service(
+    monkeypatch,
+    capsys,
+    tmp_path,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_connect(settings) -> FakeConnection:  # noqa: ANN001
+        return FakeConnection()
+
+    def fake_scheduler(conn, **kwargs):  # noqa: ANN001, ANN202
+        captured.update(kwargs)
+        return {
+            "schema": "geond.orchestrator_scheduler.v1",
+            "status": "ok",
+            "selected_actions": [],
+        }
+
+    monkeypatch.setattr(cli, "connect", fake_connect)
+    monkeypatch.setattr(cli.orchestrator_scheduler, "build_dashboard_scheduler", fake_scheduler)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "geond",
+            "dashboard-orchestration-scheduler",
+            "file:///repo",
+            "--limit",
+            "5",
+            "--base-dir",
+            str(tmp_path),
+        ],
+    )
+
+    cli.main()
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["schema"] == "geond.orchestrator_scheduler.v1"
+    assert captured == {
+        "workspace_id_or_uri": "file:///repo",
+        "limit": 5,
+        "base_dir": tmp_path,
+    }
+
+
 def test_orchestration_goal_start_cli_wires_storage(monkeypatch, capsys) -> None:
     captured: dict[str, object] = {}
 

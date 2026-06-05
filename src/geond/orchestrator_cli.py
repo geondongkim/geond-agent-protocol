@@ -12,6 +12,7 @@ from geond import (
     orchestrator_control,
     orchestrator_graph_review,
     orchestrator_planner,
+    orchestrator_scheduler,
     orchestrator_task_planner,
 )
 from geond.config import get_settings
@@ -133,6 +134,51 @@ def main() -> None:
         default=orchestrator.DEFAULT_MANIFEST_BASE_DIR,
     )
     action_execute.add_argument("--format", choices=["markdown", "json"], default="markdown")
+
+    scheduler_cmd = subparsers.add_parser("scheduler", help="Plan or drain queued actions")
+    scheduler_subparsers = scheduler_cmd.add_subparsers(dest="scheduler_command", required=True)
+    scheduler_plan = scheduler_subparsers.add_parser("plan", help="Preview scheduler selections")
+    scheduler_plan.add_argument("--workspace", required=True)
+    scheduler_plan.add_argument("--run", dest="run_id")
+    scheduler_plan.add_argument("--agents")
+    scheduler_plan.add_argument("--max-actions", type=int, default=5)
+    scheduler_plan.add_argument("--max-workers", type=int, default=1)
+    scheduler_plan.add_argument("--model")
+    scheduler_plan.add_argument("--sandbox", default="workspace-write")
+    scheduler_plan.add_argument("--timeout-seconds", type=int, default=3600)
+    scheduler_plan.add_argument("--budget-actions", type=int)
+    scheduler_plan.add_argument("--budget-spawn-actions", type=int)
+    scheduler_plan.add_argument("--write-bundle", action="store_true")
+    scheduler_plan.add_argument(
+        "--base-dir",
+        type=Path,
+        default=orchestrator.DEFAULT_MANIFEST_BASE_DIR,
+    )
+    scheduler_plan.add_argument("--limit", type=int, default=50)
+    scheduler_plan.add_argument("--format", choices=["markdown", "json"], default="markdown")
+    scheduler_drain = scheduler_subparsers.add_parser(
+        "drain",
+        help="Preview or execute approved queued actions",
+    )
+    scheduler_drain.add_argument("--workspace", required=True)
+    scheduler_drain.add_argument("--run", dest="run_id")
+    scheduler_drain.add_argument("--execute", action="store_true")
+    scheduler_drain.add_argument("--agents")
+    scheduler_drain.add_argument("--max-actions", type=int, default=5)
+    scheduler_drain.add_argument("--max-workers", type=int, default=1)
+    scheduler_drain.add_argument("--model")
+    scheduler_drain.add_argument("--sandbox", default="workspace-write")
+    scheduler_drain.add_argument("--timeout-seconds", type=int, default=3600)
+    scheduler_drain.add_argument("--budget-actions", type=int)
+    scheduler_drain.add_argument("--budget-spawn-actions", type=int)
+    scheduler_drain.add_argument("--write-bundle", action="store_true")
+    scheduler_drain.add_argument(
+        "--base-dir",
+        type=Path,
+        default=orchestrator.DEFAULT_MANIFEST_BASE_DIR,
+    )
+    scheduler_drain.add_argument("--limit", type=int, default=50)
+    scheduler_drain.add_argument("--format", choices=["markdown", "json"], default="markdown")
 
     agent_cmd = subparsers.add_parser("agent", help="Preview or execute the next safe agent step")
     agent_cmd.add_argument("run_id")
@@ -340,6 +386,42 @@ def main() -> None:
                     sandbox=args.sandbox,
                     timeout_seconds=args.timeout_seconds,
                     base_dir=args.base_dir,
+                )
+        elif args.command == "scheduler":
+            if args.scheduler_command == "plan":
+                payload = orchestrator_scheduler.plan_scheduler(
+                    conn,
+                    workspace_id_or_uri=args.workspace,
+                    run_id=args.run_id,
+                    agents=parse_agents(args.agents),
+                    max_actions=args.max_actions,
+                    max_workers=args.max_workers,
+                    model=args.model,
+                    sandbox=args.sandbox,
+                    timeout_seconds=args.timeout_seconds,
+                    base_dir=args.base_dir,
+                    budget_actions=args.budget_actions,
+                    budget_spawn_actions=args.budget_spawn_actions,
+                    limit=args.limit,
+                    write_bundle=args.write_bundle,
+                )
+            else:
+                payload = orchestrator_scheduler.drain_scheduler(
+                    conn,
+                    workspace_id_or_uri=args.workspace,
+                    run_id=args.run_id,
+                    execute=args.execute,
+                    agents=parse_agents(args.agents),
+                    max_actions=args.max_actions,
+                    max_workers=args.max_workers,
+                    model=args.model,
+                    sandbox=args.sandbox,
+                    timeout_seconds=args.timeout_seconds,
+                    base_dir=args.base_dir,
+                    budget_actions=args.budget_actions,
+                    budget_spawn_actions=args.budget_spawn_actions,
+                    limit=args.limit,
+                    write_bundle=args.write_bundle,
                 )
         elif args.command == "agent":
             payload = orchestrator_control.run_agent_mode(

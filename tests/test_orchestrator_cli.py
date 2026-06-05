@@ -495,6 +495,111 @@ def test_orchestrator_action_cli_wires_queue_service(
     assert captured["execute"]["timeout_seconds"] == 12
 
 
+def test_orchestrator_scheduler_cli_wires_service(
+    monkeypatch,
+    capsys,
+    tmp_path: Path,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_connect(settings) -> FakeConnection:  # noqa: ANN001
+        return FakeConnection()
+
+    def fake_plan(conn, **kwargs):  # noqa: ANN001, ANN202
+        captured["plan"] = kwargs
+        return {
+            "schema": "geond.orchestrator_scheduler.v1",
+            "status": "ok",
+            "markdown": "# Scheduler Plan\n",
+        }
+
+    def fake_drain(conn, **kwargs):  # noqa: ANN001, ANN202
+        captured["drain"] = kwargs
+        return {
+            "schema": "geond.orchestrator_scheduler.v1",
+            "status": "ok",
+            "markdown": "# Scheduler Drain\n",
+        }
+
+    monkeypatch.setattr(orchestrator_cli, "connect", fake_connect)
+    monkeypatch.setattr(orchestrator_cli.orchestrator_scheduler, "plan_scheduler", fake_plan)
+    monkeypatch.setattr(orchestrator_cli.orchestrator_scheduler, "drain_scheduler", fake_drain)
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "geond-orchestrator",
+            "scheduler",
+            "plan",
+            "--workspace",
+            "file:///repo",
+            "--run",
+            "run-1",
+            "--agents",
+            "codex,claude",
+            "--max-actions",
+            "3",
+            "--max-workers",
+            "2",
+            "--model",
+            "gpt-5",
+            "--budget-actions",
+            "5",
+            "--budget-spawn-actions",
+            "1",
+            "--write-bundle",
+            "--base-dir",
+            str(tmp_path),
+        ],
+    )
+    orchestrator_cli.main()
+    assert capsys.readouterr().out == "# Scheduler Plan\n"
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "geond-orchestrator",
+            "scheduler",
+            "drain",
+            "--workspace",
+            "file:///repo",
+            "--run",
+            "run-1",
+            "--execute",
+            "--agents",
+            "claude",
+            "--max-actions",
+            "2",
+            "--max-workers",
+            "1",
+            "--sandbox",
+            "workspace-write",
+            "--timeout-seconds",
+            "12",
+            "--base-dir",
+            str(tmp_path),
+        ],
+    )
+    orchestrator_cli.main()
+    assert capsys.readouterr().out == "# Scheduler Drain\n"
+
+    assert captured["plan"]["workspace_id_or_uri"] == "file:///repo"
+    assert captured["plan"]["run_id"] == "run-1"
+    assert captured["plan"]["agents"] == ["codex", "claude"]
+    assert captured["plan"]["max_actions"] == 3
+    assert captured["plan"]["max_workers"] == 2
+    assert captured["plan"]["model"] == "gpt-5"
+    assert captured["plan"]["budget_actions"] == 5
+    assert captured["plan"]["budget_spawn_actions"] == 1
+    assert captured["plan"]["write_bundle"] is True
+    assert captured["drain"]["execute"] is True
+    assert captured["drain"]["agents"] == ["claude"]
+    assert captured["drain"]["max_actions"] == 2
+    assert captured["drain"]["timeout_seconds"] == 12
+
+
 def test_orchestrator_graph_cli_wires_task_planner(monkeypatch, capsys, tmp_path: Path) -> None:
     captured: dict[str, object] = {}
     source_path = tmp_path / "proposal.json"
