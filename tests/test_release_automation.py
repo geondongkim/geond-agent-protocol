@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import re
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -31,6 +32,14 @@ Commit = release_notes_module.Commit
 format_release_notes = release_notes_module.format_release_notes
 previous_tag = release_notes_module.previous_tag
 write_checksums = checksums_module.write_checksums
+
+
+def assert_action_major_at_least(workflow: str, action: str, minimum_major: int) -> None:
+    action_ref_pattern = rf"uses:\s*{re.escape(action)}@v(\d+)\b"
+    majors = [int(match) for match in re.findall(action_ref_pattern, workflow)]
+
+    assert majors, f"{action} is not referenced in workflow"
+    assert all(major >= minimum_major for major in majors), majors
 
 
 def test_check_docs_links_reports_missing_local_targets(tmp_path: Path) -> None:
@@ -84,7 +93,7 @@ def test_ci_workflow_uploads_release_and_benchmark_artifacts() -> None:
         encoding="utf-8"
     )
 
-    assert "actions/upload-artifact@v4" in workflow
+    assert_action_major_at_least(workflow, "actions/upload-artifact", 4)
     assert "release-notes-draft.md" in workflow
     assert "geond-ci-benchmark" in workflow
     assert "benchmark-smoke.md" in workflow
@@ -132,7 +141,7 @@ def test_ci_workflow_creates_release_for_tags() -> None:
     assert "tags:" in workflow
     assert '"v*"' in workflow
     assert "--since-previous-tag" in workflow
-    assert "softprops/action-gh-release@v2" in workflow
+    assert_action_major_at_least(workflow, "softprops/action-gh-release", 2)
     assert "body_path: release-notes-draft.md" in workflow
     assert "dist/*.tar.gz" in workflow
     assert "dist/*.whl" in workflow
@@ -164,8 +173,8 @@ def test_ci_workflow_has_optional_pypi_trusted_publishing() -> None:
     assert "publish-pypi:" in workflow
     assert "needs: build-dist" in workflow
     assert "pypa/gh-action-pypi-publish@release/v1" in workflow
-    assert "actions/upload-artifact@v4" in workflow
-    assert "actions/download-artifact@v4" in workflow
+    assert_action_major_at_least(workflow, "actions/upload-artifact", 4)
+    assert_action_major_at_least(workflow, "actions/download-artifact", 4)
     assert "name: pypi-package-dist" in workflow
     assert "cp dist/*.tar.gz dist/*.whl publish-dist/" in workflow
     assert "packages-dir: publish-dist/" in workflow

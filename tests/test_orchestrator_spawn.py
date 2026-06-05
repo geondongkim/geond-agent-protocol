@@ -153,25 +153,29 @@ def test_spawn_execute_records_evidence_then_finishes(monkeypatch, tmp_path: Pat
     monkeypatch.setattr(
         orchestrator.orchestration_store,
         "register_worker_session",
-        lambda *args, **kwargs: calls.append("register")
-        or {
-            "status": "ok",
-            "worker_session": {
-                "worker_session_id": "worker-1",
-                "run_id": "run-1",
-                "agent_name": "codex",
-            },
-        },
+        lambda *args, **kwargs: (
+            calls.append("register")
+            or {
+                "status": "ok",
+                "worker_session": {
+                    "worker_session_id": "worker-1",
+                    "run_id": "run-1",
+                    "agent_name": "codex",
+                },
+            }
+        ),
     )
     monkeypatch.setattr(
         orchestrator.orchestration_store,
         "claim_task",
-        lambda *args, **kwargs: calls.append("claim")
-        or {
-            "status": "ok",
-            "lease": {"lease_id": "lease-1"},
-            "task": {"task_id": "task-1"},
-        },
+        lambda *args, **kwargs: (
+            calls.append("claim")
+            or {
+                "status": "ok",
+                "lease": {"lease_id": "lease-1"},
+                "task": {"task_id": "task-1"},
+            }
+        ),
     )
 
     def fake_record(*args, **kwargs):  # noqa: ANN001, ANN202
@@ -421,14 +425,17 @@ def test_claude_spawn_accepts_wrapper_json_result(monkeypatch, tmp_path: Path) -
     monkeypatch.setattr(
         orchestrator.orchestration_store,
         "register_worker_session",
-        lambda *args, **kwargs: calls.append("register")
-        or {"status": "ok", "worker_session": {"worker_session_id": "worker-1"}},
+        lambda *args, **kwargs: (
+            calls.append("register")
+            or {"status": "ok", "worker_session": {"worker_session_id": "worker-1"}}
+        ),
     )
     monkeypatch.setattr(
         orchestrator.orchestration_store,
         "claim_task",
-        lambda *args, **kwargs: calls.append("claim")
-        or {"status": "ok", "lease": {"lease_id": "lease-1"}},
+        lambda *args, **kwargs: (
+            calls.append("claim") or {"status": "ok", "lease": {"lease_id": "lease-1"}}
+        ),
     )
     monkeypatch.setattr(
         orchestrator.orchestration_store,
