@@ -297,9 +297,7 @@ def format_review_markdown(payload: dict[str, Any]) -> str:
     findings = payload.get("findings") or []
     if findings:
         for item in findings:
-            lines.append(
-                f"- {item.get('severity')} {item.get('code')}: {item.get('message')}"
-            )
+            lines.append(f"- {item.get('severity')} {item.get('code')}: {item.get('message')}")
     else:
         lines.append("- none")
     lines.extend(["", "## Next Command", f"- `{payload.get('suggested_next_command')}`"])
