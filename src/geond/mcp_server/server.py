@@ -7,7 +7,7 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from geond import orchestrator_control, orchestrator_planner, orchestrator_task_planner
+from geond import orchestrator_mcp_bridge, orchestrator_planner, orchestrator_task_planner
 from geond.config import get_settings
 from geond.db import connect
 from geond.embeddings import get_embedding_provider
@@ -1773,7 +1773,7 @@ def preview_orchestrator_agent_step(
 ) -> dict[str, Any]:
     """Preview the next Agent Mode action without executing or writing state."""
     with connect(get_settings()) as conn:
-        return orchestrator_control.preview_agent_step(
+        return orchestrator_mcp_bridge.preview_agent_step(
             conn,
             run_id,
             agents=agents,

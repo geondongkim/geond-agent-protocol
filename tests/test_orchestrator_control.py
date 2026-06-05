@@ -491,6 +491,16 @@ def test_agent_execute_materializes_allowed_llm_planner_proposal(
         fake_propose,
     )
     monkeypatch.setattr(
+        orchestrator_control.orchestrator_graph_review,
+        "review_task_graph_proposal",
+        lambda *args, **kwargs: {
+            "schema": "geond.task_graph_review.v1",
+            "status": "ok",
+            "decision": "approved",
+            "review_id": "review-1",
+        },
+    )
+    monkeypatch.setattr(
         orchestrator_control.orchestrator_task_planner,
         "apply_task_graph_payload",
         fake_apply,
@@ -518,6 +528,70 @@ def test_agent_execute_materializes_allowed_llm_planner_proposal(
         "graph_payload": proposal,
         "execute": True,
     }
+
+
+def test_agent_execute_blocks_llm_materialization_when_review_fails(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    proposal = {
+        "schema": "geond.task_graph_proposal.v1",
+        "status": "ok",
+        "code": None,
+        "run_id": "run-1",
+        "proposal_id": "llm-proposal-1",
+        "planner": "llm",
+        "planner_agent": "codex",
+        "eligible_for_materialization": True,
+        "eligibility_reason": "placeholder only",
+        "planning_placeholder_task": {"task_id": "task-1"},
+        "tasks": [{"key": "inspect", "title": "Inspect", "depends_on": []}],
+        "suggested_apply_command": SUGGESTED_GRAPH_APPLY,
+    }
+    monkeypatch.setattr(
+        orchestrator_control.orchestrator_planner,
+        "doctor_run",
+        lambda *args, **kwargs: plan_payload(action("dispatch_spawn", priority=55)),
+    )
+    monkeypatch.setattr(
+        orchestrator_control.orchestrator_task_planner,
+        "propose_task_graph",
+        lambda *args, **kwargs: {
+            "schema": "geond.llm_task_graph_planner.v1",
+            "status": "ok",
+            "task_graph_proposal": proposal,
+        },
+    )
+    monkeypatch.setattr(
+        orchestrator_control.orchestrator_graph_review,
+        "review_task_graph_proposal",
+        lambda *args, **kwargs: {
+            "schema": "geond.task_graph_review.v1",
+            "status": "ok",
+            "decision": "blocked",
+            "review_id": "review-1",
+        },
+    )
+    monkeypatch.setattr(
+        orchestrator_control.orchestrator_task_planner,
+        "apply_task_graph_payload",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("must not apply")),
+    )
+
+    payload = orchestrator_control.run_agent_mode(
+        object(),
+        "run-1",
+        execute=True,
+        planner="llm",
+        allow_llm_planner=True,
+        execute_planner=True,
+        allow_task_graph_create=True,
+        base_dir=tmp_path,
+    )
+
+    assert payload["status"] == "blocked"
+    assert payload["code"] == "TASK_GRAPH_REVIEW_BLOCKED"
+    assert payload["steps"][0]["step_status"] == "blocked"
 
 
 def test_agent_execute_finalizes_ready_run_dry_run_only(monkeypatch, tmp_path: Path) -> None:

@@ -7,7 +7,9 @@ from typing import Any
 
 from geond import (
     orchestrator,
+    orchestrator_action_bundle,
     orchestrator_control,
+    orchestrator_graph_review,
     orchestrator_planner,
     orchestrator_task_planner,
 )
@@ -51,6 +53,19 @@ def main() -> None:
     )
     plan_cmd.add_argument("--limit", type=int, default=50)
     plan_cmd.add_argument("--format", choices=["markdown", "json"], default="markdown")
+
+    actions_cmd = subparsers.add_parser("actions", help="Build an operator action bundle")
+    actions_cmd.add_argument("--workspace", required=True)
+    actions_cmd.add_argument("--run", dest="run_id")
+    actions_cmd.add_argument("--agents")
+    actions_cmd.add_argument("--write-bundle", action="store_true")
+    actions_cmd.add_argument(
+        "--base-dir",
+        type=Path,
+        default=orchestrator.DEFAULT_MANIFEST_BASE_DIR,
+    )
+    actions_cmd.add_argument("--limit", type=int, default=50)
+    actions_cmd.add_argument("--format", choices=["markdown", "json"], default="markdown")
 
     agent_cmd = subparsers.add_parser("agent", help="Preview or execute the next safe agent step")
     agent_cmd.add_argument("run_id")
@@ -129,6 +144,18 @@ def main() -> None:
     graph_apply.add_argument("--from", dest="source_path", type=Path, required=True)
     graph_apply.add_argument("--execute", action="store_true")
     graph_apply.add_argument("--format", choices=["markdown", "json"], default="markdown")
+    graph_review = graph_subparsers.add_parser("review", help="Review a task graph proposal")
+    graph_review.add_argument("run_id")
+    graph_review_source = graph_review.add_mutually_exclusive_group(required=True)
+    graph_review_source.add_argument("--from", dest="source_path", type=Path)
+    graph_review_source.add_argument("--latest-planner", action="store_true")
+    graph_review.add_argument("--write-bundle", action="store_true")
+    graph_review.add_argument(
+        "--base-dir",
+        type=Path,
+        default=orchestrator.DEFAULT_MANIFEST_BASE_DIR,
+    )
+    graph_review.add_argument("--format", choices=["markdown", "json"], default="markdown")
 
     resume_cmd = subparsers.add_parser("resume", help="Resume and summarize an existing run")
     resume_cmd.add_argument("run_id")
@@ -187,6 +214,16 @@ def main() -> None:
                 planner=args.planner,
                 template=args.template,
                 planner_agent=args.planner_agent,
+            )
+        elif args.command == "actions":
+            payload = orchestrator_action_bundle.build_action_bundle(
+                conn,
+                workspace_id_or_uri=args.workspace,
+                run_id=args.run_id,
+                agents=parse_agents(args.agents),
+                limit=args.limit,
+                base_dir=args.base_dir,
+                write_bundle=args.write_bundle,
             )
         elif args.command == "agent":
             payload = orchestrator_control.run_agent_mode(
@@ -270,12 +307,28 @@ def main() -> None:
                     if output_payload is not payload:
                         payload["task_graph_proposal"] = output_payload
             else:
-                payload = orchestrator_task_planner.apply_task_graph_file(
-                    conn,
-                    args.run_id,
-                    args.source_path,
-                    execute=args.execute,
-                )
+                if args.graph_command == "apply":
+                    payload = orchestrator_task_planner.apply_task_graph_file(
+                        conn,
+                        args.run_id,
+                        args.source_path,
+                        execute=args.execute,
+                    )
+                elif args.latest_planner:
+                    payload = orchestrator_graph_review.review_latest_planner_result(
+                        conn,
+                        args.run_id,
+                        base_dir=args.base_dir,
+                        write_bundle=args.write_bundle,
+                    )
+                else:
+                    payload = orchestrator_graph_review.review_task_graph_file(
+                        conn,
+                        args.run_id,
+                        args.source_path,
+                        base_dir=args.base_dir,
+                        write_bundle=args.write_bundle,
+                    )
         elif args.command == "finalize":
             payload = orchestrator.finalize_run(
                 conn,

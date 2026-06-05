@@ -9,7 +9,13 @@ from typing import Any
 
 from psycopg import Connection
 
-from geond import degraded_ledger, orchestrator, orchestrator_planner, orchestrator_task_planner
+from geond import (
+    degraded_ledger,
+    orchestrator,
+    orchestrator_graph_review,
+    orchestrator_planner,
+    orchestrator_task_planner,
+)
 
 CONTROL_SCHEMA = "geond.orchestrator_control.v1"
 AUTO_ACTIONS = {
@@ -58,6 +64,7 @@ def run_plan_mode(
     if plan.get("status") != "ok":
         return plan
     task_graph_proposal = None
+    task_graph_review = None
     if propose_task_graph and run_id:
         task_graph_proposal = orchestrator_task_planner.propose_task_graph(
             conn,
@@ -70,7 +77,13 @@ def run_plan_mode(
         )
         proposal = extract_materializable_proposal(task_graph_proposal)
         if proposal and proposal.get("status") == "ok":
-            plan = inject_task_graph_action(plan, proposal)
+            task_graph_review = maybe_review_task_graph_proposal(
+                conn,
+                run_id,
+                proposal,
+                base_dir=base_dir,
+            )
+            plan = inject_task_graph_action(plan, proposal, review=task_graph_review)
     selected_action = select_agent_action(plan)
     payload = control_payload(
         mode="plan",
@@ -84,6 +97,7 @@ def run_plan_mode(
         max_workers=1,
     )
     payload["task_graph_proposal"] = task_graph_proposal
+    payload["task_graph_review"] = task_graph_review
     payload["proposal_id"] = (task_graph_proposal or {}).get("proposal_id")
     payload["suggested_apply_command"] = (task_graph_proposal or {}).get("suggested_apply_command")
     payload["markdown"] = format_control_markdown(payload)
@@ -258,8 +272,19 @@ def run_agent_mode(
             code = task_graph_result.get("code")
             break
         task_graph_proposal = extract_materializable_proposal(task_graph_result)
+        task_graph_review = None
         if task_graph_proposal and task_graph_proposal.get("status") == "ok":
-            plan = inject_task_graph_action(plan, task_graph_proposal)
+            task_graph_review = maybe_review_task_graph_proposal(
+                conn,
+                run_id,
+                task_graph_proposal,
+                base_dir=base_dir,
+            )
+            plan = inject_task_graph_action(
+                plan,
+                task_graph_proposal,
+                review=task_graph_review,
+            )
             last_plan = plan
 
         selected_action = select_agent_action(plan)
@@ -301,6 +326,24 @@ def run_agent_mode(
             execution_status = "blocked"
             status = "blocked"
             code = "TASK_GRAPH_APPROVAL_REQUIRED"
+            break
+
+        if selected_action.get("action_type") == "materialize_task_graph" and (
+            llm_graph_review_blocks(selected_action)
+        ):
+            step["step_status"] = "blocked"
+            step["blocks_execution"] = True
+            step["result"] = {
+                "status": "blocked",
+                "code": "TASK_GRAPH_REVIEW_BLOCKED",
+                "message": "LLM task graph proposal must pass deterministic review.",
+                "task_graph_review": selected_action.get("task_graph_review"),
+            }
+            steps.append(step)
+            append_trace_step(control_dir, step)
+            execution_status = "blocked"
+            status = "blocked"
+            code = "TASK_GRAPH_REVIEW_BLOCKED"
             break
 
         if not action_is_auto_executable(selected_action):
@@ -354,7 +397,17 @@ def run_agent_mode(
             )
             after_proposal = extract_materializable_proposal(after_result)
             if after_proposal and after_proposal.get("status") == "ok":
-                after_plan = inject_task_graph_action(after_plan, after_proposal)
+                after_review = maybe_review_task_graph_proposal(
+                    conn,
+                    run_id,
+                    after_proposal,
+                    base_dir=base_dir,
+                )
+                after_plan = inject_task_graph_action(
+                    after_plan,
+                    after_proposal,
+                    review=after_review,
+                )
             step["after_readiness"] = readiness_from_plan(after_plan)
             last_plan = after_plan
         steps.append(step)
@@ -414,6 +467,31 @@ def select_agent_action(plan: dict[str, Any]) -> dict[str, Any] | None:
 
 def action_is_auto_executable(action: dict[str, Any]) -> bool:
     return str(action.get("action_type") or "") in AUTO_ACTIONS
+
+
+def llm_graph_review_blocks(action: dict[str, Any]) -> bool:
+    proposal = action.get("task_graph_proposal") or {}
+    if proposal.get("planner") != "llm":
+        return False
+    review = action.get("task_graph_review") or {}
+    return review.get("decision") != "approved"
+
+
+def maybe_review_task_graph_proposal(
+    conn: Connection,
+    run_id: str,
+    proposal: dict[str, Any],
+    *,
+    base_dir: Path,
+) -> dict[str, Any] | None:
+    if proposal.get("planner") not in {"template", "llm"}:
+        return None
+    return orchestrator_graph_review.review_task_graph_proposal(
+        conn,
+        run_id,
+        proposal,
+        base_dir=base_dir,
+    )
 
 
 def extract_materializable_proposal(payload: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -531,6 +609,13 @@ def execute_action(
                 "status": "blocked",
                 "code": "TASK_GRAPH_APPROVAL_REQUIRED",
                 "message": "Task graph materialization requires explicit approval.",
+            }
+        if llm_graph_review_blocks(action):
+            return {
+                "status": "blocked",
+                "code": "TASK_GRAPH_REVIEW_BLOCKED",
+                "message": "LLM task graph proposal must pass deterministic review.",
+                "task_graph_review": action.get("task_graph_review"),
             }
         proposal = action.get("task_graph_proposal") or {}
         return orchestrator_task_planner.apply_task_graph_payload(
@@ -749,20 +834,29 @@ def step_status_from_result(result: dict[str, Any]) -> str:
 def inject_task_graph_action(
     plan: dict[str, Any],
     proposal: dict[str, Any],
+    *,
+    review: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if not proposal.get("eligible_for_materialization"):
         return plan
+    review_decision = (review or {}).get("decision")
+    blocks_execution = proposal.get("planner") == "llm" and review_decision != "approved"
     action = {
         "action_type": "materialize_task_graph",
         "priority": 45,
-        "severity": "info",
-        "reason": "Run only has the default planning placeholder; materialize a task graph first.",
+        "severity": "warning" if blocks_execution else "info",
+        "reason": (
+            "LLM task graph proposal needs review before materialization."
+            if blocks_execution
+            else "Run only has the default planning placeholder; materialize a task graph first."
+        ),
         "suggested_cli_command": proposal.get("suggested_apply_command"),
         "related_ids": {"run_id": proposal.get("run_id")},
         "run_id": proposal.get("run_id"),
         "task_id": (proposal.get("planning_placeholder_task") or {}).get("task_id"),
-        "blocks_execution": False,
+        "blocks_execution": blocks_execution,
         "task_graph_proposal": proposal,
+        "task_graph_review": review,
     }
     updated = {**plan}
     actions = [

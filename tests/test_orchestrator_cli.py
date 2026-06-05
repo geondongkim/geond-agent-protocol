@@ -121,6 +121,14 @@ def test_orchestrator_status_dispatch_resume_finalize_cli(monkeypatch, capsys) -
             "markdown": "# Doctor\n",
         }
 
+    def fake_actions(conn, **kwargs):  # noqa: ANN001, ANN202
+        captured["actions"] = kwargs
+        return {
+            "schema": "geond.orchestrator_action_bundle.v1",
+            "status": "ok",
+            "markdown": "# Actions\n",
+        }
+
     monkeypatch.setattr(orchestrator_cli, "connect", fake_connect)
     monkeypatch.setattr(orchestrator_cli.orchestrator, "get_status", fake_status)
     monkeypatch.setattr(orchestrator_cli.orchestrator, "dispatch_claim", fake_dispatch)
@@ -129,6 +137,11 @@ def test_orchestrator_status_dispatch_resume_finalize_cli(monkeypatch, capsys) -
     monkeypatch.setattr(orchestrator_cli.orchestrator_control, "run_plan_mode", fake_plan)
     monkeypatch.setattr(orchestrator_cli.orchestrator_control, "run_agent_mode", fake_agent)
     monkeypatch.setattr(orchestrator_cli.orchestrator_planner, "doctor_run", fake_doctor)
+    monkeypatch.setattr(
+        orchestrator_cli.orchestrator_action_bundle,
+        "build_action_bundle",
+        fake_actions,
+    )
 
     monkeypatch.setattr(sys, "argv", ["geond-orchestrator", "status", "run-1"])
     orchestrator_cli.main()
@@ -158,6 +171,24 @@ def test_orchestrator_status_dispatch_resume_finalize_cli(monkeypatch, capsys) -
     )
     orchestrator_cli.main()
     assert capsys.readouterr().out == "# Plan\n"
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "geond-orchestrator",
+            "actions",
+            "--workspace",
+            "file:///repo",
+            "--run",
+            "run-1",
+            "--agents",
+            "codex,claude",
+            "--write-bundle",
+        ],
+    )
+    orchestrator_cli.main()
+    assert capsys.readouterr().out == "# Actions\n"
 
     monkeypatch.setattr(
         sys,
@@ -247,6 +278,10 @@ def test_orchestrator_status_dispatch_resume_finalize_cli(monkeypatch, capsys) -
     assert captured["plan"]["template"] == "bugfix"
     assert captured["plan"]["planner_agent"] == "claude"
     assert captured["plan"]["write_bundle"] is True
+    assert captured["actions"]["workspace_id_or_uri"] == "file:///repo"
+    assert captured["actions"]["run_id"] == "run-1"
+    assert captured["actions"]["agents"] == ["codex", "claude"]
+    assert captured["actions"]["write_bundle"] is True
     assert captured["agent"]["run_id"] == "run-1"
     assert captured["agent"]["execute"] is True
     assert captured["agent"]["allow_task_graph_create"] is True
@@ -303,6 +338,22 @@ def test_orchestrator_graph_cli_wires_task_planner(monkeypatch, capsys, tmp_path
             "markdown": "# Apply\n",
         }
 
+    def fake_review_file(conn, run_id, path, **kwargs):  # noqa: ANN001, ANN202
+        captured["review_file"] = {"run_id": run_id, "path": path, **kwargs}
+        return {
+            "schema": "geond.task_graph_review.v1",
+            "status": "ok",
+            "markdown": "# Review\n",
+        }
+
+    def fake_review_latest(conn, run_id, **kwargs):  # noqa: ANN001, ANN202
+        captured["review_latest"] = {"run_id": run_id, **kwargs}
+        return {
+            "schema": "geond.task_graph_review.v1",
+            "status": "ok",
+            "markdown": "# Review Latest\n",
+        }
+
     monkeypatch.setattr(orchestrator_cli, "connect", fake_connect)
     monkeypatch.setattr(
         orchestrator_cli.orchestrator_task_planner,
@@ -314,6 +365,16 @@ def test_orchestrator_graph_cli_wires_task_planner(monkeypatch, capsys, tmp_path
         orchestrator_cli.orchestrator_task_planner,
         "apply_task_graph_file",
         fake_apply,
+    )
+    monkeypatch.setattr(
+        orchestrator_cli.orchestrator_graph_review,
+        "review_task_graph_file",
+        fake_review_file,
+    )
+    monkeypatch.setattr(
+        orchestrator_cli.orchestrator_graph_review,
+        "review_latest_planner_result",
+        fake_review_latest,
     )
 
     monkeypatch.setattr(
@@ -362,6 +423,38 @@ def test_orchestrator_graph_cli_wires_task_planner(monkeypatch, capsys, tmp_path
     orchestrator_cli.main()
     assert capsys.readouterr().out == "# Apply\n"
 
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "geond-orchestrator",
+            "graph",
+            "review",
+            "run-1",
+            "--from",
+            str(source_path),
+            "--write-bundle",
+        ],
+    )
+    orchestrator_cli.main()
+    assert capsys.readouterr().out == "# Review\n"
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "geond-orchestrator",
+            "graph",
+            "review",
+            "run-1",
+            "--latest-planner",
+            "--base-dir",
+            str(tmp_path / "runs"),
+        ],
+    )
+    orchestrator_cli.main()
+    assert capsys.readouterr().out == "# Review Latest\n"
+
     assert captured["propose"] == {
         "run_id": "run-1",
         "planner": "llm",
@@ -375,6 +468,17 @@ def test_orchestrator_graph_cli_wires_task_planner(monkeypatch, capsys, tmp_path
     }
     assert captured["write"]["path"] == output_path
     assert captured["apply"] == {"run_id": "run-1", "path": source_path, "execute": True}
+    assert captured["review_file"] == {
+        "run_id": "run-1",
+        "path": source_path,
+        "base_dir": orchestrator_cli.orchestrator.DEFAULT_MANIFEST_BASE_DIR,
+        "write_bundle": True,
+    }
+    assert captured["review_latest"] == {
+        "run_id": "run-1",
+        "base_dir": tmp_path / "runs",
+        "write_bundle": False,
+    }
 
 
 def test_orchestrator_spawn_dispatch_cli_wires_service(monkeypatch, capsys, tmp_path: Path) -> None:
