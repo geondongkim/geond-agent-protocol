@@ -196,6 +196,8 @@ def test_copilot_command_builder_supports_direct_binary_and_model(tmp_path: Path
     assert "copilot -p" in direct[-1]
     assert "--model gpt-5" in direct[-1]
     assert "gh copilot -- -p" in via_gh[-1]
+    assert "--allow-tool=write" in via_gh[-1]
+    assert "--allow-tool=shell" in via_gh[-1]
     assert "git push" in via_gh[-1]
 
 
@@ -262,9 +264,10 @@ def test_real_copilot_prompt_mode_smoke(tmp_path: Path) -> None:
         invocation=invocation,
     )
     prompt = (
-        "Return JSON only matching this object: "
+        f"Write this exact JSON object to {invocation.result_path}: "
         '{"task_status":"done","summary":"copilot smoke ok","tested_commands":[],'
-        '"changed_files":[],"risks":[],"next_action":"none"}'
+        '"changed_files":[],"risks":[],"next_action":"none"}. '
+        "Your final response may be brief."
     )
 
     result = orchestrator_spawn.run_codex(

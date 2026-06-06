@@ -23,6 +23,7 @@ CODEX_EVENTS_NAME = "CODEX_EVENTS.jsonl"
 CODEX_STDERR_NAME = "CODEX_STDERR.txt"
 LAST_MESSAGE_NAME = "LAST_MESSAGE.json"
 RESULT_NAME = "RESULT.json"
+COMMON_AGENT_BIN_DIRS = ("/opt/homebrew/bin", "/usr/local/bin")
 
 
 @dataclass(frozen=True)
@@ -253,6 +254,17 @@ def find_codex_binary() -> str | None:
     return shutil.which("codex")
 
 
+def find_executable(name: str) -> str | None:
+    found = shutil.which(name)
+    if found:
+        return found
+    for directory in COMMON_AGENT_BIN_DIRS:
+        candidate = Path(directory) / name
+        if candidate.exists() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    return None
+
+
 def find_agent_binary(agent_name: str) -> str | None:
     if agent_name == CODEX_AGENT_NAME:
         return find_codex_binary()
@@ -265,7 +277,7 @@ def find_agent_binary(agent_name: str) -> str | None:
         configured = os.environ.get("GEOND_COPILOT_BIN")
         if configured:
             return configured
-        return shutil.which("copilot") or shutil.which("gh")
+        return find_executable("copilot") or find_executable("gh")
     return None
 
 
@@ -391,7 +403,15 @@ def build_copilot_command(
         prefix = shlex.join([copilot_bin, "copilot", "--", "-p"])
     else:
         prefix = shlex.join([copilot_bin, "-p"])
+    path_prefix = str(Path(copilot_bin).parent)
     options = [
+        "--no-auto-update",
+        "--no-color",
+        "--no-remote",
+        "--silent",
+        "--output-format=json",
+        "--allow-tool=write",
+        "--allow-tool=shell",
         "--deny-tool=shell(git push)",
         "--deny-tool=shell(git commit)",
     ]
@@ -401,7 +421,11 @@ def build_copilot_command(
     return [
         "/bin/sh",
         "-c",
-        (f'prompt=$(cat)\ncd {shlex.quote(workspace_path)} && exec {prefix} "$prompt" {tail}'),
+        (
+            f"prompt=$(cat)\n"
+            f'export PATH={shlex.quote(path_prefix)}:"$PATH"\n'
+            f'cd {shlex.quote(workspace_path)} && exec {prefix} "$prompt" {tail}'
+        ),
     ]
 
 
