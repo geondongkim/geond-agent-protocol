@@ -27,14 +27,16 @@ def test_daemon_once_preview_does_not_execute_scheduler(monkeypatch, tmp_path: P
     monkeypatch.setattr(
         orchestrator_daemon.orchestrator_scheduler,
         "drain_scheduler",
-        lambda *args, **kwargs: calls.append(str(kwargs.get("execute")))
-        or {
-            "schema": "geond.orchestrator_scheduler.v1",
-            "status": "ok",
-            "code": None,
-            "execution_status": "preview",
-            "selected_actions": [{"action_id": "a-1"}],
-        },
+        lambda *args, **kwargs: (
+            calls.append(str(kwargs.get("execute")))
+            or {
+                "schema": "geond.orchestrator_scheduler.v1",
+                "status": "ok",
+                "code": None,
+                "execution_status": "preview",
+                "selected_actions": [{"action_id": "a-1"}],
+            }
+        ),
     )
 
     payload = orchestrator_daemon.run_daemon_once(
@@ -62,14 +64,16 @@ def test_daemon_once_execute_locks_runs_scheduler_and_writes_trace(
     monkeypatch.setattr(
         orchestrator_daemon.orchestrator_scheduler,
         "drain_scheduler",
-        lambda *args, **kwargs: calls.append(str(kwargs.get("execute")))
-        or {
-            "schema": "geond.orchestrator_scheduler.v1",
-            "status": "ok",
-            "code": None,
-            "execution_status": "completed",
-            "selected_actions": [{"action_id": "a-1"}],
-        },
+        lambda *args, **kwargs: (
+            calls.append(str(kwargs.get("execute")))
+            or {
+                "schema": "geond.orchestrator_scheduler.v1",
+                "status": "ok",
+                "code": None,
+                "execution_status": "completed",
+                "selected_actions": [{"action_id": "a-1"}],
+            }
+        ),
     )
 
     payload = orchestrator_daemon.run_daemon_once(
