@@ -49,6 +49,14 @@ def test_dashboard_route_matching_and_index() -> None:
         "abc-123",
         "orchestration-scheduler",
     )
+    assert match_workspace_route("/api/workspaces/abc-123/orchestration-budget") == (
+        "abc-123",
+        "orchestration-budget",
+    )
+    assert match_workspace_route("/api/workspaces/abc-123/orchestration-daemon") == (
+        "abc-123",
+        "orchestration-daemon",
+    )
     assert match_workspace_route("/api/workspaces/abc-123/orchestration-traces") == (
         "abc-123",
         "orchestration-traces",
@@ -111,15 +119,21 @@ def test_dashboard_root_serves_html_without_database() -> None:
     assert b"orchestration-action-board" in body
     assert b"orchestration-action-queue-board" in body
     assert b"orchestration-scheduler-board" in body
+    assert b"orchestration-budget-board" in body
+    assert b"orchestration-daemon-board" in body
     assert b"Operator Actions" in body
     assert b"Action Queue" in body
     assert b"Scheduler" in body
+    assert b"Budget Guard" in body
+    assert b"Local Daemon" in body
     assert b"orchestration-trace-board" in body
     assert b"Recommended Actions" in body
     assert b"/orchestration-plan" in body
     assert b"/orchestration-actions" in body
     assert b"/orchestration-action-queue" in body
     assert b"/orchestration-scheduler" in body
+    assert b"/orchestration-budget" in body
+    assert b"/orchestration-daemon" in body
     assert b"/orchestration-traces" in body
     assert b"Conversation Evidence" in body
     assert b"Work Evidence" in body
@@ -186,5 +200,7 @@ def test_dashboard_index_includes_safe_database_metadata() -> None:
     assert "/api/workspaces/{workspace_id}/orchestration-actions" in index["endpoints"]
     assert "/api/workspaces/{workspace_id}/orchestration-action-queue" in index["endpoints"]
     assert "/api/workspaces/{workspace_id}/orchestration-scheduler" in index["endpoints"]
+    assert "/api/workspaces/{workspace_id}/orchestration-budget" in index["endpoints"]
+    assert "/api/workspaces/{workspace_id}/orchestration-daemon" in index["endpoints"]
     assert "/api/workspaces/{workspace_id}/orchestration-traces" in index["endpoints"]
     assert "secret" not in str(index)

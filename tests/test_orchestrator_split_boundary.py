@@ -12,6 +12,8 @@ PRIVATE_CONTROL_MODULES = {
     "orchestrator_graph_review",
     "orchestrator_action_queue",
     "orchestrator_scheduler",
+    "orchestrator_budget",
+    "orchestrator_daemon",
 }
 PROTOCOL_PATHS = [
     REPO_ROOT / "src" / "geond" / "storage",

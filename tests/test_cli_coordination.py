@@ -282,6 +282,79 @@ def test_dashboard_orchestration_scheduler_cli_wires_service(
     }
 
 
+def test_dashboard_orchestration_budget_and_daemon_cli_wires_services(
+    monkeypatch,
+    capsys,
+    tmp_path,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_connect(settings) -> FakeConnection:  # noqa: ANN001
+        return FakeConnection()
+
+    def fake_budget(conn, **kwargs):  # noqa: ANN001, ANN202
+        captured["budget"] = kwargs
+        return {
+            "schema": "geond.orchestrator_budget_report.v1",
+            "status": "ok",
+        }
+
+    def fake_daemon(**kwargs):  # noqa: ANN001, ANN202
+        captured["daemon"] = kwargs
+        return {
+            "schema": "geond.orchestrator_daemon.v1",
+            "status": "ok",
+        }
+
+    monkeypatch.setattr(cli, "connect", fake_connect)
+    monkeypatch.setattr(cli.orchestrator_budget, "build_dashboard_budget", fake_budget)
+    monkeypatch.setattr(cli.orchestrator_daemon, "build_dashboard_daemon", fake_daemon)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "geond",
+            "dashboard-orchestration-budget",
+            "file:///repo",
+            "--limit",
+            "5",
+            "--base-dir",
+            str(tmp_path),
+        ],
+    )
+    cli.main()
+    budget_output = json.loads(capsys.readouterr().out)
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "geond",
+            "dashboard-orchestration-daemon",
+            "file:///repo",
+            "--limit",
+            "7",
+            "--base-dir",
+            str(tmp_path),
+        ],
+    )
+    cli.main()
+    daemon_output = json.loads(capsys.readouterr().out)
+
+    assert budget_output["schema"] == "geond.orchestrator_budget_report.v1"
+    assert daemon_output["schema"] == "geond.orchestrator_daemon.v1"
+    assert captured["budget"] == {
+        "workspace_id_or_uri": "file:///repo",
+        "limit": 5,
+        "base_dir": tmp_path,
+    }
+    assert captured["daemon"] == {
+        "workspace_id_or_uri": "file:///repo",
+        "limit": 7,
+        "base_dir": tmp_path,
+    }
+
+
 def test_orchestration_goal_start_cli_wires_storage(monkeypatch, capsys) -> None:
     captured: dict[str, object] = {}
 

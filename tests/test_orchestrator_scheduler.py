@@ -107,7 +107,46 @@ def test_scheduler_preview_and_budget_do_not_execute(monkeypatch, tmp_path: Path
     )
 
     assert preview["execution_status"] == "preview"
-    assert blocked["code"] == "SCHEDULER_BUDGET_EXCEEDED"
+    assert blocked["code"] == "ORCHESTRATOR_BUDGET_EXCEEDED"
+    assert called == []
+
+
+def test_scheduler_blocks_token_budget_before_execute(monkeypatch, tmp_path: Path) -> None:  # noqa: ANN001
+    called: list[str] = []
+    items = [queue_item("auto-1", action_type="dispatch_spawn")]
+    monkeypatch.setattr(
+        orchestrator_scheduler.orchestrator_action_queue,
+        "list_action_queue",
+        lambda *args, **kwargs: queue_payload(items),
+    )
+    monkeypatch.setattr(
+        orchestrator_scheduler.orchestrator_budget,
+        "usage_totals",
+        lambda *args, **kwargs: {
+            "data_available": True,
+            "event_count": 1,
+            "total_tokens": 95,
+            "estimated_cost_usd": "0",
+        },
+    )
+    monkeypatch.setattr(
+        orchestrator_scheduler.orchestrator_action_queue,
+        "execute_queued_action",
+        lambda *args, **kwargs: called.append("execute"),
+    )
+
+    payload = orchestrator_scheduler.drain_scheduler(
+        object(),
+        workspace_id_or_uri="file:///repo",
+        execute=True,
+        budget_tokens=100,
+        estimate_spawn_tokens=10,
+        base_dir=tmp_path,
+    )
+
+    assert payload["status"] == "blocked"
+    assert payload["code"] == "ORCHESTRATOR_BUDGET_EXCEEDED"
+    assert payload["budget_report"]["blocking_reasons"][0]["code"] == "TOKEN_BUDGET_EXCEEDED"
     assert called == []
 
 

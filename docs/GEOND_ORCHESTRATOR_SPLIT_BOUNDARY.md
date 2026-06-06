@@ -34,6 +34,8 @@ These pieces are candidates for a future private `Geond Orchestrator` package:
 - Operator action-bundle composition and future command queue policy.
 - Human-approved operator action queue and typed action execution policy.
 - Workspace-level scheduler, action budget guard, and worker pooling policy.
+- Usage-aware budget guards, cost forecast policy, and scheduler enforcement.
+- Local background daemon loop, lock policy, and execution cadence.
 - Spawn policy for Codex, Claude, and future worker adapters.
 - Product UX beyond the read-only Dashboard protocol views.
 - Git/PR finalize policy, release gates, and organization-specific approval
@@ -68,6 +70,8 @@ Controller-oriented modules may compose protocol primitives:
 - `geond.orchestrator_action_bundle`
 - `geond.orchestrator_action_queue`
 - `geond.orchestrator_scheduler`
+- `geond.orchestrator_budget`
+- `geond.orchestrator_daemon`
 - `geond.orchestrator_spawn`
 
 Dashboard read models may summarize controller artifacts, but they must remain

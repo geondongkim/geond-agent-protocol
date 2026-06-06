@@ -8,7 +8,7 @@ from typing import Any
 
 from psycopg import Connection
 
-from geond import orchestrator, orchestrator_action_queue, orchestrator_planner
+from geond import orchestrator, orchestrator_action_queue, orchestrator_budget, orchestrator_planner
 
 SCHEDULER_SCHEMA = "geond.orchestrator_scheduler.v1"
 SCHEDULER_TRACE_SCHEMA = "geond.orchestrator_scheduler_trace.v1"
@@ -37,6 +37,11 @@ def plan_scheduler(
     base_dir: Path = orchestrator.DEFAULT_MANIFEST_BASE_DIR,
     budget_actions: int | None = None,
     budget_spawn_actions: int | None = None,
+    budget_tokens: int | None = None,
+    budget_cost_usd: float | str | None = None,
+    budget_window_hours: int = 24,
+    estimate_spawn_tokens: int = 0,
+    estimate_spawn_cost_usd: float | str | None = None,
     limit: int = 50,
     write_bundle: bool = False,
 ) -> dict[str, Any]:
@@ -53,6 +58,11 @@ def plan_scheduler(
         base_dir=base_dir,
         budget_actions=budget_actions,
         budget_spawn_actions=budget_spawn_actions,
+        budget_tokens=budget_tokens,
+        budget_cost_usd=budget_cost_usd,
+        budget_window_hours=budget_window_hours,
+        estimate_spawn_tokens=estimate_spawn_tokens,
+        estimate_spawn_cost_usd=estimate_spawn_cost_usd,
         limit=limit,
         execute=False,
     )
@@ -76,6 +86,11 @@ def drain_scheduler(
     base_dir: Path = orchestrator.DEFAULT_MANIFEST_BASE_DIR,
     budget_actions: int | None = None,
     budget_spawn_actions: int | None = None,
+    budget_tokens: int | None = None,
+    budget_cost_usd: float | str | None = None,
+    budget_window_hours: int = 24,
+    estimate_spawn_tokens: int = 0,
+    estimate_spawn_cost_usd: float | str | None = None,
     limit: int = 50,
     write_bundle: bool = False,
 ) -> dict[str, Any]:
@@ -92,6 +107,11 @@ def drain_scheduler(
         base_dir=base_dir,
         budget_actions=budget_actions,
         budget_spawn_actions=budget_spawn_actions,
+        budget_tokens=budget_tokens,
+        budget_cost_usd=budget_cost_usd,
+        budget_window_hours=budget_window_hours,
+        estimate_spawn_tokens=estimate_spawn_tokens,
+        estimate_spawn_cost_usd=estimate_spawn_cost_usd,
         limit=limit,
         execute=execute,
     )
@@ -103,7 +123,7 @@ def drain_scheduler(
         payload.update(
             {
                 "status": "blocked",
-                "code": "SCHEDULER_BUDGET_EXCEEDED",
+                "code": "ORCHESTRATOR_BUDGET_EXCEEDED",
                 "execution_status": "blocked",
                 "message": "Scheduler budget would be exceeded.",
                 "selected_actions": [],
@@ -222,6 +242,11 @@ def build_scheduler_payload(
     base_dir: Path,
     budget_actions: int | None,
     budget_spawn_actions: int | None,
+    budget_tokens: int | None,
+    budget_cost_usd: float | str | None,
+    budget_window_hours: int,
+    estimate_spawn_tokens: int,
+    estimate_spawn_cost_usd: float | str | None,
     limit: int,
     execute: bool,
 ) -> dict[str, Any]:
@@ -263,6 +288,13 @@ def build_scheduler_payload(
         "budget": {
             "budget_actions": budget_actions,
             "budget_spawn_actions": budget_spawn_actions,
+            "budget_tokens": budget_tokens,
+            "budget_cost_usd": str(budget_cost_usd) if budget_cost_usd is not None else None,
+            "budget_window_hours": budget_window_hours,
+            "estimate_spawn_tokens": estimate_spawn_tokens,
+            "estimate_spawn_cost_usd": (
+                str(estimate_spawn_cost_usd) if estimate_spawn_cost_usd is not None else None
+            ),
             "selected_actions": len(selected),
             "selected_spawn_actions": sum(
                 1 for item in selected if item.get("action_type") == "dispatch_spawn"
@@ -275,6 +307,32 @@ def build_scheduler_payload(
         "executed_count": 0,
         "stop_reason": None,
     }
+    payload["budget_report"] = orchestrator_budget.build_budget_report(
+        conn,
+        workspace_id_or_uri=workspace_id_or_uri,
+        run_id=run_id,
+        agents=agent_pool,
+        max_actions=max_actions,
+        base_dir=base_dir,
+        budget_actions=budget_actions,
+        budget_spawn_actions=budget_spawn_actions,
+        budget_tokens=budget_tokens,
+        budget_cost_usd=budget_cost_usd,
+        budget_window_hours=budget_window_hours,
+        estimate_spawn_tokens=estimate_spawn_tokens,
+        estimate_spawn_cost_usd=estimate_spawn_cost_usd,
+        selected_actions=selected,
+        limit=limit,
+    )
+    if payload["budget_report"].get("decision") == "blocked":
+        payload.update(
+            {
+                "status": "blocked",
+                "code": "ORCHESTRATOR_BUDGET_EXCEEDED",
+                "execution_status": "blocked",
+                "message": "Scheduler budget would be exceeded.",
+            }
+        )
     payload["markdown"] = format_scheduler_markdown(payload)
     return payload
 
@@ -333,10 +391,12 @@ def budget_exceeded(payload: dict[str, Any]) -> bool:
     budget_spawn_actions = budget.get("budget_spawn_actions")
     if budget_actions is not None and budget["selected_actions"] > int(budget_actions):
         return True
-    return bool(
-        budget_spawn_actions is not None
-        and budget["selected_spawn_actions"] > int(budget_spawn_actions)
-    )
+    if budget_spawn_actions is not None and budget["selected_spawn_actions"] > int(
+        budget_spawn_actions
+    ):
+        return True
+    budget_report = payload.get("budget_report") or {}
+    return budget_report.get("decision") == "blocked"
 
 
 def queue_has_blocking_status(queue: dict[str, Any]) -> bool:
@@ -466,6 +526,16 @@ def format_scheduler_markdown(payload: dict[str, Any]) -> str:
         (
             "- Budget spawn actions: "
             f"`{budget.get('selected_spawn_actions')}/{budget.get('budget_spawn_actions')}`"
+        ),
+        (
+            "- Budget tokens: "
+            f"`{(payload.get('budget_report') or {}).get('forecast', {}).get('projected_tokens')}"
+            f"/{budget.get('budget_tokens')}`"
+        ),
+        (
+            "- Budget cost USD: "
+            f"`{(payload.get('budget_report') or {}).get('forecast', {}).get('projected_cost_usd')}"
+            f"/{budget.get('budget_cost_usd')}`"
         ),
         "",
         "## Selected Actions",

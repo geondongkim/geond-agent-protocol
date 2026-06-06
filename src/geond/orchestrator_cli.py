@@ -9,7 +9,9 @@ from geond import (
     orchestrator,
     orchestrator_action_bundle,
     orchestrator_action_queue,
+    orchestrator_budget,
     orchestrator_control,
+    orchestrator_daemon,
     orchestrator_graph_review,
     orchestrator_planner,
     orchestrator_scheduler,
@@ -148,6 +150,11 @@ def main() -> None:
     scheduler_plan.add_argument("--timeout-seconds", type=int, default=3600)
     scheduler_plan.add_argument("--budget-actions", type=int)
     scheduler_plan.add_argument("--budget-spawn-actions", type=int)
+    scheduler_plan.add_argument("--budget-tokens", type=int)
+    scheduler_plan.add_argument("--budget-cost-usd")
+    scheduler_plan.add_argument("--budget-window-hours", type=int, default=24)
+    scheduler_plan.add_argument("--estimate-spawn-tokens", type=int, default=0)
+    scheduler_plan.add_argument("--estimate-spawn-cost-usd")
     scheduler_plan.add_argument("--write-bundle", action="store_true")
     scheduler_plan.add_argument(
         "--base-dir",
@@ -171,6 +178,11 @@ def main() -> None:
     scheduler_drain.add_argument("--timeout-seconds", type=int, default=3600)
     scheduler_drain.add_argument("--budget-actions", type=int)
     scheduler_drain.add_argument("--budget-spawn-actions", type=int)
+    scheduler_drain.add_argument("--budget-tokens", type=int)
+    scheduler_drain.add_argument("--budget-cost-usd")
+    scheduler_drain.add_argument("--budget-window-hours", type=int, default=24)
+    scheduler_drain.add_argument("--estimate-spawn-tokens", type=int, default=0)
+    scheduler_drain.add_argument("--estimate-spawn-cost-usd")
     scheduler_drain.add_argument("--write-bundle", action="store_true")
     scheduler_drain.add_argument(
         "--base-dir",
@@ -179,6 +191,60 @@ def main() -> None:
     )
     scheduler_drain.add_argument("--limit", type=int, default=50)
     scheduler_drain.add_argument("--format", choices=["markdown", "json"], default="markdown")
+
+    budget_cmd = subparsers.add_parser("budget", help="Inspect orchestrator budget state")
+    budget_subparsers = budget_cmd.add_subparsers(dest="budget_command", required=True)
+    budget_report = budget_subparsers.add_parser("report", help="Report scheduler budget state")
+    budget_report.add_argument("--workspace", required=True)
+    budget_report.add_argument("--run", dest="run_id")
+    budget_report.add_argument("--agents")
+    budget_report.add_argument("--max-actions", type=int, default=5)
+    budget_report.add_argument("--budget-actions", type=int)
+    budget_report.add_argument("--budget-spawn-actions", type=int)
+    budget_report.add_argument("--budget-tokens", type=int)
+    budget_report.add_argument("--budget-cost-usd")
+    budget_report.add_argument("--budget-window-hours", type=int, default=24)
+    budget_report.add_argument("--estimate-spawn-tokens", type=int, default=0)
+    budget_report.add_argument("--estimate-spawn-cost-usd")
+    budget_report.add_argument(
+        "--base-dir",
+        type=Path,
+        default=orchestrator.DEFAULT_MANIFEST_BASE_DIR,
+    )
+    budget_report.add_argument("--limit", type=int, default=50)
+    budget_report.add_argument("--format", choices=["markdown", "json"], default="markdown")
+
+    daemon_cmd = subparsers.add_parser("daemon", help="Run local scheduler daemon cycles")
+    daemon_subparsers = daemon_cmd.add_subparsers(dest="daemon_command", required=True)
+    daemon_once = daemon_subparsers.add_parser("once", help="Preview or run one daemon cycle")
+    daemon_run = daemon_subparsers.add_parser("run", help="Run repeated daemon cycles")
+    for daemon_parser in (daemon_once, daemon_run):
+        daemon_parser.add_argument("--workspace", required=True)
+        daemon_parser.add_argument("--run", dest="run_id")
+        daemon_parser.add_argument("--execute", action="store_true")
+        daemon_parser.add_argument("--agents")
+        daemon_parser.add_argument("--max-actions", type=int, default=5)
+        daemon_parser.add_argument("--max-workers", type=int, default=1)
+        daemon_parser.add_argument("--model")
+        daemon_parser.add_argument("--sandbox", default="workspace-write")
+        daemon_parser.add_argument("--timeout-seconds", type=int, default=3600)
+        daemon_parser.add_argument("--budget-actions", type=int)
+        daemon_parser.add_argument("--budget-spawn-actions", type=int)
+        daemon_parser.add_argument("--budget-tokens", type=int)
+        daemon_parser.add_argument("--budget-cost-usd")
+        daemon_parser.add_argument("--budget-window-hours", type=int, default=24)
+        daemon_parser.add_argument("--estimate-spawn-tokens", type=int, default=0)
+        daemon_parser.add_argument("--estimate-spawn-cost-usd")
+        daemon_parser.add_argument("--interval-seconds", type=int, default=60)
+        daemon_parser.add_argument(
+            "--base-dir",
+            type=Path,
+            default=orchestrator.DEFAULT_MANIFEST_BASE_DIR,
+        )
+        daemon_parser.add_argument("--limit", type=int, default=50)
+        daemon_parser.add_argument("--format", choices=["markdown", "json"], default="markdown")
+    daemon_run.add_argument("--max-cycles", type=int, default=1)
+    daemon_run.add_argument("--forever", action="store_true")
 
     agent_cmd = subparsers.add_parser("agent", help="Preview or execute the next safe agent step")
     agent_cmd.add_argument("run_id")
@@ -402,6 +468,11 @@ def main() -> None:
                     base_dir=args.base_dir,
                     budget_actions=args.budget_actions,
                     budget_spawn_actions=args.budget_spawn_actions,
+                    budget_tokens=args.budget_tokens,
+                    budget_cost_usd=args.budget_cost_usd,
+                    budget_window_hours=args.budget_window_hours,
+                    estimate_spawn_tokens=args.estimate_spawn_tokens,
+                    estimate_spawn_cost_usd=args.estimate_spawn_cost_usd,
                     limit=args.limit,
                     write_bundle=args.write_bundle,
                 )
@@ -420,8 +491,61 @@ def main() -> None:
                     base_dir=args.base_dir,
                     budget_actions=args.budget_actions,
                     budget_spawn_actions=args.budget_spawn_actions,
+                    budget_tokens=args.budget_tokens,
+                    budget_cost_usd=args.budget_cost_usd,
+                    budget_window_hours=args.budget_window_hours,
+                    estimate_spawn_tokens=args.estimate_spawn_tokens,
+                    estimate_spawn_cost_usd=args.estimate_spawn_cost_usd,
                     limit=args.limit,
                     write_bundle=args.write_bundle,
+                )
+        elif args.command == "budget":
+            payload = orchestrator_budget.build_budget_report(
+                conn,
+                workspace_id_or_uri=args.workspace,
+                run_id=args.run_id,
+                agents=parse_agents(args.agents),
+                max_actions=args.max_actions,
+                base_dir=args.base_dir,
+                budget_actions=args.budget_actions,
+                budget_spawn_actions=args.budget_spawn_actions,
+                budget_tokens=args.budget_tokens,
+                budget_cost_usd=args.budget_cost_usd,
+                budget_window_hours=args.budget_window_hours,
+                estimate_spawn_tokens=args.estimate_spawn_tokens,
+                estimate_spawn_cost_usd=args.estimate_spawn_cost_usd,
+                limit=args.limit,
+            )
+        elif args.command == "daemon":
+            common = {
+                "workspace_id_or_uri": args.workspace,
+                "run_id": args.run_id,
+                "execute": args.execute,
+                "agents": parse_agents(args.agents),
+                "max_actions": args.max_actions,
+                "max_workers": args.max_workers,
+                "model": args.model,
+                "sandbox": args.sandbox,
+                "timeout_seconds": args.timeout_seconds,
+                "base_dir": args.base_dir,
+                "budget_actions": args.budget_actions,
+                "budget_spawn_actions": args.budget_spawn_actions,
+                "budget_tokens": args.budget_tokens,
+                "budget_cost_usd": args.budget_cost_usd,
+                "budget_window_hours": args.budget_window_hours,
+                "estimate_spawn_tokens": args.estimate_spawn_tokens,
+                "estimate_spawn_cost_usd": args.estimate_spawn_cost_usd,
+                "interval_seconds": args.interval_seconds,
+                "limit": args.limit,
+            }
+            if args.daemon_command == "once":
+                payload = orchestrator_daemon.run_daemon_once(conn, **common)
+            else:
+                payload = orchestrator_daemon.run_daemon_loop(
+                    conn,
+                    max_cycles=args.max_cycles,
+                    forever=args.forever,
+                    **common,
                 )
         elif args.command == "agent":
             payload = orchestrator_control.run_agent_mode(

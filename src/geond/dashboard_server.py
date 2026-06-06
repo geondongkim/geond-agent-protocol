@@ -10,6 +10,8 @@ from urllib.parse import parse_qs, unquote, urlparse
 from geond import (
     orchestrator_action_bundle,
     orchestrator_action_queue,
+    orchestrator_budget,
+    orchestrator_daemon,
     orchestrator_planner,
     orchestrator_scheduler,
 )
@@ -288,6 +290,19 @@ def dashboard_payload(settings: Settings, path: str) -> tuple[int, dict[str, Any
                 limit=limit,
             )
             return status_for_payload(payload), payload
+        if endpoint == "orchestration-budget":
+            payload = orchestrator_budget.build_dashboard_budget(
+                conn,
+                workspace_id_or_uri=workspace_id,
+                limit=limit,
+            )
+            return status_for_payload(payload), payload
+        if endpoint == "orchestration-daemon":
+            payload = orchestrator_daemon.build_dashboard_daemon(
+                workspace_id_or_uri=workspace_id,
+                limit=limit,
+            )
+            return status_for_payload(payload), payload
         if endpoint == "orchestration-traces":
             payload = get_dashboard_orchestration_traces(conn, workspace_id, limit=limit)
             return status_for_payload(payload), payload
@@ -320,6 +335,8 @@ def dashboard_index(settings: Settings | None = None) -> dict[str, Any]:
             "/api/workspaces/{workspace_id}/orchestration-actions",
             "/api/workspaces/{workspace_id}/orchestration-action-queue",
             "/api/workspaces/{workspace_id}/orchestration-scheduler",
+            "/api/workspaces/{workspace_id}/orchestration-budget",
+            "/api/workspaces/{workspace_id}/orchestration-daemon",
             "/api/workspaces/{workspace_id}/orchestration-traces",
         ],
     }
@@ -1278,6 +1295,8 @@ def mission_control_html() -> str:
         <div class="session-board" id="orchestration-action-board"></div>
         <div class="session-board" id="orchestration-action-queue-board"></div>
         <div class="session-board" id="orchestration-scheduler-board"></div>
+        <div class="session-board" id="orchestration-budget-board"></div>
+        <div class="session-board" id="orchestration-daemon-board"></div>
         <div class="session-board" id="orchestration-plan-board"></div>
         <div class="session-board" id="orchestration-trace-board"></div>
         <div class="session-board" id="orchestration-board"></div>
@@ -1449,6 +1468,8 @@ def mission_control_html() -> str:
       "#orchestration-action-queue-board"
     );
     const orchestrationSchedulerBoard = document.querySelector("#orchestration-scheduler-board");
+    const orchestrationBudgetBoard = document.querySelector("#orchestration-budget-board");
+    const orchestrationDaemonBoard = document.querySelector("#orchestration-daemon-board");
     const orchestrationTraceBoard = document.querySelector("#orchestration-trace-board");
     const graphSummary = document.querySelector("#graph-summary");
     const graphNodes = document.querySelector("#graph-nodes");
@@ -2999,6 +3020,69 @@ def mission_control_html() -> str:
       orchestrationSchedulerBoard.append(lane);
     }
 
+    function renderOrchestrationBudget(payload) {
+      orchestrationBudgetBoard.replaceChildren();
+      const forecast = payload?.forecast || {};
+      const remaining = payload?.remaining || {};
+      const reasons = payload?.blocking_reasons || [];
+      const lane = laneShell("Budget Guard", payload?.decision || "allow");
+      const body = lane.querySelector(".lane-body");
+      const card = document.createElement("article");
+      card.className = "session-card";
+      card.innerHTML = `
+        <div class="card-head">
+          <h3>Usage Budget</h3>
+          <span class="badge"></span>
+        </div>
+        <div class="meta"></div>
+        <div class="mini-list"></div>`;
+      card.querySelector(".badge").textContent = payload?.status || "ok";
+      card.querySelector(".meta").textContent = [
+        `tokens ${forecast.projected_tokens ?? 0}`,
+        `cost ${forecast.projected_cost_usd ?? "0"}`,
+        `remaining tokens ${remaining.tokens ?? "open"}`,
+        `remaining cost ${remaining.cost_usd ?? "open"}`,
+      ].join(" | ");
+      const list = card.querySelector(".mini-list");
+      if (!reasons.length) {
+        list.append(row("budget", "no blocking reasons", "ok"));
+      }
+      for (const reason of reasons.slice(0, 6)) {
+        list.append(row(reason.code || "budget", reason.message || "blocked", "warning"));
+      }
+      body.append(card);
+      orchestrationBudgetBoard.append(lane);
+    }
+
+    function renderOrchestrationDaemon(payload) {
+      orchestrationDaemonBoard.replaceChildren();
+      const latest = payload?.latest || {};
+      const lock = payload?.lock || {};
+      const lane = laneShell("Daemon", latest.execution_status || lock.status || "idle");
+      const body = lane.querySelector(".lane-body");
+      const card = document.createElement("article");
+      card.className = "session-card";
+      card.innerHTML = `
+        <div class="card-head">
+          <h3>Local Daemon</h3>
+          <span class="badge"></span>
+        </div>
+        <div class="meta"></div>
+        <div class="mini-list"></div>`;
+      card.querySelector(".badge").textContent = latest.status || lock.status || "idle";
+      card.querySelector(".meta").textContent = [
+        `lock ${lock.active ? "active" : lock.status || "none"}`,
+        latest.daemon_id ? `daemon ${shortId(latest.daemon_id)}` : null,
+        latest.stop_reason ? `stop ${latest.stop_reason}` : null,
+      ].filter(Boolean).join(" | ");
+      const list = card.querySelector(".mini-list");
+      for (const artifact of (payload?.artifact_refs || []).slice(0, 5)) {
+        list.append(row("artifact", artifact, "ok", "artifact"));
+      }
+      body.append(card);
+      orchestrationDaemonBoard.append(lane);
+    }
+
     function renderOrchestrationTraces(payload) {
       const runs = payload?.runs || [];
       orchestrationTraceBoard.replaceChildren();
@@ -3291,6 +3375,12 @@ def mission_control_html() -> str:
       const orchestrationSchedulerUrl = [
         `/api/workspaces/${encoded}/orchestration-scheduler?limit=${encodeURIComponent(limit)}`
       ].join("");
+      const orchestrationBudgetUrl = [
+        `/api/workspaces/${encoded}/orchestration-budget?limit=${encodeURIComponent(limit)}`
+      ].join("");
+      const orchestrationDaemonUrl = [
+        `/api/workspaces/${encoded}/orchestration-daemon?limit=${encodeURIComponent(limit)}`
+      ].join("");
       const orchestrationTraceUrl = [
         `/api/workspaces/${encoded}/orchestration-traces?limit=${encodeURIComponent(limit)}`
       ].join("");
@@ -3312,6 +3402,8 @@ def mission_control_html() -> str:
       let orchestrationActionResponse;
       let orchestrationActionQueueResponse;
       let orchestrationSchedulerResponse;
+      let orchestrationBudgetResponse;
+      let orchestrationDaemonResponse;
       let orchestrationTraceResponse;
       let handoffResponse;
       try {
@@ -3329,6 +3421,8 @@ def mission_control_html() -> str:
           orchestrationActionResponse,
           orchestrationActionQueueResponse,
           orchestrationSchedulerResponse,
+          orchestrationBudgetResponse,
+          orchestrationDaemonResponse,
           orchestrationTraceResponse,
           handoffResponse,
         ] = await Promise.all([
@@ -3345,6 +3439,8 @@ def mission_control_html() -> str:
           fetch(orchestrationActionUrl),
           fetch(orchestrationActionQueueUrl),
           fetch(orchestrationSchedulerUrl),
+          fetch(orchestrationBudgetUrl),
+          fetch(orchestrationDaemonUrl),
           fetch(orchestrationTraceUrl),
           fetch(handoffsUrl),
         ]);
@@ -3361,6 +3457,8 @@ def mission_control_html() -> str:
         const orchestrationActionPayload = await orchestrationActionResponse.json();
         const orchestrationActionQueuePayload = await orchestrationActionQueueResponse.json();
         const orchestrationSchedulerPayload = await orchestrationSchedulerResponse.json();
+        const orchestrationBudgetPayload = await orchestrationBudgetResponse.json();
+        const orchestrationDaemonPayload = await orchestrationDaemonResponse.json();
         const orchestrationTracePayload = await orchestrationTraceResponse.json();
         const handoffPayload = await handoffResponse.json();
         if (!overviewResponse.ok || overview.status === "not_found") {
@@ -3406,6 +3504,8 @@ def mission_control_html() -> str:
       state.orchestrationActions = orchestrationActionPayload;
       state.orchestrationActionQueue = orchestrationActionQueuePayload;
       state.orchestrationScheduler = orchestrationSchedulerPayload;
+      state.orchestrationBudget = orchestrationBudgetPayload;
+      state.orchestrationDaemon = orchestrationDaemonPayload;
       state.orchestrationTraces = orchestrationTracePayload;
       state.handoffs = handoffPayload.handoffs || [];
       renderMetrics(overview.counts || {}, collectAgentKeys(events, sessions, overview).length);
@@ -3419,6 +3519,8 @@ def mission_control_html() -> str:
       renderOrchestrationActions(orchestrationActionPayload);
       renderOrchestrationActionQueue(orchestrationActionQueuePayload);
       renderOrchestrationScheduler(orchestrationSchedulerPayload);
+      renderOrchestrationBudget(orchestrationBudgetPayload);
+      renderOrchestrationDaemon(orchestrationDaemonPayload);
       renderOrchestrationTraces(orchestrationTracePayload);
       renderHandoffBoard(handoffPayload);
       renderAgentBoard(events, sessions, overview);
@@ -3471,6 +3573,8 @@ def match_workspace_route(path: str) -> tuple[str, str] | None:
         "orchestration-actions",
         "orchestration-action-queue",
         "orchestration-scheduler",
+        "orchestration-budget",
+        "orchestration-daemon",
         "orchestration-traces",
     }:
         return None

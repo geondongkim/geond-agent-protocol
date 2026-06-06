@@ -548,6 +548,16 @@ def test_orchestrator_scheduler_cli_wires_service(
             "5",
             "--budget-spawn-actions",
             "1",
+            "--budget-tokens",
+            "1000",
+            "--budget-cost-usd",
+            "3.50",
+            "--budget-window-hours",
+            "12",
+            "--estimate-spawn-tokens",
+            "250",
+            "--estimate-spawn-cost-usd",
+            "0.25",
             "--write-bundle",
             "--base-dir",
             str(tmp_path),
@@ -593,11 +603,129 @@ def test_orchestrator_scheduler_cli_wires_service(
     assert captured["plan"]["model"] == "gpt-5"
     assert captured["plan"]["budget_actions"] == 5
     assert captured["plan"]["budget_spawn_actions"] == 1
+    assert captured["plan"]["budget_tokens"] == 1000
+    assert captured["plan"]["budget_cost_usd"] == "3.50"
+    assert captured["plan"]["budget_window_hours"] == 12
+    assert captured["plan"]["estimate_spawn_tokens"] == 250
+    assert captured["plan"]["estimate_spawn_cost_usd"] == "0.25"
     assert captured["plan"]["write_bundle"] is True
     assert captured["drain"]["execute"] is True
     assert captured["drain"]["agents"] == ["claude"]
     assert captured["drain"]["max_actions"] == 2
     assert captured["drain"]["timeout_seconds"] == 12
+
+
+def test_orchestrator_budget_and_daemon_cli_wires_services(
+    monkeypatch,
+    capsys,
+    tmp_path: Path,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_connect(settings) -> FakeConnection:  # noqa: ANN001
+        return FakeConnection()
+
+    def fake_budget(conn, **kwargs):  # noqa: ANN001, ANN202
+        captured["budget"] = kwargs
+        return {
+            "schema": "geond.orchestrator_budget_report.v1",
+            "status": "ok",
+            "markdown": "# Budget\n",
+        }
+
+    def fake_once(conn, **kwargs):  # noqa: ANN001, ANN202
+        captured["once"] = kwargs
+        return {
+            "schema": "geond.orchestrator_daemon.v1",
+            "status": "ok",
+            "markdown": "# Daemon Once\n",
+        }
+
+    def fake_loop(conn, **kwargs):  # noqa: ANN001, ANN202
+        captured["loop"] = kwargs
+        return {
+            "schema": "geond.orchestrator_daemon.v1",
+            "status": "ok",
+            "markdown": "# Daemon Loop\n",
+        }
+
+    monkeypatch.setattr(orchestrator_cli, "connect", fake_connect)
+    monkeypatch.setattr(orchestrator_cli.orchestrator_budget, "build_budget_report", fake_budget)
+    monkeypatch.setattr(orchestrator_cli.orchestrator_daemon, "run_daemon_once", fake_once)
+    monkeypatch.setattr(orchestrator_cli.orchestrator_daemon, "run_daemon_loop", fake_loop)
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "geond-orchestrator",
+            "budget",
+            "report",
+            "--workspace",
+            "file:///repo",
+            "--run",
+            "run-1",
+            "--budget-tokens",
+            "100",
+            "--budget-cost-usd",
+            "1.25",
+            "--estimate-spawn-tokens",
+            "20",
+            "--base-dir",
+            str(tmp_path),
+        ],
+    )
+    orchestrator_cli.main()
+    assert capsys.readouterr().out == "# Budget\n"
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "geond-orchestrator",
+            "daemon",
+            "once",
+            "--workspace",
+            "file:///repo",
+            "--run",
+            "run-1",
+            "--execute",
+            "--interval-seconds",
+            "5",
+            "--base-dir",
+            str(tmp_path),
+        ],
+    )
+    orchestrator_cli.main()
+    assert capsys.readouterr().out == "# Daemon Once\n"
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "geond-orchestrator",
+            "daemon",
+            "run",
+            "--workspace",
+            "file:///repo",
+            "--max-cycles",
+            "2",
+            "--forever",
+            "--base-dir",
+            str(tmp_path),
+        ],
+    )
+    orchestrator_cli.main()
+    assert capsys.readouterr().out == "# Daemon Loop\n"
+
+    assert captured["budget"]["workspace_id_or_uri"] == "file:///repo"
+    assert captured["budget"]["budget_tokens"] == 100
+    assert captured["budget"]["budget_cost_usd"] == "1.25"
+    assert captured["budget"]["estimate_spawn_tokens"] == 20
+    assert captured["once"]["execute"] is True
+    assert captured["once"]["interval_seconds"] == 5
+    assert captured["loop"]["max_cycles"] == 2
+    assert captured["loop"]["forever"] is True
 
 
 def test_orchestrator_graph_cli_wires_task_planner(monkeypatch, capsys, tmp_path: Path) -> None:

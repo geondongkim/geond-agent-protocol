@@ -12,7 +12,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter, time
 
-from geond import agent_hooks, degraded_ledger, orchestrator_action_queue, orchestrator_scheduler
+from geond import (
+    agent_hooks,
+    degraded_ledger,
+    orchestrator_action_queue,
+    orchestrator_budget,
+    orchestrator_daemon,
+    orchestrator_scheduler,
+)
 from geond.adapters.antigravity import infer_session_id as infer_antigravity_session_id
 from geond.adapters.antigravity import latest_transcript_path as latest_antigravity_transcript_path
 from geond.adapters.antigravity import parse_storage as parse_antigravity_storage
@@ -1233,6 +1240,30 @@ def main() -> None:
         default=Path("tmp/geond-runs"),
     )
 
+    dashboard_orchestration_budget = subparsers.add_parser(
+        "dashboard-orchestration-budget",
+        help="Return dashboard orchestration budget preview for one workspace",
+    )
+    dashboard_orchestration_budget.add_argument("workspace_id_or_uri")
+    dashboard_orchestration_budget.add_argument("--limit", type=int, default=50)
+    dashboard_orchestration_budget.add_argument(
+        "--base-dir",
+        type=Path,
+        default=Path("tmp/geond-runs"),
+    )
+
+    dashboard_orchestration_daemon = subparsers.add_parser(
+        "dashboard-orchestration-daemon",
+        help="Return dashboard orchestration daemon state for one workspace",
+    )
+    dashboard_orchestration_daemon.add_argument("workspace_id_or_uri")
+    dashboard_orchestration_daemon.add_argument("--limit", type=int, default=50)
+    dashboard_orchestration_daemon.add_argument(
+        "--base-dir",
+        type=Path,
+        default=Path("tmp/geond-runs"),
+    )
+
     dashboard_graph = subparsers.add_parser(
         "dashboard-graph",
         help="Return bounded dashboard lineage graph nodes and edges for one workspace",
@@ -2375,6 +2406,26 @@ def main() -> None:
                 limit=args.limit,
                 base_dir=args.base_dir,
             )
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        return
+
+    if args.command == "dashboard-orchestration-budget":
+        with connect(get_settings()) as conn:
+            result = orchestrator_budget.build_dashboard_budget(
+                conn,
+                workspace_id_or_uri=args.workspace_id_or_uri,
+                limit=args.limit,
+                base_dir=args.base_dir,
+            )
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        return
+
+    if args.command == "dashboard-orchestration-daemon":
+        result = orchestrator_daemon.build_dashboard_daemon(
+            workspace_id_or_uri=args.workspace_id_or_uri,
+            limit=args.limit,
+            base_dir=args.base_dir,
+        )
         print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
         return
 
