@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+
+import pytest
 
 from geond import degraded_ledger, orchestrator, orchestrator_spawn
 
@@ -146,6 +149,137 @@ def test_spawn_parallel_dry_run_assigns_multiple_agents_without_writes(
     assert payload["items"][0]["invocation"]["display_command"]
 
 
+def test_copilot_spawn_dry_run_uses_gh_fallback_and_planned_worktree(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    patch_spawn_context(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        orchestrator_spawn,
+        "find_agent_binary",
+        lambda agent_name: "/opt/homebrew/bin/gh" if agent_name == "copilot" else "/bin/codex",
+    )
+
+    payload = orchestrator.dispatch_spawn(
+        object(),
+        run_id="run-1",
+        agent_name="copilot",
+        manifest_base_dir=tmp_path,
+    )
+
+    assert payload["status"] == "ok"
+    assert payload["execution_status"] == "preview"
+    assert payload["agent_name"] == "copilot"
+    assert "gh copilot -- -p" in payload["invocation"]["display_command"]
+    assert payload["workspace"]["workspace_isolation"]["mode"] == "git_worktree"
+    assert payload["workspace"]["workspace_isolation"]["created"] is False
+    assert payload["workspace"]["workspace_path"].endswith(payload["invocation"]["invocation_id"])
+    assert str(payload["invocation"]["result_path"]) in payload["worker_prompt"]
+
+
+def test_copilot_command_builder_supports_direct_binary_and_model(tmp_path: Path) -> None:
+    invocation = orchestrator_spawn.new_invocation("run-1", tmp_path)
+    direct = orchestrator_spawn.build_agent_command(
+        agent_name="copilot",
+        agent_bin="/usr/local/bin/copilot",
+        workspace_path=str(tmp_path),
+        invocation=invocation,
+        model="gpt-5",
+    )
+    via_gh = orchestrator_spawn.build_agent_command(
+        agent_name="copilot",
+        agent_bin="/opt/homebrew/bin/gh",
+        workspace_path=str(tmp_path),
+        invocation=invocation,
+    )
+
+    assert "copilot -p" in direct[-1]
+    assert "--model gpt-5" in direct[-1]
+    assert "gh copilot -- -p" in via_gh[-1]
+    assert "git push" in via_gh[-1]
+
+
+def test_worker_result_parser_prefers_result_json_and_extracts_noisy_stdout(
+    tmp_path: Path,
+) -> None:
+    invocation = orchestrator_spawn.new_invocation("run-1", tmp_path)
+    invocation.output_dir.mkdir(parents=True, exist_ok=True)
+    invocation.last_message_path.write_text(
+        json.dumps(
+            {
+                "task_status": "blocked",
+                "summary": "old",
+                "tested_commands": [],
+                "changed_files": [],
+                "risks": ["old"],
+                "next_action": "retry",
+            }
+        ),
+        encoding="utf-8",
+    )
+    invocation.result_path.write_text(
+        json.dumps(
+            {
+                "task_status": "done",
+                "summary": "from result path",
+                "tested_commands": [],
+                "changed_files": [],
+                "risks": [],
+                "next_action": "finish",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    parsed = orchestrator_spawn.parse_worker_result(invocation)
+
+    noisy = orchestrator_spawn.new_invocation("run-2", tmp_path)
+    noisy.output_dir.mkdir(parents=True, exist_ok=True)
+    noisy.events_path.write_text(
+        'before {"task_status":"done","summary":"from stdout","tested_commands":[],'
+        '"changed_files":[],"risks":[],"next_action":"finish"} after',
+        encoding="utf-8",
+    )
+
+    noisy_parsed = orchestrator_spawn.parse_worker_result(noisy)
+
+    assert parsed["result"]["summary"] == "from result path"
+    assert noisy_parsed["status"] == "ok"
+    assert noisy_parsed["result"]["summary"] == "from stdout"
+
+
+def test_real_copilot_prompt_mode_smoke(tmp_path: Path) -> None:
+    if os.environ.get("GEOND_RUN_REAL_COPILOT_SMOKE") != "1":
+        pytest.skip("Set GEOND_RUN_REAL_COPILOT_SMOKE=1 to run real Copilot CLI smoke.")
+    agent_bin = orchestrator_spawn.find_agent_binary("copilot")
+    assert agent_bin, "Copilot CLI was not found."
+
+    invocation = orchestrator_spawn.new_invocation("real-copilot-smoke", tmp_path)
+    command = orchestrator_spawn.build_agent_command(
+        agent_name="copilot",
+        agent_bin=agent_bin,
+        workspace_path=str(tmp_path),
+        invocation=invocation,
+    )
+    prompt = (
+        "Return JSON only matching this object: "
+        '{"task_status":"done","summary":"copilot smoke ok","tested_commands":[],'
+        '"changed_files":[],"risks":[],"next_action":"none"}'
+    )
+
+    result = orchestrator_spawn.run_codex(
+        command=command,
+        prompt=prompt,
+        invocation=invocation,
+        timeout_seconds=120,
+    )
+    parsed = orchestrator_spawn.parse_worker_result(invocation)
+
+    assert result.exit_code == 0, result.stderr or result.stdout
+    assert parsed["status"] == "ok"
+    assert parsed["result"]["summary"]
+
+
 def test_spawn_execute_records_evidence_then_finishes(monkeypatch, tmp_path: Path) -> None:
     patch_spawn_context(monkeypatch, tmp_path)
     calls: list[str] = []
@@ -243,6 +377,222 @@ def test_spawn_execute_records_evidence_then_finishes(monkeypatch, tmp_path: Pat
     assert payload["execution_status"] == "completed"
     assert calls == ["register", "claim", "evidence", "finish"]
     assert Path(payload["invocation"]["result_path"]).exists()
+
+
+def test_copilot_execute_requires_senior_review_before_finish(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    patch_spawn_context(monkeypatch, tmp_path)
+    calls: list[str] = []
+
+    monkeypatch.setattr(
+        orchestrator_spawn,
+        "find_agent_binary",
+        lambda agent_name: "/opt/homebrew/bin/gh" if agent_name == "copilot" else "/bin/codex",
+    )
+    monkeypatch.setattr(
+        orchestrator_spawn,
+        "prepare_git_worktree",
+        lambda **kwargs: {
+            "status": "ok",
+            "code": None,
+            "mode": "git_worktree",
+            "source_workspace_path": kwargs["source_workspace_path"],
+            "worktree_path": str(kwargs["worktree_path"]),
+            "branch_name": kwargs["branch_name"],
+            "created": kwargs["create"],
+        },
+    )
+    monkeypatch.setattr(
+        orchestrator.orchestration_store,
+        "register_worker_session",
+        lambda *args, **kwargs: (
+            calls.append("register")
+            or {"status": "ok", "worker_session": {"worker_session_id": "worker-copilot"}}
+        ),
+    )
+    monkeypatch.setattr(
+        orchestrator.orchestration_store,
+        "claim_task",
+        lambda *args, **kwargs: (
+            calls.append("claim") or {"status": "ok", "lease": {"lease_id": "lease-1"}}
+        ),
+    )
+    monkeypatch.setattr(
+        orchestrator.orchestration_store,
+        "record_command_evidence",
+        lambda *args, **kwargs: calls.append("evidence") or {"status": "ok"},
+    )
+    monkeypatch.setattr(
+        orchestrator.orchestration_store,
+        "finish_task_with_handoff",
+        lambda *args, **kwargs: calls.append("finish") or {"status": "ok"},
+    )
+    monkeypatch.setattr(
+        orchestrator.orchestration_store,
+        "record_review_finding",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("approved review should not create finding")
+        ),
+    )
+
+    def fake_copilot_review(**kwargs):  # noqa: ANN202
+        calls.append("review")
+        kwargs["invocation"].result_path.write_text(
+            json.dumps(
+                {
+                    "task_status": "done",
+                    "summary": "Copilot implemented under review.",
+                    "tested_commands": [{"command": "uv run pytest", "exit_code": 0}],
+                    "changed_files": ["src/example.py"],
+                    "risks": [],
+                    "next_action": "finalize",
+                }
+            ),
+            encoding="utf-8",
+        )
+        return orchestrator_spawn.CodexRunResult(
+            exit_code=0,
+            timed_out=False,
+            stdout="",
+            stderr="",
+            command=kwargs["command"],
+            metadata={
+                "worker_review": {
+                    "schema": "geond.worker_review.v1",
+                    "stage": "implementation",
+                    "decision": "approved",
+                    "summary": "approved",
+                    "findings": [],
+                }
+            },
+        )
+
+    monkeypatch.setattr(
+        orchestrator.orchestrator_worker_review,
+        "run_copilot_with_senior_review",
+        fake_copilot_review,
+    )
+
+    payload = orchestrator.dispatch_spawn(
+        object(),
+        run_id="run-1",
+        agent_name="copilot",
+        execute=True,
+        manifest_base_dir=tmp_path,
+    )
+
+    assert payload["execution_status"] == "completed"
+    assert payload["worker_review"]["decision"] == "approved"
+    assert calls == ["register", "claim", "review", "evidence", "finish"]
+
+
+def test_copilot_execute_blocks_and_records_finding_when_review_blocks(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    patch_spawn_context(monkeypatch, tmp_path)
+    findings: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        orchestrator_spawn,
+        "find_agent_binary",
+        lambda agent_name: "/opt/homebrew/bin/gh" if agent_name == "copilot" else "/bin/codex",
+    )
+    monkeypatch.setattr(
+        orchestrator_spawn,
+        "prepare_git_worktree",
+        lambda **kwargs: {
+            "status": "ok",
+            "code": None,
+            "mode": "git_worktree",
+            "source_workspace_path": kwargs["source_workspace_path"],
+            "worktree_path": str(kwargs["worktree_path"]),
+            "branch_name": kwargs["branch_name"],
+            "created": kwargs["create"],
+        },
+    )
+    monkeypatch.setattr(
+        orchestrator.orchestration_store,
+        "register_worker_session",
+        lambda *args, **kwargs: {"status": "ok", "worker_session": {"worker_session_id": "w"}},
+    )
+    monkeypatch.setattr(
+        orchestrator.orchestration_store,
+        "claim_task",
+        lambda *args, **kwargs: {"status": "ok", "lease": {"lease_id": "lease-1"}},
+    )
+    monkeypatch.setattr(
+        orchestrator.orchestration_store,
+        "record_command_evidence",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("no evidence expected")),
+    )
+    monkeypatch.setattr(
+        orchestrator.orchestration_store,
+        "finish_task_with_handoff",
+        lambda *args, **kwargs: {"status": "ok", "task": {"status": kwargs["task_status"]}},
+    )
+
+    def fake_record_finding(conn, run_id, summary, **kwargs):  # noqa: ANN001, ANN202
+        findings.append({"run_id": run_id, "summary": summary, **kwargs})
+        return {"status": "ok", "review_finding": {"review_finding_id": "finding-1"}}
+
+    monkeypatch.setattr(
+        orchestrator.orchestration_store,
+        "record_review_finding",
+        fake_record_finding,
+    )
+
+    def fake_copilot_review(**kwargs):  # noqa: ANN202
+        kwargs["invocation"].result_path.write_text(
+            json.dumps(
+                {
+                    "task_status": "blocked",
+                    "summary": "Senior review blocked Copilot output.",
+                    "tested_commands": [],
+                    "changed_files": [],
+                    "risks": ["unsafe change"],
+                    "next_action": "revise implementation",
+                }
+            ),
+            encoding="utf-8",
+        )
+        return orchestrator_spawn.CodexRunResult(
+            exit_code=0,
+            timed_out=False,
+            stdout="",
+            stderr="",
+            command=kwargs["command"],
+            metadata={
+                "worker_review": {
+                    "schema": "geond.worker_review.v1",
+                    "stage": "implementation",
+                    "decision": "blocked",
+                    "summary": "unsafe change",
+                    "findings": ["unsafe change"],
+                }
+            },
+        )
+
+    monkeypatch.setattr(
+        orchestrator.orchestrator_worker_review,
+        "run_copilot_with_senior_review",
+        fake_copilot_review,
+    )
+
+    payload = orchestrator.dispatch_spawn(
+        object(),
+        run_id="run-1",
+        agent_name="copilot",
+        execute=True,
+        manifest_base_dir=tmp_path,
+    )
+
+    assert payload["execution_status"] == "blocked"
+    assert payload["worker_result"]["task_status"] == "blocked"
+    assert findings[0]["severity"] == "P1"
+    assert findings[0]["task_id"] == "task-1"
 
 
 def test_spawn_parallel_execute_reports_partial_success(monkeypatch, tmp_path: Path) -> None:

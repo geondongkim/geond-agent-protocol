@@ -153,7 +153,7 @@ def test_llm_planner_stable_error_codes(monkeypatch, tmp_path: Path) -> None:  #
     unsupported = orchestrator_llm_planner.propose_task_graph_with_llm(
         object(),
         "run-1",
-        agent_name="copilot",
+        agent_name="gemini",
     )
     assert unsupported["code"] == "UNSUPPORTED_AGENT"
 

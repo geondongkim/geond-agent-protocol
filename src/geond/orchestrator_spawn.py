@@ -15,7 +15,8 @@ from psycopg import Connection
 
 CODEX_AGENT_NAME = "codex"
 CLAUDE_AGENT_NAME = "claude"
-SUPPORTED_SPAWN_AGENTS = {CODEX_AGENT_NAME, CLAUDE_AGENT_NAME}
+COPILOT_AGENT_NAME = "copilot"
+SUPPORTED_SPAWN_AGENTS = {CODEX_AGENT_NAME, CLAUDE_AGENT_NAME, COPILOT_AGENT_NAME}
 OUTPUT_SCHEMA_NAME = "OUTPUT_SCHEMA.json"
 PROMPT_NAME = "PROMPT.md"
 CODEX_EVENTS_NAME = "CODEX_EVENTS.jsonl"
@@ -43,6 +44,7 @@ class CodexRunResult:
     stdout: str
     stderr: str
     command: list[str]
+    metadata: dict[str, Any] | None = None
 
 
 def new_invocation(run_id: str, manifest_base_dir: Path) -> SpawnInvocation:
@@ -50,6 +52,20 @@ def new_invocation(run_id: str, manifest_base_dir: Path) -> SpawnInvocation:
     output_dir = manifest_base_dir / run_id / "spawn" / invocation_id
     return SpawnInvocation(
         invocation_id=invocation_id,
+        output_dir=output_dir,
+        prompt_path=output_dir / PROMPT_NAME,
+        output_schema_path=output_dir / OUTPUT_SCHEMA_NAME,
+        events_path=output_dir / CODEX_EVENTS_NAME,
+        stderr_path=output_dir / CODEX_STDERR_NAME,
+        last_message_path=output_dir / LAST_MESSAGE_NAME,
+        result_path=output_dir / RESULT_NAME,
+    )
+
+
+def child_invocation(parent: SpawnInvocation, name: str) -> SpawnInvocation:
+    output_dir = parent.output_dir / name
+    return SpawnInvocation(
+        invocation_id=f"{parent.invocation_id}-{name}",
         output_dir=output_dir,
         prompt_path=output_dir / PROMPT_NAME,
         output_schema_path=output_dir / OUTPUT_SCHEMA_NAME,
@@ -153,6 +169,83 @@ def resolve_local_workspace_path(root_uri: str) -> dict[str, Any]:
     }
 
 
+def planned_worktree_path(
+    *,
+    manifest_base_dir: Path,
+    run_id: str,
+    invocation_id: str,
+) -> Path:
+    return manifest_base_dir / run_id / "worktrees" / invocation_id
+
+
+def prepare_git_worktree(
+    *,
+    source_workspace_path: str,
+    worktree_path: Path,
+    branch_name: str,
+    create: bool,
+) -> dict[str, Any]:
+    payload = {
+        "mode": "git_worktree",
+        "source_workspace_path": source_workspace_path,
+        "worktree_path": str(worktree_path),
+        "branch_name": branch_name,
+        "created": False,
+    }
+    if not create:
+        return {"status": "ok", "code": None, **payload}
+
+    source = Path(source_workspace_path)
+    try:
+        check = subprocess.run(
+            ["git", "-C", str(source), "rev-parse", "--show-toplevel"],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if check.returncode != 0:
+            return {
+                "status": "error",
+                "code": "WORKTREE_SOURCE_NOT_GIT_REPO",
+                "message": check.stderr.strip() or "Workspace is not a git repository.",
+                **payload,
+            }
+        if worktree_path.exists():
+            return {"status": "ok", "code": None, **payload, "created": False}
+        worktree_path.parent.mkdir(parents=True, exist_ok=True)
+        result = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(source),
+                "worktree",
+                "add",
+                "-B",
+                branch_name,
+                str(worktree_path),
+                "HEAD",
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+    except OSError as exc:
+        return {
+            "status": "error",
+            "code": "WORKTREE_CREATE_FAILED",
+            "message": str(exc),
+            **payload,
+        }
+    if result.returncode != 0:
+        return {
+            "status": "error",
+            "code": "WORKTREE_CREATE_FAILED",
+            "message": result.stderr.strip() or result.stdout.strip(),
+            **payload,
+        }
+    return {"status": "ok", "code": None, **payload, "created": True}
+
+
 def find_codex_binary() -> str | None:
     configured = os.environ.get("GEOND_CODEX_BIN")
     if configured:
@@ -168,12 +261,19 @@ def find_agent_binary(agent_name: str) -> str | None:
         if configured:
             return configured
         return shutil.which("claude")
+    if agent_name == COPILOT_AGENT_NAME:
+        configured = os.environ.get("GEOND_COPILOT_BIN")
+        if configured:
+            return configured
+        return shutil.which("copilot") or shutil.which("gh")
     return None
 
 
 def missing_binary_code(agent_name: str) -> str:
     if agent_name == CLAUDE_AGENT_NAME:
         return "CLAUDE_CLI_NOT_FOUND"
+    if agent_name == COPILOT_AGENT_NAME:
+        return "COPILOT_CLI_NOT_FOUND"
     return "CODEX_CLI_NOT_FOUND"
 
 
@@ -184,12 +284,14 @@ def build_worker_prompt(
     selected_task: dict[str, Any],
     workspace_path: str,
     agent_name: str = CODEX_AGENT_NAME,
+    result_path: str | None = None,
 ) -> str:
     readiness = status_payload.get("readiness") or {}
     prompt_payload = {
         "run": status_payload.get("run"),
         "selected_task": selected_task,
         "workspace_path": workspace_path,
+        "result_path": result_path,
         "readiness": readiness,
         "blocking_reasons": readiness.get("blocking_reasons") or [],
         "open_findings": status_payload.get("open_findings") or [],
@@ -204,6 +306,7 @@ def build_worker_prompt(
         "Use the repository at the provided workspace path.\n"
         "Run only the validation commands that are needed for this task, and report only "
         "commands that actually ran.\n"
+        "Write your final JSON result to the provided result_path when one is provided.\n"
         "Your final response must be valid JSON matching the provided output schema. "
         "Do not wrap it in Markdown.\n\n"
         "## Context\n\n"
@@ -278,6 +381,30 @@ def build_claude_command(
     ]
 
 
+def build_copilot_command(
+    *,
+    copilot_bin: str,
+    workspace_path: str,
+    model: str | None = None,
+) -> list[str]:
+    if Path(copilot_bin).name == "gh":
+        prefix = shlex.join([copilot_bin, "copilot", "--", "-p"])
+    else:
+        prefix = shlex.join([copilot_bin, "-p"])
+    options = [
+        "--deny-tool=shell(git push)",
+        "--deny-tool=shell(git commit)",
+    ]
+    if model:
+        options.extend(["--model", model])
+    tail = shlex.join(options)
+    return [
+        "/bin/sh",
+        "-c",
+        (f'prompt=$(cat)\ncd {shlex.quote(workspace_path)} && exec {prefix} "$prompt" {tail}'),
+    ]
+
+
 def build_agent_command(
     *,
     agent_name: str,
@@ -290,6 +417,12 @@ def build_agent_command(
     if agent_name == CLAUDE_AGENT_NAME:
         return build_claude_command(
             claude_bin=agent_bin,
+            workspace_path=workspace_path,
+            model=model,
+        )
+    if agent_name == COPILOT_AGENT_NAME:
+        return build_copilot_command(
+            copilot_bin=agent_bin,
             workspace_path=workspace_path,
             model=model,
         )
@@ -351,22 +484,22 @@ def normalize_process_text(value: str | bytes | None) -> str:
 
 
 def parse_worker_result(invocation: SpawnInvocation) -> dict[str, Any]:
-    if not invocation.last_message_path.exists():
+    raw_text = read_worker_result_text(invocation)
+    if raw_text is None:
         return {
             "status": "error",
             "code": "WORKER_RESULT_MISSING",
-            "message": "Codex did not write a last-message file.",
+            "message": "Worker did not write RESULT.json, LAST_MESSAGE.json, or stdout.",
         }
-    raw_text = invocation.last_message_path.read_text(encoding="utf-8").strip()
-    try:
-        payload = json.loads(raw_text)
-    except json.JSONDecodeError as exc:
+    payload_result = parse_json_object(raw_text)
+    if payload_result.get("status") != "ok":
         return {
             "status": "error",
             "code": "WORKER_RESULT_INVALID_JSON",
-            "message": str(exc),
+            "message": payload_result.get("message"),
             "raw_text": raw_text[:4000],
         }
+    payload = payload_result["payload"]
     payload = unwrap_worker_result(payload)
     validation = validate_worker_result(payload)
     if validation.get("status") != "ok":
@@ -377,6 +510,60 @@ def parse_worker_result(invocation: SpawnInvocation) -> dict[str, Any]:
         encoding="utf-8",
     )
     return {"status": "ok", "code": None, "result": payload}
+
+
+def read_worker_result_text(invocation: SpawnInvocation) -> str | None:
+    for path in (invocation.result_path, invocation.last_message_path, invocation.events_path):
+        if path.exists():
+            raw_text = path.read_text(encoding="utf-8").strip()
+            if raw_text:
+                return raw_text
+    return None
+
+
+def parse_json_object(raw_text: str) -> dict[str, Any]:
+    try:
+        return {"status": "ok", "code": None, "payload": json.loads(raw_text)}
+    except json.JSONDecodeError as exc:
+        extracted = extract_first_json_object(raw_text)
+        if extracted is None:
+            return {"status": "error", "code": "WORKER_RESULT_INVALID_JSON", "message": str(exc)}
+        try:
+            return {"status": "ok", "code": None, "payload": json.loads(extracted)}
+        except json.JSONDecodeError as extracted_exc:
+            return {
+                "status": "error",
+                "code": "WORKER_RESULT_INVALID_JSON",
+                "message": str(extracted_exc),
+            }
+
+
+def extract_first_json_object(raw_text: str) -> str | None:
+    start = raw_text.find("{")
+    if start < 0:
+        return None
+    depth = 0
+    in_string = False
+    escape = False
+    for index, char in enumerate(raw_text[start:], start=start):
+        if escape:
+            escape = False
+            continue
+        if char == "\\":
+            escape = True
+            continue
+        if char == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return raw_text[start : index + 1]
+    return None
 
 
 def unwrap_worker_result(payload: Any) -> Any:

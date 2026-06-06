@@ -67,6 +67,7 @@ Controller-oriented modules may compose protocol primitives:
 - `geond.orchestrator_task_planner`
 - `geond.orchestrator_llm_planner`
 - `geond.orchestrator_graph_review`
+- `geond.orchestrator_worker_review`
 - `geond.orchestrator_action_bundle`
 - `geond.orchestrator_action_queue`
 - `geond.orchestrator_scheduler`
