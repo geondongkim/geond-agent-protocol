@@ -153,6 +153,26 @@ uv run geond record-handoff "<workspace-id>" `
   --risk "Token usage may be estimated when provider metadata is missing."
 ```
 
+## Reviewer And Verifier Sessions
+
+When a controller delegates review to a separate Codex verifier session, treat
+that verifier as a read-only reviewer rather than another controller.
+
+The verifier session should:
+
+- inspect diffs, tests, evidence, and docs
+- report findings first with file and line references
+- avoid file edits, format/fix commands, staging, commits, pushes, merges, and
+  thread-management actions
+- avoid starting live cloud, Databricks, Docker, Kubernetes, or paid compute
+- hand the review result back to the controller as evidence
+
+The controller session should remain responsible for orchestration state,
+worker delegation, commits, pushes, CI watching, merges, and final readiness
+decisions. Do not fork a verifier from a context that can recursively create
+more verifier sessions unless the prompt explicitly disables thread-management
+behavior.
+
 ## Convenience Commands
 
 The CLI exposes primitive operations and wrapper commands. Use the wrappers when
@@ -243,4 +263,3 @@ If an agent is implementing Geond changes, also read:
 - `docs/geond_mcp_repository_evaluation.md`
 - `docs/ai_usage_observability.md`
 - `docs/geond_roadmap_backlog.md`
-

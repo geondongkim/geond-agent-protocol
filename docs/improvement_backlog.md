@@ -54,6 +54,7 @@ observability, two-client cloud collaboration, and benchmark evidence.
 | Handoff templates | Handoffs become better when they are structured. | Implemented standard metadata templates for summary, tested commands, remaining risks, and next action. |
 | Session lineage | Multi-agent workflows need provenance. | Implemented workspace lineage graphs linking sessions, handoffs, actions, changesets, and benchmark runs. |
 | Context review loop | Agents should compare the next task with current intent, reservations, and handoffs before editing. | Implemented `review_workspace_context` and `geond review-context` to assess requested work against active reservations, open handoffs, and lineage matches. |
+| Verifier-session isolation | Controller agents can accidentally inherit executor privileges or spawn behavior when a review is forked from the same session context. | Add a clean Codex verifier-session recipe with explicit read-only role guards, no thread-management permission, no edit/commit/push tools, and evidence-only handoff back to the controller. |
 
 ## Priority 4.5: Agent Activity Observability
 

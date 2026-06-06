@@ -37,6 +37,8 @@ These pieces are candidates for a future private `Geond Orchestrator` package:
 - Usage-aware budget guards, cost forecast policy, and scheduler enforcement.
 - Local background daemon loop, lock policy, and execution cadence.
 - Spawn policy for Codex, Claude, and future worker adapters.
+- Verifier-session spawn policy, including read-only review prompts, tool
+  restrictions, and controller handoff rules.
 - Product UX beyond the read-only Dashboard protocol views.
 - Git/PR finalize policy, release gates, and organization-specific approval
   behavior.
