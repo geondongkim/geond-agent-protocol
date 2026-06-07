@@ -15,6 +15,7 @@ Agents should use this file as a routing table.
 | Build AI usage or token metrics | `docs/ai_usage_observability.md` | `docs/geond_roadmap_backlog.md`, `schemas/001_initial.sql` |
 | Pick next implementation work | `docs/geond_roadmap_backlog.md` | `docs/improvement_backlog.md`, `docs/implementation_plan.md` |
 | Configure MCP clients | `docs/mcp_client_config.md` | `examples/mcp_clients/` |
+| Draft docs with Antigravity CLI (`agy`) | `docs/mcp_client_config.md` | `docs/antigravity_codex_geond_verification.md`, `docs/improvement_backlog.md` |
 | Understand dashboard behavior | `docs/agent_activity_dashboard.md` | `src/geond/dashboard_server.py`, `src/geond/storage/dashboard.py` |
 | Understand session importers | `docs/agent_testbeds.md` | `src/geond/adapters/`, `tests/fixtures/` |
 | Understand workspace identity | `docs/workspace_identity_and_search.md` | `src/geond/workspace_identity.py` |
@@ -139,4 +140,3 @@ For PM summaries:
 ## Final Reminder
 
 Geond's differentiator is not raw token counting. It is evidence-linked development memory. Agents should preserve that framing when extending the project.
-

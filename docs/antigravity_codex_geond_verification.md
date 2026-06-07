@@ -140,6 +140,37 @@ Active config:
 }
 ```
 
+### macOS follow-up, 2026-06-07
+
+On macOS, the active Antigravity MCP config is
+`/Users/geondongkim/.gemini/config/mcp_config.json`, and
+`/Users/geondongkim/.gemini/antigravity/mcp_config.json` is a symlink to that
+file. `uv run geond install --client antigravity --write` writes a
+`mcpServers.geond` entry with:
+
+- `command`: `uv`
+- `args`: `--directory`, `/Users/geondongkim/geond-agent-protocol`, `run`,
+  `geond-mcp`
+- `env`: `GEOND_DATABASE_PROFILE=local`, `GEOND_PRIVACY_MODE=local-only`, and
+  `GEOND_EMBEDDING_PROVIDER=none`
+
+`uv run geond doctor --format json` reports `antigravity_config`,
+`antigravity_config_link`, and `antigravity_cli` as ok. The overall doctor
+status can still report unrelated local setup errors such as missing Docker.
+With the same local-only/no-embedding environment, `uv run geond mcp-smoke
+--format json --allow-empty-search` initializes `geond-agent-protocol`, lists
+55 tools, reads 2 resources and 14 resource templates, and can call
+`search_dev_memory` in keyword mode.
+
+The standalone CLI exists at `/Users/geondongkim/.local/bin/agy` and supports
+`--print`, `--add-dir`, `--sandbox`, and `--print-timeout`. A documentation
+worker smoke using `agy --sandbox --add-dir
+/Users/geondongkim/geond-agent-protocol --print ...` could read repo-local docs,
+but reported that MCP tools were not visible in that print session. Treat
+`agy --print` as a documentation draft channel unless a future smoke proves MCP
+tool calls from print mode; use Antigravity's interactive MCP client surface,
+`geond doctor`, and `mcp-smoke` as the MCP connectivity evidence.
+
 `local-only` and `GEOND_EMBEDDING_PROVIDER=none` were chosen so Antigravity can
 use keyword/evidence search without silently triggering extra cloud embedding
 calls. Vector or hybrid retrieval can be enabled later by switching the provider

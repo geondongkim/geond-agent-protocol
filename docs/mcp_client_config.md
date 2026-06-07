@@ -243,17 +243,51 @@ Codex server as a replacement for Geond's shared evidence layer.
 
 Antigravity can be configured with:
 
-```powershell
+```bash
 uv run geond install --client antigravity --write
 uv run geond doctor
 ```
 
-The Antigravity config target is
-`C:\Users\<user>\.gemini\config\mcp_config.json`; Geond preserves other
-`mcpServers` entries and writes `GEOND_PRIVACY_MODE=local-only` plus
-`GEOND_EMBEDDING_PROVIDER=none` by default.
+The Antigravity config target is `~/.gemini/config/mcp_config.json` on macOS
+and Linux, and `C:\Users\<user>\.gemini\config\mcp_config.json` on Windows.
+Antigravity state may also expose a symlink at
+`~/.gemini/antigravity/mcp_config.json`; Geond's doctor check verifies that
+link when present. Geond preserves other `mcpServers` entries and writes
+`GEOND_PRIVACY_MODE=local-only` plus `GEOND_EMBEDDING_PROVIDER=none` by
+default.
 `search_dev_memory` defaults to keyword mode on the MCP surface, so clients can
 omit `mode` and still search when embeddings are intentionally disabled.
+
+Validate the exact stdio server shape Antigravity will use:
+
+```bash
+GEOND_PRIVACY_MODE=local-only GEOND_EMBEDDING_PROVIDER=none \
+  uv run geond mcp-smoke --format json --allow-empty-search
+```
+
+### Antigravity CLI Documentation Worker
+
+The standalone `agy` CLI can be used as a documentation-only draft worker, but
+the controller remains responsible for verification and commits. A safe pattern
+is:
+
+```bash
+/Users/geondongkim/.local/bin/agy \
+  --sandbox \
+  --add-dir /Users/geondongkim/geond-agent-protocol \
+  --print-timeout 1m \
+  --print 'Do not edit files. Draft neutral documentation text only. Start from docs/agent_doc_consumption_guide.md and docs/mcp_client_config.md. Say when MCP tools are not visible in this print session.'
+```
+
+On the current macOS setup, `/Users/geondongkim/.local/bin/agy --help` works
+and `geond install --client antigravity --write` wires Geond MCP into
+`~/.gemini/config/mcp_config.json`. However, `agy --print` should be treated as
+a draft channel, not as proof that MCP tools were called: a 2026-06-07 smoke
+reported that MCP tools were not visible in that print session. Use
+Antigravity's interactive MCP client surface, the `antigravity_*` checks in
+`geond doctor`, and `mcp-smoke` for MCP connectivity evidence. Use Codex review
+for fact, scope, privacy, and safety-boundary checks before committing any
+`agy`-drafted documentation.
 
 ## Useful Resources
 
