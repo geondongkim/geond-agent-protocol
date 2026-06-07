@@ -17,6 +17,7 @@ from geond.config import database_url_env_names, get_settings
 Runner = Callable[[Sequence[str], int], subprocess.CompletedProcess[str]]
 Which = Callable[[str], str | None]
 LOCAL_POSTGRES_CONTAINER = "geond-postgres"
+MACOS_DOCKER_DESKTOP_CLI = Path("/Applications/Docker.app/Contents/Resources/bin/docker")
 
 
 def default_runner(
@@ -121,6 +122,15 @@ def local_postgres_container_check(docker_path: str, runner: Runner) -> dict[str
         ports=ports or None,
         suggested_command=suggestion,
     )
+
+
+def resolve_docker_cli(which: Which, system_name: str) -> tuple[str | None, str | None]:
+    docker_path = which("docker")
+    if docker_path:
+        return docker_path, "path"
+    if system_name == "Darwin" and MACOS_DOCKER_DESKTOP_CLI.exists():
+        return str(MACOS_DOCKER_DESKTOP_CLI), "docker_desktop"
+    return None, None
 
 
 def read_env_keys(env_path: Path) -> set[str]:
@@ -255,16 +265,24 @@ def collect_doctor_report(
         )
 
     docker_daemon_ok = False
-    docker_path = which("docker")
+    docker_path, docker_source = resolve_docker_cli(which, system_name)
     if not docker_path:
-        checks.append(make_check("docker_cli", "error", "docker is not on PATH."))
+        checks.append(
+            make_check(
+                "docker_cli",
+                "error",
+                "docker is not on PATH and Docker Desktop CLI was not found.",
+            )
+        )
     else:
+        source_note = " via Docker Desktop fallback" if docker_source == "docker_desktop" else ""
         checks.append(
             make_check(
                 "docker_cli",
                 "ok",
-                f"docker found at {docker_path}.",
+                f"docker found at {docker_path}{source_note}.",
                 path=docker_path,
+                source=docker_source,
             )
         )
         ok, output = command_output(

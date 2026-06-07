@@ -13,6 +13,8 @@ def fake_runner(command: Sequence[str], timeout_seconds: int) -> subprocess.Comp
     del timeout_seconds
     if command[-1] == "--version" and "uv" in command[0]:
         return subprocess.CompletedProcess(command, 0, stdout="uv 0.11.13\n", stderr="")
+    if len(command) >= 3 and command[1] == "compose" and command[2] == "version":
+        return subprocess.CompletedProcess(command, 0, stdout="5.1.3\n", stderr="")
     if len(command) >= 2 and command[1] == "version" and "docker-compose" in command[0]:
         return subprocess.CompletedProcess(command, 0, stdout="5.1.3\n", stderr="")
     if len(command) >= 2 and command[1] == "version" and "docker" in command[0]:
@@ -61,6 +63,48 @@ def test_collect_doctor_report_for_native_macos_tooling(
     assert statuses["docker_compose"] == "ok"
     assert statuses["env_file"] == "ok"
     assert statuses["database_url"] == "ok"
+
+
+def test_collect_doctor_report_uses_macos_docker_desktop_cli_when_not_on_path(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    (tmp_path / ".env").write_text(
+        "GEOND_DATABASE_URL=postgresql://geond:geond_dev_password@localhost:55432/geond\n"
+        "GEOND_EMBEDDING_PROVIDER=none\n",
+        encoding="utf-8",
+    )
+    docker_desktop = tmp_path / "Docker.app" / "Contents" / "Resources" / "bin" / "docker"
+    docker_desktop.parent.mkdir(parents=True)
+    docker_desktop.write_text("", encoding="utf-8")
+
+    paths = {
+        "brew": "/opt/homebrew/bin/brew",
+        "uv": "/opt/homebrew/bin/uv",
+    }
+
+    monkeypatch.setattr("geond.doctor.platform.system", lambda: "Darwin")
+    monkeypatch.setattr("geond.doctor.platform.machine", lambda: "arm64")
+    monkeypatch.setattr("geond.doctor.MACOS_DOCKER_DESKTOP_CLI", docker_desktop)
+    monkeypatch.delenv("DOCKER_DEFAULT_PLATFORM", raising=False)
+
+    report = collect_doctor_report(
+        tmp_path,
+        check_database=False,
+        check_mcp=False,
+        check_antigravity=False,
+        runner=fake_runner,
+        which=paths.get,
+    )
+
+    checks = {check["name"]: check for check in report["checks"]}
+    assert report["status"] == "ok"
+    assert checks["docker_cli"]["status"] == "ok"
+    assert checks["docker_cli"]["metadata"]["source"] == "docker_desktop"
+    assert checks["docker_cli"]["metadata"]["path"] == str(docker_desktop)
+    assert checks["docker_daemon"]["status"] == "ok"
+    assert checks["docker_compose"]["status"] == "ok"
+    assert checks["docker_compose"]["metadata"]["command"] == "docker compose"
 
 
 def test_collect_doctor_report_accepts_profile_database_url(
