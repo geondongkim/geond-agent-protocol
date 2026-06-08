@@ -5,6 +5,12 @@ import sys
 from types import SimpleNamespace
 
 import geond.cli as cli
+from geond_orchestrator import (
+    orchestrator_action_queue,
+    orchestrator_budget,
+    orchestrator_daemon,
+    orchestrator_scheduler,
+)
 
 
 class FakeConnection:
@@ -205,7 +211,7 @@ def test_dashboard_orchestration_actions_cli_wires_queue(monkeypatch, capsys, tm
         }
 
     monkeypatch.setattr(cli, "connect", fake_connect)
-    monkeypatch.setattr(cli.orchestrator_action_queue, "list_action_queue", fake_action_queue)
+    monkeypatch.setattr(orchestrator_action_queue, "list_action_queue", fake_action_queue)
     monkeypatch.setattr(
         sys,
         "argv",
@@ -256,7 +262,7 @@ def test_dashboard_orchestration_scheduler_cli_wires_service(
         }
 
     monkeypatch.setattr(cli, "connect", fake_connect)
-    monkeypatch.setattr(cli.orchestrator_scheduler, "build_dashboard_scheduler", fake_scheduler)
+    monkeypatch.setattr(orchestrator_scheduler, "build_dashboard_scheduler", fake_scheduler)
     monkeypatch.setattr(
         sys,
         "argv",
@@ -307,8 +313,8 @@ def test_dashboard_orchestration_budget_and_daemon_cli_wires_services(
         }
 
     monkeypatch.setattr(cli, "connect", fake_connect)
-    monkeypatch.setattr(cli.orchestrator_budget, "build_dashboard_budget", fake_budget)
-    monkeypatch.setattr(cli.orchestrator_daemon, "build_dashboard_daemon", fake_daemon)
+    monkeypatch.setattr(orchestrator_budget, "build_dashboard_budget", fake_budget)
+    monkeypatch.setattr(orchestrator_daemon, "build_dashboard_daemon", fake_daemon)
     monkeypatch.setattr(
         sys,
         "argv",

@@ -12,14 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter, time
 
-from geond import (
-    agent_hooks,
-    degraded_ledger,
-    orchestrator_action_queue,
-    orchestrator_budget,
-    orchestrator_daemon,
-    orchestrator_scheduler,
-)
+from geond import agent_hooks, degraded_ledger
 from geond.adapters.antigravity import infer_session_id as infer_antigravity_session_id
 from geond.adapters.antigravity import latest_transcript_path as latest_antigravity_transcript_path
 from geond.adapters.antigravity import parse_storage as parse_antigravity_storage
@@ -1055,8 +1048,30 @@ def _contract_to_prompt(contract: dict) -> str:
     return "\n".join(lines)
 
 
+def run_orchestrator_alias(argv: list[str]) -> None:
+    try:
+        from geond_orchestrator.orchestrator_cli import main as orchestrator_main
+    except ImportError as exc:
+        raise SystemExit(
+            "The `geond orch` command requires the Geond Orchestrator package. "
+            "Install geond-orchestrator or use an environment that includes "
+            "the bundled transition package."
+        ) from exc
+
+    original_argv = sys.argv
+    try:
+        sys.argv = ["geond-orchestrator", *argv]
+        orchestrator_main(prog="geond orch")
+    finally:
+        sys.argv = original_argv
+
+
 def main() -> None:
     configure_cli_output()
+    if len(sys.argv) > 1 and sys.argv[1] == "orch":
+        run_orchestrator_alias(sys.argv[2:])
+        return
+
     parser = argparse.ArgumentParser(prog="geond")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -2385,6 +2400,8 @@ def main() -> None:
         return
 
     if args.command == "dashboard-orchestration-actions":
+        from geond_orchestrator import orchestrator_action_queue
+
         agents = [item.strip() for item in (args.agents or "").split(",") if item.strip()]
         with connect(get_settings()) as conn:
             result = orchestrator_action_queue.list_action_queue(
@@ -2399,6 +2416,8 @@ def main() -> None:
         return
 
     if args.command == "dashboard-orchestration-scheduler":
+        from geond_orchestrator import orchestrator_scheduler
+
         with connect(get_settings()) as conn:
             result = orchestrator_scheduler.build_dashboard_scheduler(
                 conn,
@@ -2410,6 +2429,8 @@ def main() -> None:
         return
 
     if args.command == "dashboard-orchestration-budget":
+        from geond_orchestrator import orchestrator_budget
+
         with connect(get_settings()) as conn:
             result = orchestrator_budget.build_dashboard_budget(
                 conn,
@@ -2421,6 +2442,8 @@ def main() -> None:
         return
 
     if args.command == "dashboard-orchestration-daemon":
+        from geond_orchestrator import orchestrator_daemon
+
         result = orchestrator_daemon.build_dashboard_daemon(
             workspace_id_or_uri=args.workspace_id_or_uri,
             limit=args.limit,

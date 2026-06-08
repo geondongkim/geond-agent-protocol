@@ -1,33 +1,6 @@
-from __future__ import annotations
+"""Compatibility module alias for :mod:`geond_orchestrator.orchestrator_mcp_bridge`."""
 
-from pathlib import Path
-from typing import Any
+from geond._orchestrator_compat import alias_orchestrator_module
 
-from psycopg import Connection
-
-from geond import orchestrator_control
-
-
-def preview_agent_step(
-    conn: Connection,
-    run_id: str,
-    *,
-    agents: list[str] | None = None,
-    max_workers: int = 1,
-    model: str | None = None,
-    sandbox: str = "workspace-write",
-    timeout_seconds: int = 3600,
-    base_dir: Path,
-    limit: int = 50,
-) -> dict[str, Any]:
-    return orchestrator_control.preview_agent_step(
-        conn,
-        run_id,
-        agents=agents,
-        max_workers=max_workers,
-        model=model,
-        sandbox=sandbox,
-        timeout_seconds=timeout_seconds,
-        base_dir=base_dir,
-        limit=limit,
-    )
+_module = alias_orchestrator_module(__name__, "geond_orchestrator.orchestrator_mcp_bridge")
+globals().update(_module.__dict__)
