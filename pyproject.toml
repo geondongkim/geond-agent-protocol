@@ -28,7 +28,7 @@ dev = [
     "playwright>=1.60.0",
     "pre-commit>=4.0.0",
     "pytest>=8.2.0",
-    "ruff>=0.15.15",
+    "ruff>=0.15.16",
 ]
 
 [project.scripts]
