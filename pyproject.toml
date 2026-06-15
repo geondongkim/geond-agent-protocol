@@ -14,7 +14,7 @@ dependencies = [
     "anyio>=4.0.0",
     "azure-identity>=1.17.0",
     "mcp>=1.27.2",
-    "openai>=2.41.0",
+    "openai>=2.41.1",
     "psycopg[binary]>=3.3.4",
     "python-dotenv>=1.0.1",
     "tree-sitter>=0.25.2",
@@ -27,8 +27,8 @@ dev = [
     "pillow>=12.2.0",
     "playwright>=1.60.0",
     "pre-commit>=4.0.0",
-    "pytest>=8.2.0",
-    "ruff>=0.15.15",
+    "pytest>=9.1.0",
+    "ruff>=0.15.17",
 ]
 
 [project.scripts]
