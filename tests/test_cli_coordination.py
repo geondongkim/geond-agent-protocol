@@ -4,7 +4,15 @@ import json
 import sys
 from types import SimpleNamespace
 
+import pytest
+
 import geond.cli as cli
+from geond_orchestrator import (
+    orchestrator_action_queue,
+    orchestrator_budget,
+    orchestrator_daemon,
+    orchestrator_scheduler,
+)
 
 
 class FakeConnection:
@@ -205,7 +213,7 @@ def test_dashboard_orchestration_actions_cli_wires_queue(monkeypatch, capsys, tm
         }
 
     monkeypatch.setattr(cli, "connect", fake_connect)
-    monkeypatch.setattr(cli.orchestrator_action_queue, "list_action_queue", fake_action_queue)
+    monkeypatch.setattr(orchestrator_action_queue, "list_action_queue", fake_action_queue)
     monkeypatch.setattr(
         sys,
         "argv",
@@ -256,7 +264,7 @@ def test_dashboard_orchestration_scheduler_cli_wires_service(
         }
 
     monkeypatch.setattr(cli, "connect", fake_connect)
-    monkeypatch.setattr(cli.orchestrator_scheduler, "build_dashboard_scheduler", fake_scheduler)
+    monkeypatch.setattr(orchestrator_scheduler, "build_dashboard_scheduler", fake_scheduler)
     monkeypatch.setattr(
         sys,
         "argv",
@@ -307,8 +315,8 @@ def test_dashboard_orchestration_budget_and_daemon_cli_wires_services(
         }
 
     monkeypatch.setattr(cli, "connect", fake_connect)
-    monkeypatch.setattr(cli.orchestrator_budget, "build_dashboard_budget", fake_budget)
-    monkeypatch.setattr(cli.orchestrator_daemon, "build_dashboard_daemon", fake_daemon)
+    monkeypatch.setattr(orchestrator_budget, "build_dashboard_budget", fake_budget)
+    monkeypatch.setattr(orchestrator_daemon, "build_dashboard_daemon", fake_daemon)
     monkeypatch.setattr(
         sys,
         "argv",
@@ -731,6 +739,92 @@ def test_orchestration_approval_review_decision_cli_wire_storage(monkeypatch, ca
     assert captured["finding"]["severity"] == "P1"
     assert captured["finding_resolve"]["reason"] == "test added"
     assert captured["decision"]["evidence_refs"] == [{"type": "command", "id": "cmd-1"}]
+
+
+def test_decision_record_validate_only_outputs_payload_without_connect(monkeypatch, capsys) -> None:
+    def fail_connect(settings):  # noqa: ANN001, ANN202
+        raise AssertionError("validate-only must not connect to storage")
+
+    monkeypatch.setattr(cli, "connect", fail_connect)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "geond",
+            "decision",
+            "record",
+            "--run",
+            "run-1",
+            "--task",
+            "task-1",
+            "--decision",
+            "ship",
+            "--status",
+            "accepted",
+            "--reason",
+            "tests passed",
+            "--decided-by",
+            "codex",
+            "--evidence-ref",
+            "command:cmd-1",
+            "--evidence-ref",
+            "thread:thread-1",
+            "--idempotency-key",
+            "decision-key",
+            "--validate-only",
+        ],
+    )
+
+    cli.main()
+
+    output = json.loads(capsys.readouterr().out)
+    assert output == {
+        "schema": "geond.decision_record_validation.v1",
+        "status": "dry-run",
+        "would_write": False,
+        "command": "decision record",
+        "decision": {
+            "run_id": "run-1",
+            "task_id": "task-1",
+            "decision": "ship",
+            "status": "accepted",
+            "reason": "tests passed",
+            "decided_by": "codex",
+            "evidence_refs": [
+                {"type": "command", "id": "cmd-1"},
+                {"type": "thread", "id": "thread-1"},
+            ],
+            "idempotency_key": "decision-key",
+        },
+    }
+
+
+def test_decision_record_dry_run_explains_bad_evidence_ref(monkeypatch) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "geond",
+            "decision",
+            "record",
+            "--run",
+            "run-1",
+            "--decision",
+            "ship",
+            "--evidence-ref",
+            "cmd-1",
+            "--dry-run",
+        ],
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        cli.main()
+
+    message = str(exc.value)
+    assert "TYPE:ID" in message
+    assert "command:<uuid>" in message
+    assert "copilot:<id>" in message
+    assert "thread:<id>" in message
 
 
 def test_orchestration_run_summarize_and_manifest_cli(monkeypatch, capsys, tmp_path) -> None:

@@ -66,6 +66,8 @@ What geond does *not* solve:
   should proceed.
 - It does not run the agents. It is the substrate; the orchestrator
   (Copilot, Codex, Claude Code, or a custom runner) still drives.
+  The bundled transition CLI, `geond orch`, is one controller layer on top of
+  that substrate, not a replacement for the public protocol contract.
 - It does not enforce that an agent records its intent. An agent that
   edits files without calling `record_changeset` leaves the protocol
   blind, the same way a developer who never commits leaves git blind.
