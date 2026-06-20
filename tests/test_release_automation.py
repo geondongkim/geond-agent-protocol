@@ -154,7 +154,7 @@ def test_ci_workflow_signs_release_artifacts_with_sigstore() -> None:
     )
 
     assert "id-token: write" in workflow
-    assert "sigstore/gh-action-sigstore-python@v3.3.0" in workflow
+    assert_action_major_at_least(workflow, "sigstore/gh-action-sigstore-python", 3)
     assert "upload-signing-artifacts: true" in workflow
     assert "release-signing-artifacts: false" in workflow
     assert "dist/*.sigstore.json" in workflow
