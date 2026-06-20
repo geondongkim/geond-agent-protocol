@@ -156,6 +156,8 @@ from geond.workspace_identity import (
     workspace_uri_from_path_or_uri,
 )
 
+EVIDENCE_REF_EXAMPLES = ("command:<uuid>", "copilot:<id>", "thread:<id>")
+
 
 def workspace_uri_from_cwd(cwd: object) -> str:
     if not isinstance(cwd, str) or not cwd.strip():
@@ -179,9 +181,10 @@ def workspace_name_from_uri(workspace_uri: str) -> str:
 def parse_evidence_refs(values: list[str] | None) -> list[dict[str, str]]:
     refs: list[dict[str, str]] = []
     for value in values or []:
-        ref_type, sep, ref_id = value.partition(":")
+        ref_type, sep, ref_id = value.strip().partition(":")
         if not sep or not ref_type or not ref_id:
-            raise SystemExit("--evidence-ref must use TYPE:ID format")
+            examples = ", ".join(EVIDENCE_REF_EXAMPLES)
+            raise SystemExit(f"--evidence-ref must use TYPE:ID format (examples: {examples})")
         refs.append({"type": ref_type, "id": ref_id})
     return refs
 
@@ -1933,8 +1936,23 @@ def main() -> None:
     decision_record.add_argument("--status", default="accepted")
     decision_record.add_argument("--reason", default="")
     decision_record.add_argument("--decided-by")
-    decision_record.add_argument("--evidence-ref", dest="evidence_refs", action="append")
+    decision_record.add_argument(
+        "--evidence-ref",
+        dest="evidence_refs",
+        action="append",
+        help=(
+            "Evidence reference in TYPE:ID format; examples: "
+            f"{', '.join(EVIDENCE_REF_EXAMPLES)}. Repeatable."
+        ),
+    )
     decision_record.add_argument("--idempotency-key")
+    decision_record.add_argument(
+        "--dry-run",
+        "--validate-only",
+        dest="dry_run",
+        action="store_true",
+        help="Validate and print the parsed decision payload without writing.",
+    )
 
     ledger_cmd = subparsers.add_parser("ledger", help="Manage degraded local orchestration ledger")
     ledger_subparsers = ledger_cmd.add_subparsers(dest="ledger_command", required=True)
@@ -4073,6 +4091,26 @@ def main() -> None:
         return
 
     if args.command == "decision" and args.decision_command == "record":
+        evidence_refs = parse_evidence_refs(args.evidence_refs)
+        if args.dry_run:
+            result = {
+                "schema": "geond.decision_record_validation.v1",
+                "status": "dry-run",
+                "would_write": False,
+                "command": "decision record",
+                "decision": {
+                    "run_id": args.run_id,
+                    "task_id": args.task_id,
+                    "decision": args.decision,
+                    "status": args.status,
+                    "reason": args.reason,
+                    "decided_by": args.decided_by,
+                    "evidence_refs": evidence_refs,
+                    "idempotency_key": args.idempotency_key,
+                },
+            }
+            print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+            return
         with connect(get_settings()) as conn:
             result = orchestration_record_decision(
                 conn,
@@ -4082,7 +4120,7 @@ def main() -> None:
                 status=args.status,
                 reason=args.reason,
                 decided_by=args.decided_by,
-                evidence_refs=parse_evidence_refs(args.evidence_refs),
+                evidence_refs=evidence_refs,
                 idempotency_key=args.idempotency_key,
             )
         print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
