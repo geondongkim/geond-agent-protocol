@@ -7,7 +7,7 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from geond import orchestrator_mcp_bridge, orchestrator_planner, orchestrator_task_planner
+from geond import orchestrator_mcp_bridge
 from geond.config import get_settings
 from geond.db import connect
 from geond.embeddings import get_embedding_provider
@@ -1749,14 +1749,13 @@ def get_orchestrator_plan(
 ) -> dict[str, Any]:
     """Return a read-only Geond Orchestrator plan for a workspace or run."""
     with connect(get_settings()) as conn:
-        return orchestrator_planner.create_plan(
+        return orchestrator_mcp_bridge.create_plan(
             conn,
             workspace_id_or_uri=workspace_id_or_uri,
             run_id=run_id,
             agents=agents,
             limit=limit,
             base_dir=Path(base_dir),
-            write_bundle=False,
         )
 
 
@@ -1796,13 +1795,12 @@ def propose_orchestrator_task_graph(
 ) -> dict[str, Any]:
     """Return a read-only task graph proposal or LLM planner preview for one run."""
     with connect(get_settings()) as conn:
-        return orchestrator_task_planner.propose_task_graph(
+        return orchestrator_mcp_bridge.propose_task_graph(
             conn,
             run_id,
             planner=planner,
             template=template,
-            agent_name=planner_agent,
-            execute_planner=False,
+            planner_agent=planner_agent,
             base_dir=Path(base_dir),
         )
 

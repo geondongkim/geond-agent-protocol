@@ -7,14 +7,6 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
-from geond import (
-    orchestrator_action_bundle,
-    orchestrator_action_queue,
-    orchestrator_budget,
-    orchestrator_daemon,
-    orchestrator_planner,
-    orchestrator_scheduler,
-)
 from geond.config import Settings
 from geond.db import connect
 from geond.storage.dashboard import (
@@ -34,6 +26,14 @@ from geond.storage.resources import (
     get_workspace_lineage,
     get_workspace_reservations,
     get_workspace_timeline,
+)
+from geond_orchestrator import (
+    orchestrator_action_bundle,
+    orchestrator_action_queue,
+    orchestrator_budget,
+    orchestrator_daemon,
+    orchestrator_planner,
+    orchestrator_scheduler,
 )
 
 

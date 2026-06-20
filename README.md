@@ -182,6 +182,7 @@ flowchart LR
 | Reserve work | `uv run geond reserve-files ...` or `uv run geond reserve-symbols ...` |
 | Review conflicts | `uv run geond review-context <workspace-id-or-uri> --format markdown` |
 | Leave handoff | `uv run geond record-handoff <workspace-id-or-uri> ...` |
+| Check orchestrator run | `uv run geond orch status <run-id>` |
 | Agent operating loop | [docs/agent_operating_loop.md](docs/agent_operating_loop.md) |
 | MCP clients | [docs/mcp_client_config.md](docs/mcp_client_config.md) |
 

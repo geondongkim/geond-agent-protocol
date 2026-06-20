@@ -3,8 +3,11 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
+import geond.cli as geond_cli
 from geond import orchestrator_cli
+from geond_orchestrator import orchestrator_cli as canonical_orchestrator_cli
 
 
 class FakeConnection:
@@ -13,6 +16,99 @@ class FakeConnection:
 
     def __exit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
         return None
+
+
+def test_legacy_orchestrator_cli_module_aliases_canonical_package() -> None:
+    assert orchestrator_cli is canonical_orchestrator_cli
+
+
+def test_geond_orch_delegates_to_orchestrator_cli(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_main(*, prog: str = "geond-orchestrator") -> None:
+        captured["argv"] = list(sys.argv)
+        captured["prog"] = prog
+
+    monkeypatch.setattr(canonical_orchestrator_cli, "main", fake_main)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["geond", "orch", "status", "run-1", "--format", "json"],
+    )
+
+    geond_cli.main()
+
+    assert captured["argv"] == ["geond-orchestrator", "status", "run-1", "--format", "json"]
+    assert captured["prog"] == "geond orch"
+
+
+def test_orchestrator_worker_alias_delegates_to_protocol_cli(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_main() -> None:
+        captured["argv"] = list(sys.argv)
+
+    monkeypatch.setattr(geond_cli, "main", fake_main)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "geond-orchestrator",
+            "worker",
+            "claim",
+            "--run",
+            "run-1",
+            "--agent",
+            "codex",
+        ],
+    )
+
+    orchestrator_cli.main()
+
+    assert captured["argv"] == ["geond", "worker", "claim", "--run", "run-1", "--agent", "codex"]
+
+
+def test_orchestrator_ci_watch_alias_delegates_to_gh(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run(command, *, check):  # noqa: ANN001, ANN202
+        captured["command"] = command
+        captured["check"] = check
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(orchestrator_cli.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "geond-orchestrator",
+            "ci",
+            "watch",
+            "123456",
+            "--repo",
+            "geondongkim/geond-agent-protocol",
+            "--exit-status",
+            "--compact",
+            "--interval",
+            "5",
+        ],
+    )
+
+    orchestrator_cli.main()
+
+    assert captured["command"] == [
+        "gh",
+        "run",
+        "watch",
+        "123456",
+        "--repo",
+        "geondongkim/geond-agent-protocol",
+        "--exit-status",
+        "--compact",
+        "--interval",
+        "5",
+    ]
+    assert captured["check"] is False
 
 
 def test_orchestrator_run_cli_wires_service(monkeypatch, capsys, tmp_path: Path) -> None:

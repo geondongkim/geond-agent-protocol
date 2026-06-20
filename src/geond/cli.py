@@ -12,14 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter, time
 
-from geond import (
-    agent_hooks,
-    degraded_ledger,
-    orchestrator_action_queue,
-    orchestrator_budget,
-    orchestrator_daemon,
-    orchestrator_scheduler,
-)
+from geond import agent_hooks, degraded_ledger
 from geond.adapters.antigravity import infer_session_id as infer_antigravity_session_id
 from geond.adapters.antigravity import latest_transcript_path as latest_antigravity_transcript_path
 from geond.adapters.antigravity import parse_storage as parse_antigravity_storage
@@ -163,6 +156,8 @@ from geond.workspace_identity import (
     workspace_uri_from_path_or_uri,
 )
 
+EVIDENCE_REF_EXAMPLES = ("command:<uuid>", "copilot:<id>", "thread:<id>")
+
 
 def workspace_uri_from_cwd(cwd: object) -> str:
     if not isinstance(cwd, str) or not cwd.strip():
@@ -186,9 +181,10 @@ def workspace_name_from_uri(workspace_uri: str) -> str:
 def parse_evidence_refs(values: list[str] | None) -> list[dict[str, str]]:
     refs: list[dict[str, str]] = []
     for value in values or []:
-        ref_type, sep, ref_id = value.partition(":")
+        ref_type, sep, ref_id = value.strip().partition(":")
         if not sep or not ref_type or not ref_id:
-            raise SystemExit("--evidence-ref must use TYPE:ID format")
+            examples = ", ".join(EVIDENCE_REF_EXAMPLES)
+            raise SystemExit(f"--evidence-ref must use TYPE:ID format (examples: {examples})")
         refs.append({"type": ref_type, "id": ref_id})
     return refs
 
@@ -1055,8 +1051,30 @@ def _contract_to_prompt(contract: dict) -> str:
     return "\n".join(lines)
 
 
+def run_orchestrator_alias(argv: list[str]) -> None:
+    try:
+        from geond_orchestrator.orchestrator_cli import main as orchestrator_main
+    except ImportError as exc:
+        raise SystemExit(
+            "The `geond orch` command requires the Geond Orchestrator package. "
+            "Install geond-orchestrator or use an environment that includes "
+            "the bundled transition package."
+        ) from exc
+
+    original_argv = sys.argv
+    try:
+        sys.argv = ["geond-orchestrator", *argv]
+        orchestrator_main(prog="geond orch")
+    finally:
+        sys.argv = original_argv
+
+
 def main() -> None:
     configure_cli_output()
+    if len(sys.argv) > 1 and sys.argv[1] == "orch":
+        run_orchestrator_alias(sys.argv[2:])
+        return
+
     parser = argparse.ArgumentParser(prog="geond")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -1918,8 +1936,23 @@ def main() -> None:
     decision_record.add_argument("--status", default="accepted")
     decision_record.add_argument("--reason", default="")
     decision_record.add_argument("--decided-by")
-    decision_record.add_argument("--evidence-ref", dest="evidence_refs", action="append")
+    decision_record.add_argument(
+        "--evidence-ref",
+        dest="evidence_refs",
+        action="append",
+        help=(
+            "Evidence reference in TYPE:ID format; examples: "
+            f"{', '.join(EVIDENCE_REF_EXAMPLES)}. Repeatable."
+        ),
+    )
     decision_record.add_argument("--idempotency-key")
+    decision_record.add_argument(
+        "--dry-run",
+        "--validate-only",
+        dest="dry_run",
+        action="store_true",
+        help="Validate and print the parsed decision payload without writing.",
+    )
 
     ledger_cmd = subparsers.add_parser("ledger", help="Manage degraded local orchestration ledger")
     ledger_subparsers = ledger_cmd.add_subparsers(dest="ledger_command", required=True)
@@ -2385,6 +2418,8 @@ def main() -> None:
         return
 
     if args.command == "dashboard-orchestration-actions":
+        from geond_orchestrator import orchestrator_action_queue
+
         agents = [item.strip() for item in (args.agents or "").split(",") if item.strip()]
         with connect(get_settings()) as conn:
             result = orchestrator_action_queue.list_action_queue(
@@ -2399,6 +2434,8 @@ def main() -> None:
         return
 
     if args.command == "dashboard-orchestration-scheduler":
+        from geond_orchestrator import orchestrator_scheduler
+
         with connect(get_settings()) as conn:
             result = orchestrator_scheduler.build_dashboard_scheduler(
                 conn,
@@ -2410,6 +2447,8 @@ def main() -> None:
         return
 
     if args.command == "dashboard-orchestration-budget":
+        from geond_orchestrator import orchestrator_budget
+
         with connect(get_settings()) as conn:
             result = orchestrator_budget.build_dashboard_budget(
                 conn,
@@ -2421,6 +2460,8 @@ def main() -> None:
         return
 
     if args.command == "dashboard-orchestration-daemon":
+        from geond_orchestrator import orchestrator_daemon
+
         result = orchestrator_daemon.build_dashboard_daemon(
             workspace_id_or_uri=args.workspace_id_or_uri,
             limit=args.limit,
@@ -4050,6 +4091,26 @@ def main() -> None:
         return
 
     if args.command == "decision" and args.decision_command == "record":
+        evidence_refs = parse_evidence_refs(args.evidence_refs)
+        if args.dry_run:
+            result = {
+                "schema": "geond.decision_record_validation.v1",
+                "status": "dry-run",
+                "would_write": False,
+                "command": "decision record",
+                "decision": {
+                    "run_id": args.run_id,
+                    "task_id": args.task_id,
+                    "decision": args.decision,
+                    "status": args.status,
+                    "reason": args.reason,
+                    "decided_by": args.decided_by,
+                    "evidence_refs": evidence_refs,
+                    "idempotency_key": args.idempotency_key,
+                },
+            }
+            print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+            return
         with connect(get_settings()) as conn:
             result = orchestration_record_decision(
                 conn,
@@ -4059,7 +4120,7 @@ def main() -> None:
                 status=args.status,
                 reason=args.reason,
                 decided_by=args.decided_by,
-                evidence_refs=parse_evidence_refs(args.evidence_refs),
+                evidence_refs=evidence_refs,
                 idempotency_key=args.idempotency_key,
             )
         print(json.dumps(result, ensure_ascii=False, indent=2, default=str))

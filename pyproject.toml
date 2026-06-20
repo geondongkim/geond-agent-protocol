@@ -34,7 +34,7 @@ dev = [
 [project.scripts]
 geond = "geond.cli:main"
 geond-mcp = "geond.mcp_server.server:main"
-geond-orchestrator = "geond.orchestrator_cli:main"
+geond-orchestrator = "geond_orchestrator.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
