@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=82.0.1", "wheel"]
+requires = ["setuptools>=84.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -11,24 +11,24 @@ requires-python = ">=3.11"
 license = "Apache-2.0"
 authors = [{ name = "geond-agent-protocol contributors" }]
 dependencies = [
-    "anyio>=4.14.0",
+    "anyio>=4.14.2",
     "azure-identity>=1.17.0",
-    "mcp>=1.28.0",
-    "openai>=2.43.0",
+    "mcp>=2.0.0",
+    "openai>=3.0.0",
     "psycopg[binary]>=3.3.4",
     "python-dotenv>=1.0.1",
-    "tree-sitter>=0.25.2",
-    "tree-sitter-language-pack>=1.10.1",
-    "trio>=0.25.0",
+    "tree-sitter>=0.26.0",
+    "tree-sitter-language-pack>=1.14.3",
+    "trio>=0.34.0",
 ]
 
 [dependency-groups]
 dev = [
-    "pillow>=12.2.0",
-    "playwright>=1.60.0",
-    "pre-commit>=4.0.0",
+    "pillow>=12.3.0",
+    "playwright>=1.62.0",
+    "pre-commit>=4.6.2",
     "pytest>=9.1.1",
-    "ruff>=0.15.18",
+    "ruff>=0.16.3",
 ]
 
 [project.scripts]
